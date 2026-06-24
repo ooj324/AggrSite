@@ -13,7 +13,7 @@ services:
       - key: PORT
         value: "4000"
       - key: DB_TYPE
-        value: sqlite
+        value: pgsql
       - key: DB_URL
         sync: false
       - key: CHECKIN_CRON
