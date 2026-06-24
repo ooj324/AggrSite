@@ -97,8 +97,21 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		return &CheckinAccountResult{Success: false, Status: "skipped", Message: msg}, nil
 	}
 
+	// Check if external checkin URL is provided
+	checkinURL := row.SiteURL
+	if row.SiteExternalCheckinURL != nil && *row.SiteExternalCheckinURL != "" {
+		checkinURL = *row.SiteExternalCheckinURL
+		slog.Info("Using external checkin URL", "account_id", accountID, "url", checkinURL)
+	}
+
+	opt := &platform.RequestOption{
+		ProxyURL:       row.SiteProxyURL,
+		UseSystemProxy: row.SiteUseSystemProxy,
+		CustomHeaders:  row.SiteCustomHeaders,
+	}
+
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
-	result, err := adapter.Checkin(row.SiteURL, row.AccessToken, platformUserID)
+	result, err := adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
 	if err != nil {
 		result = &platform.CheckinResult{Success: false, Message: err.Error()}
 	}
@@ -114,7 +127,26 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	case effectiveSuccess:
 		status = "success"
 	default:
-		status = "failed"
+		// Attempt auto-relogin on failure
+		if refreshedAccessToken := tryAutoRelogin(row, adapter, opt); refreshedAccessToken != "" {
+			row.AccessToken = refreshedAccessToken
+			// Retry checkin
+			result, err = adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
+			if err != nil {
+				result = &platform.CheckinResult{Success: false, Message: err.Error()}
+			}
+			
+			alreadyCheckedIn = isAlreadyCheckedIn(result.Message)
+			unsupported = isUnsupportedCheckin(result.Message)
+			effectiveSuccess = result.Success || alreadyCheckedIn || unsupported
+			if effectiveSuccess {
+				status = "success"
+			} else {
+				status = "failed"
+			}
+		} else {
+			status = "failed"
+		}
 	}
 
 	// Write checkin log
@@ -151,6 +183,48 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		Message: result.Message,
 		Reward:  result.Reward,
 	}, nil
+}
+
+func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platform.RequestOption) string {
+	if row.ExtraConfig == nil || *row.ExtraConfig == "" {
+		return ""
+	}
+	
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err != nil {
+		return ""
+	}
+	
+	autoRelogin, ok := cfg["autoRelogin"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	
+	username, _ := autoRelogin["username"].(string)
+	passwordCipher, _ := autoRelogin["passwordCipher"].(string)
+	
+	if username == "" || passwordCipher == "" {
+		return ""
+	}
+	
+	password := DecryptPassword(passwordCipher)
+	if password == "" {
+		return ""
+	}
+	
+	slog.Info("Attempting auto-relogin", "account_id", row.Accounts.ID)
+	loginResult, err := adapter.Login(row.SiteURL, username, password, opt)
+	if err != nil || loginResult == nil || !loginResult.Success || loginResult.AccessToken == "" {
+		slog.Warn("Auto-relogin failed", "account_id", row.Accounts.ID, "err", err, "message", loginResult.Message)
+		return ""
+	}
+	
+	slog.Info("Auto-relogin successful, updating access token", "account_id", row.Accounts.ID)
+	_ = db.UpdateAccount(row.Accounts.ID, map[string]interface{}{
+		"access_token": loginResult.AccessToken,
+	})
+	
+	return loginResult.AccessToken
 }
 
 type CheckinAllResult struct {

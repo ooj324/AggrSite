@@ -14,12 +14,12 @@ func init() {
 	Register(&NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api"}})
 }
 
-func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int64) (*CheckinResult, error) {
+func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*CheckinResult, error) {
 	url := fmt.Sprintf("%s/api/user/checkin", baseURL)
 	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "POST", headers, nil, &res)
+	err := a.FetchJSON(url, "POST", headers, nil, &res, opt)
 	if err != nil {
 		return &CheckinResult{Success: false, Message: err.Error()}, nil
 	}
@@ -44,12 +44,12 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 	return &CheckinResult{Success: success, Message: message, Reward: reward}, nil
 }
 
-func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID int64) (*BalanceInfo, error) {
+func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
 	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res)
+	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balance: %w", err)
 	}

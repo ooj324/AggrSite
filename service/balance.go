@@ -24,10 +24,26 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		return &BalanceResult{Success: false, Message: "unsupported platform: " + row.SitePlatform}, nil
 	}
 
+	opt := &platform.RequestOption{
+		ProxyURL:       row.SiteProxyURL,
+		UseSystemProxy: row.SiteUseSystemProxy,
+		CustomHeaders:  row.SiteCustomHeaders,
+	}
+
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
-	info, err := adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID)
+	info, err := adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
 	if err != nil {
-		slog.Warn("Balance refresh failed", "account_id", accountID, "err", err)
+		slog.Warn("Balance refresh failed, attempting auto-relogin", "account_id", accountID, "err", err)
+		if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
+			row.AccessToken = refreshedAccessToken
+			// Retry balance
+			info, err = adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
+		}
+	}
+
+	
+	if err != nil {
+		slog.Warn("Balance refresh failed completely", "account_id", accountID, "err", err)
 		return &BalanceResult{Success: false, Message: err.Error()}, nil
 	}
 
@@ -44,6 +60,7 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 
 	return &BalanceResult{Success: true, Balance: info}, nil
 }
+
 
 type RefreshAllResult struct {
 	AccountID int64          `json:"account_id"`

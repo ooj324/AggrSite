@@ -84,10 +84,14 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 
 		for _, s := range backup.Sites {
 			id, _ := db.CreateSite(db.CreateSiteInput{
-				Name:     s.Name,
-				URL:      s.URL,
-				Platform: s.Platform,
-				Status:   s.Status,
+				Name:               s.Name,
+				URL:                s.URL,
+				Platform:           s.Platform,
+				Status:             s.Status,
+				ProxyURL:           s.ProxyURL,
+				UseSystemProxy:     s.UseSystemProxy,
+				ExternalCheckinURL: s.ExternalCheckinURL,
+				CustomHeaders:      s.CustomHeaders,
 			})
 			if id > 0 {
 				siteIDMap[s.ID] = id
@@ -108,6 +112,26 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 				CheckinEnabled: a.CheckinEnabled != nil && *a.CheckinEnabled,
 			})
 			if id > 0 {
+				// Restore extra config and balances
+				updates := map[string]interface{}{}
+				if a.ExtraConfig != nil && *a.ExtraConfig != "" {
+					updates["extra_config"] = *a.ExtraConfig
+				}
+				if a.Balance != nil {
+					updates["balance"] = *a.Balance
+				}
+				if a.BalanceUsed != nil {
+					updates["balance_used"] = *a.BalanceUsed
+				}
+				if a.Quota != nil {
+					updates["quota"] = *a.Quota
+				}
+				if a.Status != nil && *a.Status != "" {
+					updates["status"] = *a.Status
+				}
+				if len(updates) > 0 {
+					_ = db.UpdateAccount(id, updates)
+				}
 				importedAccounts++
 			}
 		}

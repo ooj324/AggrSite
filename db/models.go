@@ -53,10 +53,14 @@ func GetSite(id int64) (*Site, error) {
 }
 
 type CreateSiteInput struct {
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Platform string `json:"platform"`
-	Status   string `json:"status"`
+	Name               string  `json:"name"`
+	URL                string  `json:"url"`
+	Platform           string  `json:"platform"`
+	Status             string  `json:"status"`
+	ProxyURL           *string `json:"proxy_url"`
+	UseSystemProxy     *bool   `json:"use_system_proxy"`
+	ExternalCheckinURL *string `json:"external_checkin_url"`
+	CustomHeaders      *string `json:"custom_headers"`
 }
 
 func CreateSite(in CreateSiteInput) (int64, error) {
@@ -65,17 +69,32 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 	if status == "" {
 		status = "active"
 	}
-	res, err := Exec(`INSERT INTO sites (name, url, platform, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
-		in.Name, in.URL, in.Platform, status, now, now)
+	
+	// Default use_system_proxy
+	useSystemProxyVal := interface{}(0)
+	if driverName == "postgres" {
+		useSystemProxyVal = false
+	}
+	if in.UseSystemProxy != nil && *in.UseSystemProxy {
+		if driverName == "postgres" {
+			useSystemProxyVal = true
+		} else {
+			useSystemProxyVal = 1
+		}
+	}
+	
+	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, custom_headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	
+	if driverName == "postgres" {
+		var id int64
+		err := DB.QueryRowx(DB.Rebind(query+` RETURNING id`),
+			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.CustomHeaders, now, now).Scan(&id)
+		return id, err
+	}
+	
+	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.CustomHeaders, now, now)
 	if err != nil {
 		return 0, err
-	}
-	if driverName == "postgres" {
-		// Postgres RETURNING id doesn't work well with res.LastInsertId(), we need QueryRow
-		var id int64
-		err = DB.QueryRowx(DB.Rebind(`INSERT INTO sites (name, url, platform, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`),
-			in.Name, in.URL, in.Platform, status, now, now).Scan(&id)
-		return id, err
 	}
 	return res.LastInsertId()
 }
@@ -86,13 +105,28 @@ func UpdateSite(id int64, in map[string]interface{}) error {
 	args := []interface{}{}
 	i := 0
 	for k, v := range in {
+		safeKey := ""
+		for _, c := range k {
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+				safeKey += string(c)
+			}
+		}
+		if safeKey == "" {
+			continue
+		}
+		
 		if i > 0 {
 			query += ", "
 		}
-		query += k + " = ?"
+		query += safeKey + " = ?"
 		args = append(args, v)
 		i++
 	}
+	
+	if i == 0 {
+		return nil
+	}
+	
 	query += " WHERE id = ?"
 	args = append(args, id)
 	_, err := Exec(query, args...)
@@ -147,6 +181,15 @@ func GetAccount(id int64) (*Account, error) {
 	return &a, nil
 }
 
+func GetAccountBySiteAndUsername(siteID int64, username string) (*Account, error) {
+	var a Account
+	err := Get(&a, `SELECT `+accountColumns+` FROM accounts WHERE site_id = ? AND username = ?`, siteID, username)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 type CreateAccountInput struct {
 	SiteID         int64  `json:"site_id"`
 	Username       string `json:"username"`
@@ -181,13 +224,29 @@ func UpdateAccount(id int64, fields map[string]interface{}) error {
 	args := []interface{}{}
 	i := 0
 	for k, v := range fields {
+		// Basic sanitization of keys to prevent SQL injection
+		safeKey := ""
+		for _, c := range k {
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+				safeKey += string(c)
+			}
+		}
+		if safeKey == "" {
+			continue
+		}
+		
 		if i > 0 {
 			query += ", "
 		}
-		query += k + " = ?"
+		query += safeKey + " = ?"
 		args = append(args, v)
 		i++
 	}
+	
+	if i == 0 {
+		return nil
+	}
+	
 	query += " WHERE id = ?"
 	args = append(args, id)
 	_, err := Exec(query, args...)
@@ -392,21 +451,24 @@ func UpsertSetting(key, value string) error {
 
 type AccountWithSite struct {
 	Account
-	SiteName     string  `db:"site_name"`
-	SiteURL      string  `db:"site_url"`
-	SitePlatform string  `db:"site_platform"`
-	SiteStatus   string  `db:"site_status"`
-	SiteProxyURL *string `db:"site_proxy_url"`
+	SiteName               string  `db:"site_name"`
+	SiteURL                string  `db:"site_url"`
+	SitePlatform           string  `db:"site_platform"`
+	SiteStatus             string  `db:"site_status"`
+	SiteProxyURL           *string `db:"site_proxy_url"`
+	SiteUseSystemProxy     *bool   `db:"site_use_system_proxy"`
+	SiteExternalCheckinURL *string `db:"site_external_checkin_url"`
 }
 
 const accountWithSiteQuery = `
 	SELECT a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota,
 	       a.status, a.checkin_enabled, a.last_checkin_at, a.last_balance_refresh, a.extra_config,
 	       a.created_at, a.updated_at, a.is_pinned, a.sort_order,
-	       s.name AS site_name, s.url AS site_url, s.platform AS site_platform, s.status AS site_status, s.proxy_url AS site_proxy_url
+	       s.name AS site_name, s.url AS site_url, s.platform AS site_platform, s.status AS site_status, s.proxy_url AS site_proxy_url, s.use_system_proxy AS site_use_system_proxy, s.external_checkin_url AS site_external_checkin_url
 	FROM accounts a
 	INNER JOIN sites s ON a.site_id = s.id
 `
+
 
 func ListCheckinableAccounts() ([]AccountWithSite, error) {
 	var rows []AccountWithSite

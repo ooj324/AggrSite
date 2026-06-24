@@ -38,6 +38,10 @@ export interface Site {
   url: string;
   platform: string;
   status: string;
+  proxy_url?: string;
+  use_system_proxy?: boolean;
+  external_checkin_url?: string;
+  custom_headers?: string;
   created_at: string;
 }
 
@@ -46,6 +50,8 @@ export interface Account {
   site_id: number;
   site_name: string;
   username: string;
+  access_token: string;
+  api_token?: string;
   balance: number;
   balance_used: number;
   quota: number;

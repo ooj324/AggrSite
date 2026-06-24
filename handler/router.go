@@ -16,13 +16,13 @@ func MountRoutes(r chi.Router) {
 		w.Write([]byte("pong"))
 	})
 
-	r.Get("/api/platforms", func(w http.ResponseWriter, r *http.Request) {
-		ok(w, platform.AllPlatformNames())
-	})
-
 	// Protected API routes
 	r.Group(func(r chi.Router) {
 		r.Use(AuthMiddleware)
+
+		r.Get("/api/platforms", func(w http.ResponseWriter, r *http.Request) {
+			ok(w, platform.AllPlatformNames())
+		})
 
 		// Sites
 		r.Get("/api/sites", ListSites)
@@ -34,6 +34,7 @@ func MountRoutes(r chi.Router) {
 		// Accounts
 		r.Get("/api/accounts", ListAccounts)
 		r.Post("/api/accounts", CreateAccount)
+		r.Post("/api/accounts/login", LoginAccount)
 		r.Get("/api/accounts/{id}", GetAccount)
 		r.Put("/api/accounts/{id}", UpdateAccount)
 		r.Delete("/api/accounts/{id}", DeleteAccount)

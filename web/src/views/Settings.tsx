@@ -10,15 +10,17 @@ export default function Settings() {
   const [formData, setFormData] = useState({
     CHECKIN_CRON: '',
     BALANCE_REFRESH_CRON: '',
+    SYSTEM_PROXY_URL: '',
   });
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [schedRes, checkinSet, balanceSet] = await Promise.all([
+      const [schedRes, checkinSet, balanceSet, proxySet] = await Promise.all([
         api.get('/api/scheduler/status'),
         api.get('/api/settings/CHECKIN_CRON').catch(() => ({ data: { value: '' } })),
-        api.get('/api/settings/BALANCE_REFRESH_CRON').catch(() => ({ data: { value: '' } }))
+        api.get('/api/settings/BALANCE_REFRESH_CRON').catch(() => ({ data: { value: '' } })),
+        api.get('/api/settings/system_proxy_url').catch(() => ({ data: { value: '' } }))
       ]);
       
       setStatus(schedRes.data);
@@ -27,6 +29,7 @@ export default function Settings() {
       setFormData({
         CHECKIN_CRON: checkinSet.data?.value || statusData.checkin_cron || '',
         BALANCE_REFRESH_CRON: balanceSet.data?.value || statusData.balance_refresh_cron || '',
+        SYSTEM_PROXY_URL: proxySet.data?.value || '',
       });
     } catch (err) {
       console.error(err);
@@ -45,6 +48,7 @@ export default function Settings() {
     try {
       await api.put('/api/settings/CHECKIN_CRON', { value: formData.CHECKIN_CRON });
       await api.put('/api/settings/BALANCE_REFRESH_CRON', { value: formData.BALANCE_REFRESH_CRON });
+      await api.put('/api/settings/system_proxy_url', { value: formData.SYSTEM_PROXY_URL });
       alert('Settings saved and scheduler reloaded successfully!');
       loadData();
     } catch (err: any) {
@@ -72,12 +76,24 @@ export default function Settings() {
             <SettingsIcon size={20} />
           </div>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Scheduler Configuration</h2>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>Configure cron expressions for background jobs.</p>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>System & Scheduler Configuration</h2>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>Configure system-wide settings and cron jobs.</p>
           </div>
         </div>
 
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>System Proxy URL</label>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>Global HTTP proxy (e.g. http://127.0.0.1:7890). Leave empty to use environment variables or disable.</p>
+            <input 
+              type="text" 
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontFamily: 'monospace' }} 
+              placeholder="http://127.0.0.1:7890" 
+              value={formData.SYSTEM_PROXY_URL} 
+              onChange={e => setFormData({...formData, SYSTEM_PROXY_URL: e.target.value})} 
+            />
+          </div>
+
           <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Check-in Cron Expression</label>
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>Controls how often automated check-ins run. Empty means disabled.</p>
@@ -116,6 +132,7 @@ export default function Settings() {
           </div>
         </form>
       </div>
+
 
       <div className="card" style={{ maxWidth: 600, padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>

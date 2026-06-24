@@ -104,34 +104,46 @@ export default function Accounts() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '12px 0', flex: 1 }}>
-                <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Balance</p>
-                  <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance?.toFixed(2) || '0.00'}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, margin: '12px 0', flex: 1 }}>
+                  <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Balance</p>
+                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance?.toFixed(2) || '0.00'}</p>
+                  </div>
+                  <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Usage</p>
+                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance_used?.toFixed(2) || '0.00'}</p>
+                  </div>
+                  <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Quota</p>
+                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.quota?.toFixed(2) || '0.00'}</p>
+                  </div>
                 </div>
-                <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Usage</p>
-                  <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance_used?.toFixed(2) || '0.00'}</p>
-                </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: acc.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
-                  <span style={{ textTransform: 'capitalize' }}>{acc.status}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Last Refresh: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : 'Never'}</span>
+                    <span>Last Checkin: {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : 'Never'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>API Token: {acc.api_token ? '✅ Setup' : '❌ Missing'}</span>
+                    <span>Auto Checkin: {acc.checkin_enabled ? '✅ On' : '❌ Off'}</span>
+                  </div>
                 </div>
-                <div>
-                  Last Ref: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : 'Never'}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: acc.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
+                    <span style={{ textTransform: 'capitalize' }}>{acc.status}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-          {accounts.length === 0 && (
-            <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
-              No accounts found. Add one to get started.
-            </div>
-          )}
-        </div>
+            ))}
+            {accounts.length === 0 && (
+              <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
+                No accounts found. Add one to get started.
+              </div>
+            )}
+          </div>
       )}
 
       {showModal && (
@@ -147,10 +159,13 @@ export default function Accounts() {
 }
 
 function AccountModal({ account, sites, onClose, onSaved }: any) {
+  const [mode, setMode] = useState<'login' | 'token'>(account ? 'token' : 'login');
   const [formData, setFormData] = useState({
     site_id: account?.site_id || (sites[0]?.id ?? 0),
     username: account?.username || '',
+    password: '',
     access_token: account?.access_token || '',
+    api_token: account?.api_token || '',
     status: account?.status || 'active',
     checkin_enabled: account?.checkin_enabled ?? true,
   });
@@ -160,13 +175,28 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     e.preventDefault();
     setLoading(true);
     try {
-      if (account) {
-        await api.put(`/api/accounts/${account.id}`, formData);
-      } else {
-        await api.post('/api/accounts', {
-          ...formData,
-          site_id: Number(formData.site_id)
+      if (mode === 'login' && !account) {
+        // Login mode (creating new or updating existing by username)
+        const res = await api.post('/api/accounts/login', {
+          site_id: Number(formData.site_id),
+          username: formData.username,
+          password: formData.password,
         });
+        if (res.data.api_token_found) {
+          alert('Successfully logged in and fetched API token!');
+        } else {
+          alert('Successfully logged in, but no active API token found.');
+        }
+      } else {
+        // Token mode
+        if (account) {
+          await api.put(`/api/accounts/${account.id}`, formData);
+        } else {
+          await api.post('/api/accounts', {
+            ...formData,
+            site_id: Number(formData.site_id)
+          });
+        }
       }
       onSaved();
     } catch (err: any) {
@@ -183,6 +213,25 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         </button>
         <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{account ? 'Edit Account' : 'Add Account'}</h2>
         
+        {!account && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-md)' }}>
+            <button 
+              type="button"
+              onClick={() => setMode('login')} 
+              style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: mode === 'login' ? 'var(--color-bg-elevated)' : 'transparent', color: mode === 'login' ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: mode === 'login' ? 600 : 500, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              Login Mode
+            </button>
+            <button 
+              type="button"
+              onClick={() => setMode('token')} 
+              style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: mode === 'token' ? 'var(--color-bg-elevated)' : 'transparent', color: mode === 'token' ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: mode === 'token' ? 600 : 500, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              Token Mode
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Site</label>
@@ -190,21 +239,41 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
+          
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Username (optional)</label>
-            <input type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Username {mode === 'token' && '(optional)'}</label>
+            <input required={mode === 'login'} type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Access Token</label>
-            <input required type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Status</label>
-            <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-              <option value="active">Active</option>
-              <option value="disabled">Disabled</option>
-            </select>
-          </div>
+
+          {mode === 'login' && !account ? (
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Password</label>
+              <input required type="password" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8 }}>Password is used to automatically refresh tokens. It will be stored encrypted.</p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Access Token</label>
+                <input required type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>API Token (optional)</label>
+                <input type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} />
+              </div>
+            </>
+          )}
+
+          {mode === 'token' && (
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Status</label>
+              <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+          )}
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <input 
               type="checkbox" 

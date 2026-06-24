@@ -11,16 +11,16 @@ func init() {
 	Register(&DoneHubAdapter{BaseAdapter: BaseAdapter{Name: "done-hub"}})
 }
 
-func (a *DoneHubAdapter) Checkin(_ string, _ string, _ int64) (*CheckinResult, error) {
+func (a *DoneHubAdapter) Checkin(_ string, _ string, _ int64, _ *RequestOption) (*CheckinResult, error) {
 	return &CheckinResult{Success: false, Message: "checkin endpoint not found"}, nil
 }
 
-func (a *DoneHubAdapter) GetBalance(baseURL, accessToken string, _ int64) (*BalanceInfo, error) {
+func (a *DoneHubAdapter) GetBalance(baseURL, accessToken string, _ int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
 	headers := map[string]string{"Authorization": "Bearer " + accessToken}
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res)
+	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balance: %w", err)
 	}

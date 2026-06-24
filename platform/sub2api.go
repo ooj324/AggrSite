@@ -14,11 +14,11 @@ func init() {
 	Register(&Sub2ApiAdapter{BaseAdapter: BaseAdapter{Name: "sub2api"}})
 }
 
-func (a *Sub2ApiAdapter) Checkin(_ string, _ string, _ int64) (*CheckinResult, error) {
+func (a *Sub2ApiAdapter) Checkin(_ string, _ string, _ int64, _ *RequestOption) (*CheckinResult, error) {
 	return &CheckinResult{Success: false, Message: "Check-in is not supported by Sub2API"}, nil
 }
 
-func (a *Sub2ApiAdapter) GetBalance(baseURL, accessToken string, _ int64) (*BalanceInfo, error) {
+func (a *Sub2ApiAdapter) GetBalance(baseURL, accessToken string, _ int64, opt *RequestOption) (*BalanceInfo, error) {
 	base := strings.TrimRight(baseURL, "/")
 	token := strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer ")
 
@@ -26,7 +26,7 @@ func (a *Sub2ApiAdapter) GetBalance(baseURL, accessToken string, _ int64) (*Bala
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res)
+	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balance: %w", err)
 	}
@@ -54,4 +54,12 @@ func (a *Sub2ApiAdapter) GetBalance(baseURL, accessToken string, _ int64) (*Bala
 		Used:    0,
 		Quota:   quotaValue / 500000,
 	}, nil
+}
+
+func (a *Sub2ApiAdapter) Login(_ string, _ string, _ string, _ *RequestOption) (*LoginResult, error) {
+	return &LoginResult{Success: false, Message: "Login is not supported by Sub2API"}, nil
+}
+
+func (a *Sub2ApiAdapter) GetApiToken(_ string, _ string, _ int64, _ *RequestOption) (string, error) {
+	return "", fmt.Errorf("API Tokens are not supported by Sub2API")
 }

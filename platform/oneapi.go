@@ -12,12 +12,12 @@ func init() {
 	Register(&OneApiAdapter{BaseAdapter: BaseAdapter{Name: "one-api"}})
 }
 
-func (a *OneApiAdapter) Checkin(baseURL, accessToken string, _ int64) (*CheckinResult, error) {
+func (a *OneApiAdapter) Checkin(baseURL, accessToken string, _ int64, opt *RequestOption) (*CheckinResult, error) {
 	url := fmt.Sprintf("%s/api/user/checkin", baseURL)
 	headers := map[string]string{"Authorization": "Bearer " + accessToken}
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "POST", headers, nil, &res)
+	err := a.FetchJSON(url, "POST", headers, nil, &res, opt)
 	if err != nil {
 		return &CheckinResult{Success: false, Message: err.Error()}, nil
 	}
@@ -42,12 +42,12 @@ func (a *OneApiAdapter) Checkin(baseURL, accessToken string, _ int64) (*CheckinR
 	return &CheckinResult{Success: success, Message: message, Reward: reward}, nil
 }
 
-func (a *OneApiAdapter) GetBalance(baseURL, accessToken string, _ int64) (*BalanceInfo, error) {
+func (a *OneApiAdapter) GetBalance(baseURL, accessToken string, _ int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
 	headers := map[string]string{"Authorization": "Bearer " + accessToken}
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res)
+	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balance: %w", err)
 	}
@@ -65,3 +65,4 @@ func (a *OneApiAdapter) GetBalance(baseURL, accessToken string, _ int64) (*Balan
 		Quota:   quota,
 	}, nil
 }
+

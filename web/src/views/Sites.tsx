@@ -115,7 +115,12 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     url: site?.url || '',
     platform: site?.platform || platforms[0] || 'new-api',
     status: site?.status || 'active',
+    proxy_url: site?.proxy_url || '',
+    use_system_proxy: site?.use_system_proxy || false,
+    external_checkin_url: site?.external_checkin_url || '',
+    custom_headers: site?.custom_headers || '',
   });
+
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -163,6 +168,32 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
               <option value="active">Active</option>
               <option value="disabled">Disabled</option>
             </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Proxy URL (optional)</label>
+            <input type="url" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="http://127.0.0.1:7890" />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>External Checkin URL (optional)</label>
+            <input type="url" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="https://..." />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Custom Headers (JSON)</label>
+            <textarea 
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', minHeight: '60px', fontFamily: 'monospace' }} 
+              value={formData.custom_headers} 
+              onChange={e => setFormData({...formData, custom_headers: e.target.value})} 
+              placeholder='{"X-My-Header": "value"}' 
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <input 
+              type="checkbox" 
+              id="use_system_proxy"
+              checked={formData.use_system_proxy} 
+              onChange={e => setFormData({...formData, use_system_proxy: e.target.checked})}
+            />
+            <label htmlFor="use_system_proxy" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Use System Proxy</label>
           </div>
           <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
             <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
