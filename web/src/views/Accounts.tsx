@@ -249,7 +249,6 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
-  const [verifyResult, setVerifyResult] = useState<any>(null);
 
   const handleVerify = async () => {
     if (!formData.access_token) {
@@ -263,7 +262,6 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         accessToken: formData.access_token,
         platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0
       });
-      setVerifyResult(res.data);
       if (res.data.tokenType === 'session') {
         setFormData(prev => ({ 
           ...prev, 
@@ -280,7 +278,6 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
       alert(`验证成功！类型: ${res.data.tokenType}`);
     } catch (err: any) {
       alert(`验证失败: ${err}`);
-      setVerifyResult(null);
     } finally {
       setVerifyLoading(false);
     }
