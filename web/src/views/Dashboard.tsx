@@ -5,21 +5,27 @@ import { format } from 'date-fns';
 
 export default function Dashboard() {
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
-  const [stats, setStats] = useState({ sites: 0, accounts: 0 });
+  const [stats, setStats] = useState({ 
+    sites: 0, 
+    accounts: 0, 
+    total_balance: 0, 
+    total_used: 0, 
+    checkins_today: 0, 
+    checkins_success: 0, 
+    checkin_rate: 0 
+  });
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
   const loadData = async () => {
     try {
-      const [schedRes, sitesRes, accountsRes] = await Promise.all([
+      const [schedRes, statsRes] = await Promise.all([
         api.get('/api/scheduler/status'),
-        api.get('/api/sites'),
-        api.get('/api/accounts'),
+        api.get('/api/stats/dashboard')
       ]);
       setStatus(schedRes.data);
-      setStats({
-        sites: sitesRes.data?.length || 0,
-        accounts: accountsRes.data?.length || 0,
+      setStats(statsRes.data || {
+        sites: 0, accounts: 0, total_balance: 0, total_used: 0, checkins_today: 0, checkins_success: 0, checkin_rate: 0
       });
     } catch (err) {
       console.error(err);
@@ -115,6 +121,68 @@ export default function Dashboard() {
         </div>
 
         <div className="stat-card animate-slide-up stagger-2">
+          <div className="stat-card-header">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            账户数据
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-blue">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">总余额</div>
+              <div className="stat-value animate-count-up" style={{ fontSize: 18 }}>${stats.total_balance?.toFixed(2) || '0.00'}</div>
+            </div>
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-green">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">总消耗</div>
+              <div className="stat-value animate-count-up" style={{ fontSize: 18 }}>${stats.total_used?.toFixed(2) || '0.00'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="stat-card animate-slide-up stagger-3">
+          <div className="stat-card-header">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            签到状态
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-purple">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">今日签到</div>
+              <div className="stat-value animate-count-up">{stats.checkins_success} / {stats.checkins_today}</div>
+            </div>
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-orange">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">成功率</div>
+              <div className="stat-value animate-count-up">{Math.round(stats.checkin_rate)}%</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="stat-card animate-slide-up stagger-4">
           <div className="stat-card-header">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />

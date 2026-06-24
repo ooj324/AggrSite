@@ -63,6 +63,9 @@ func MountRoutes(r chi.Router) {
 		r.Get("/api/settings/{key}", GetSetting)
 		r.Put("/api/settings/{key}", UpdateSetting)
 
+		// Stats
+		r.Get("/api/stats/dashboard", GetDashboardStats)
+
 		// Scheduler
 		r.Get("/api/scheduler/status", func(w http.ResponseWriter, r *http.Request) {
 			ok(w, service.GetSchedulerStatus())

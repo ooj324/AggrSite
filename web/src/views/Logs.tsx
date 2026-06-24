@@ -43,28 +43,16 @@ export default function Logs() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 4, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-md)', width: 'max-content', marginBottom: 24, border: '1px solid var(--color-border)' }}>
+      <div className="tabs">
         <button
           onClick={() => setActiveTab('checkin')}
-          className="btn"
-          style={{
-            background: activeTab === 'checkin' ? 'var(--color-primary)' : 'transparent',
-            color: activeTab === 'checkin' ? 'var(--color-white)' : 'var(--color-text-secondary)',
-            border: 'none',
-            boxShadow: activeTab === 'checkin' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-          }}
+          className={`tab ${activeTab === 'checkin' ? 'active' : ''}`}
         >
           签到日志
         </button>
         <button
           onClick={() => setActiveTab('events')}
-          className="btn"
-          style={{
-            background: activeTab === 'events' ? 'var(--color-primary)' : 'transparent',
-            color: activeTab === 'events' ? 'var(--color-white)' : 'var(--color-text-secondary)',
-            border: 'none',
-            boxShadow: activeTab === 'events' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-          }}
+          className={`tab ${activeTab === 'events' ? 'active' : ''}`}
         >
           系统事件
         </button>

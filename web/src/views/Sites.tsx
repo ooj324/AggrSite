@@ -60,40 +60,61 @@ export default function Sites() {
           <span className="spinner spinner-lg text-primary" />
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {sites.map(site => (
-            <div key={site.id} className="card p-5 group" style={{ position: 'relative' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Globe size={20} />
-                  </div>
-                  <div>
-                    <h3 style={{ fontWeight: 600, fontSize: 16, margin: 0 }}>{site.name}</h3>
-                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'var(--color-border)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{site.platform}</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => openEdit(site)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
-                    <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(site.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={site.url}>{site.url}</p>
-              <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: site.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
-                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{site.status === 'active' ? '已启用' : '已禁用'}</span>
-              </div>
-            </div>
-          ))}
-          {sites.length === 0 && (
-            <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
-              未找到站点。添加一个以开始。
-            </div>
-          )}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>平台</th>
+                  <th>URL</th>
+                  <th>状态</th>
+                  <th style={{ width: 100, textAlign: 'right' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sites.map(site => (
+                  <tr key={site.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Globe size={16} color="var(--color-text-secondary)" />
+                        <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{site.name}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge">{site.platform}</span>
+                    </td>
+                    <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-secondary)' }} title={site.url}>
+                      {site.url}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: site.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
+                        <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{site.status === 'active' ? '已启用' : '已禁用'}</span>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                        <button onClick={() => openEdit(site)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
+                          <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => handleDelete(site.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sites.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
+                      未找到站点。添加一个以开始。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -198,7 +198,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </aside>
 
         <main className="main-content">
-          <div className="animate-fade-in" style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <div className="animate-fade-in" style={{ width: '100%', height: '100%' }}>
             {children}
           </div>
         </main>

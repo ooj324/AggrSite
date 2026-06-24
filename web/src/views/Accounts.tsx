@@ -75,75 +75,78 @@ export default function Accounts() {
           <span className="spinner spinner-lg text-primary" />
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {accounts.map(acc => (
-            <div key={acc.id} className="card p-5 group flex flex-col" style={{ position: 'relative' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-success-soft)', color: 'var(--color-success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Users size={20} />
-                  </div>
-                  <div>
-                    <h3 style={{ fontWeight: 600, fontSize: 16, margin: 0 }}>{acc.username || `Account #${acc.id}`}</h3>
-                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{acc.site_name}</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-primary)' }} title="签到">
-                    <Play size={16} className={actionLoading === acc.id ? 'animate-pulse' : ''} />
-                  </button>
-                  <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-info)' }} title="刷新余额">
-                    <RefreshCw size={16} className={actionLoading === acc.id ? 'animate-spin' : ''} />
-                  </button>
-                  <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
-                    <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(acc.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, margin: '12px 0', flex: 1 }}>
-                  <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>余额</p>
-                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance?.toFixed(2) || '0.00'}</p>
-                  </div>
-                  <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>已用额度</p>
-                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance_used?.toFixed(2) || '0.00'}</p>
-                  </div>
-                  <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>总配额</p>
-                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.quota?.toFixed(2) || '0.00'}</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>上次刷新: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : '从未'}</span>
-                    <span>上次签到: {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : '从未'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>API 令牌: {acc.api_token ? '✅ 已设置' : '❌ 未设置'}</span>
-                    <span>自动签到: {acc.checkin_enabled ? '✅ 开启' : '❌ 关闭'}</span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: acc.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
-                    <span>{acc.status === 'active' ? '已激活' : '已禁用'}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {accounts.length === 0 && (
-              <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
-                未找到账户。添加一个以开始。
-              </div>
-            )}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>账户</th>
+                  <th>站点</th>
+                  <th>状态</th>
+                  <th>余额 / 已用 / 总额</th>
+                  <th>上次操作</th>
+                  <th style={{ width: 150, textAlign: 'right' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map(acc => (
+                  <tr key={acc.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Users size={16} color="var(--color-text-secondary)" />
+                        <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{acc.username || `Account #${acc.id}`}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge">{acc.site_name}</span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: acc.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
+                        <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{acc.status === 'active' ? '已启用' : '已禁用'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontWeight: 500, color: 'var(--color-primary)' }}>${acc.balance?.toFixed(2) || '0.00'}</span>
+                        <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>已用: ${acc.balance_used?.toFixed(2) || '0.00'} / 总额: ${acc.quota?.toFixed(2) || '0.00'}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                        <span>签到: {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : '从未'}</span>
+                        <span>刷新: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : '从未'}</span>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                        <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-primary)' }} title="签到">
+                          <Play size={16} className={actionLoading === acc.id ? 'animate-pulse' : ''} />
+                        </button>
+                        <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-info)' }} title="刷新余额">
+                          <RefreshCw size={16} className={actionLoading === acc.id ? 'animate-spin' : ''} />
+                        </button>
+                        <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
+                          <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => handleDelete(acc.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {accounts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
+                      未找到账户。添加一个以开始。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
+        </div>
       )}
 
       {showModal && (
@@ -214,18 +217,18 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{account ? '编辑账户' : '添加账户'}</h2>
         
         {!account && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 24, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-md)' }}>
+          <div className="tabs" style={{ marginBottom: 24 }}>
             <button 
               type="button"
               onClick={() => setMode('login')} 
-              style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: mode === 'login' ? 'var(--color-bg-elevated)' : 'transparent', color: mode === 'login' ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: mode === 'login' ? 600 : 500, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+              className={`tab ${mode === 'login' ? 'active' : ''}`}
             >
               登录模式
             </button>
             <button 
               type="button"
               onClick={() => setMode('token')} 
-              style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: mode === 'token' ? 'var(--color-bg-elevated)' : 'transparent', color: mode === 'token' ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: mode === 'token' ? 600 : 500, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+              className={`tab ${mode === 'token' ? 'active' : ''}`}
             >
               令牌模式
             </button>
