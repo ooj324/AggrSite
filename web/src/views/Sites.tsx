@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Site } from '../api';
-import { Plus, Edit2, Trash2, Globe, RefreshCw, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Globe, X } from 'lucide-react';
 
 export default function Sites() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -45,48 +45,52 @@ export default function Sites() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Sites</h1>
-        <button onClick={() => openEdit()} className="btn-primary flex items-center gap-2">
-          <Plus size={18} /> Add Site
-        </button>
+    <div className="animate-fade-in">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h2 className="greeting">Sites</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => openEdit()} className="btn btn-primary">
+            <Plus size={18} /> Add Site
+          </button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center p-12"><RefreshCw className="animate-spin text-primary" size={32} /></div>
+        <div className="flex justify-center p-12">
+          <span className="spinner spinner-lg text-primary" />
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
           {sites.map(site => (
-            <div key={site.id} className="glass-card p-5 group">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
+            <div key={site.id} className="card p-5 group" style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Globe size={20} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-white">{site.name}</h3>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-textSecondary uppercase tracking-wider">{site.platform}</span>
+                    <h3 style={{ fontWeight: 600, fontSize: 16, margin: 0 }}>{site.name}</h3>
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'var(--color-border)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>{site.platform}</span>
                   </div>
                 </div>
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openEdit(site)} className="p-1.5 text-textSecondary hover:text-white bg-white/5 rounded-lg hover:bg-white/10">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => openEdit(site)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
                     <Edit2 size={16} />
                   </button>
-                  <button onClick={() => handleDelete(site.id)} className="p-1.5 text-textSecondary hover:text-error bg-white/5 rounded-lg hover:bg-error/10">
+                  <button onClick={() => handleDelete(site.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-textSecondary truncate" title={site.url}>{site.url}</p>
-              <div className="mt-4 flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${site.status === 'active' ? 'bg-success' : 'bg-error'}`} />
-                <span className="text-sm text-textSecondary capitalize">{site.status}</span>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={site.url}>{site.url}</p>
+              <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: site.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
+                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', textTransform: 'capitalize' }}>{site.status}</span>
               </div>
             </div>
           ))}
           {sites.length === 0 && (
-            <div className="col-span-full text-center p-12 text-textSecondary glass-panel">
+            <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
               No sites found. Add one to get started.
             </div>
           )}
@@ -131,38 +135,38 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="glass-panel w-full max-w-md p-6 relative animate-slide-up">
-        <button onClick={onClose} className="absolute top-4 right-4 text-textSecondary hover:text-white">
+    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+      <div className="card animate-scale-in" style={{ width: '100%', maxWidth: 440, padding: 24, position: 'relative' }}>
+        <button onClick={onClose} className="btn btn-ghost" style={{ position: 'absolute', top: 16, right: 16, padding: 6, minWidth: 'auto' }}>
           <X size={20} />
         </button>
-        <h2 className="text-2xl font-bold mb-6">{site ? 'Edit Site' : 'Add Site'}</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{site ? 'Edit Site' : 'Add Site'}</h2>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Name</label>
-            <input required type="text" className="input-field" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Name</label>
+            <input required type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">URL</label>
-            <input required type="url" className="input-field" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>URL</label>
+            <input required type="url" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Platform</label>
-            <select className="input-field appearance-none" value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
-              {platforms.map((p: string) => <option key={p} value={p} className="bg-surface">{p}</option>)}
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Platform</label>
+            <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
+              {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Status</label>
-            <select className="input-field appearance-none" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-              <option value="active" className="bg-surface">Active</option>
-              <option value="disabled" className="bg-surface">Disabled</option>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Status</label>
+            <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
             </select>
           </div>
-          <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={loading} className="btn-primary">
+          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="submit" disabled={loading} className="btn btn-primary">
               {loading ? 'Saving...' : 'Save'}
             </button>
           </div>

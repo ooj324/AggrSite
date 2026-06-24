@@ -32,104 +32,117 @@ export default function Logs() {
   }, [activeTab]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Logs & Events</h1>
-        <button onClick={loadData} className="btn-secondary flex items-center gap-2">
-          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} /> Refresh
-        </button>
+    <div className="animate-fade-in">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h2 className="greeting">Logs & Events</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={loadData} className="btn btn-secondary">
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} style={{ marginRight: 6 }} /> 
+            Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="flex space-x-1 glass-panel p-1 rounded-xl w-max">
+      <div style={{ display: 'flex', gap: 4, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-md)', width: 'max-content', marginBottom: 24, border: '1px solid var(--color-border)' }}>
         <button
           onClick={() => setActiveTab('checkin')}
-          className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === 'checkin' ? 'bg-primary text-white shadow-md' : 'text-textSecondary hover:text-white'
-          }`}
+          className="btn"
+          style={{
+            background: activeTab === 'checkin' ? 'var(--color-primary)' : 'transparent',
+            color: activeTab === 'checkin' ? 'var(--color-white)' : 'var(--color-text-secondary)',
+            border: 'none',
+            boxShadow: activeTab === 'checkin' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+          }}
         >
           Checkin Logs
         </button>
         <button
           onClick={() => setActiveTab('events')}
-          className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === 'events' ? 'bg-primary text-white shadow-md' : 'text-textSecondary hover:text-white'
-          }`}
+          className="btn"
+          style={{
+            background: activeTab === 'events' ? 'var(--color-primary)' : 'transparent',
+            color: activeTab === 'events' ? 'var(--color-white)' : 'var(--color-text-secondary)',
+            border: 'none',
+            boxShadow: activeTab === 'events' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
+          }}
         >
           System Events
         </button>
       </div>
 
-      <div className="glass-panel overflow-hidden">
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div className="flex justify-center p-12"><RefreshCw className="animate-spin text-primary" size={32} /></div>
+          <div className="flex justify-center p-12">
+            <span className="spinner spinner-lg text-primary" />
+          </div>
         ) : activeTab === 'checkin' ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="table-container">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-white/5 bg-white/5">
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Time</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Account ID</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Status</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Message</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Reward</th>
+                <tr>
+                  <th>Time</th>
+                  <th>Account ID</th>
+                  <th>Status</th>
+                  <th>Message</th>
+                  <th>Reward</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody>
                 {logs.map((log, i) => (
-                  <tr key={i} className="hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-4 text-sm whitespace-nowrap text-textSecondary">
+                  <tr key={i}>
+                    <td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                       {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
                     </td>
-                    <td className="px-6 py-4 text-sm">#{log.account_id}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {log.status === 'success' ? <CheckCircle2 size={16} className="text-success" /> :
-                         log.status === 'failed' ? <XCircle size={16} className="text-error" /> :
-                         <History size={16} className="text-textSecondary" />}
-                        <span className="text-sm capitalize">{log.status}</span>
+                    <td>#{log.account_id}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {log.status === 'success' ? <CheckCircle2 size={16} color="var(--color-success)" /> :
+                         log.status === 'failed' ? <XCircle size={16} color="var(--color-danger)" /> :
+                         <History size={16} color="var(--color-text-secondary)" />}
+                        <span style={{ textTransform: 'capitalize', fontSize: 13 }}>{log.status}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-textSecondary max-w-md truncate" title={log.message}>{log.message}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-accent">{log.reward}</td>
+                    <td style={{ maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={log.message}>{log.message}</td>
+                    <td style={{ fontWeight: 500, color: 'var(--color-primary)' }}>{log.reward}</td>
                   </tr>
                 ))}
                 {logs.length === 0 && (
-                  <tr><td colSpan={5} className="px-6 py-12 text-center text-textSecondary">No checkin logs found.</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>No checkin logs found.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="table-container">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-white/5 bg-white/5">
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Time</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Type</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Title</th>
-                  <th className="px-6 py-4 text-sm font-medium text-textSecondary">Message</th>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Message</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody>
                 {events.map((ev, i) => (
-                  <tr key={i} className="hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-4 text-sm whitespace-nowrap text-textSecondary">
+                  <tr key={i}>
+                    <td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                       {format(new Date(ev.created_at), 'MM/dd HH:mm:ss')}
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs px-2 py-1 rounded bg-white/10 text-textSecondary uppercase tracking-wider">{ev.type}</span>
+                    <td>
+                      <span className="badge">{ev.type}</span>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {ev.level === 'error' ? <AlertCircle size={16} className="text-error" /> : <Info size={16} className="text-primary" />}
-                        <span className="text-sm font-medium">{ev.title}</span>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {ev.level === 'error' ? <AlertCircle size={16} color="var(--color-danger)" /> : <Info size={16} color="var(--color-primary)" />}
+                        <span style={{ fontWeight: 500 }}>{ev.title}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-textSecondary max-w-md truncate" title={ev.message}>{ev.message}</td>
+                    <td style={{ maxWidth: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={ev.message}>{ev.message}</td>
                   </tr>
                 ))}
                 {events.length === 0 && (
-                  <tr><td colSpan={4} className="px-6 py-12 text-center text-textSecondary">No events found.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>No events found.</td></tr>
                 )}
               </tbody>
             </table>

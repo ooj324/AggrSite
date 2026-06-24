@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { SchedulerStatus } from '../api';
-import { Play, RefreshCw, Clock, Activity, Users, Database } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function Dashboard() {
@@ -59,63 +58,99 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><RefreshCw className="animate-spin text-primary" size={32} /></div>;
+  if (loading) {
+    return (
+      <div className="animate-fade-in" style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+        <span className="spinner spinner-lg text-primary" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <div className="flex gap-3">
-          <button onClick={handleRunAllCheckins} disabled={actionLoading} className="btn-primary flex items-center gap-2 bg-accent hover:bg-accent/80 shadow-accent/20">
-            <Play size={18} />
+    <div className="animate-fade-in">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h2 className="greeting">
+          Dashboard
+        </h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleRunAllCheckins} disabled={actionLoading} className="btn btn-primary">
             Run Checkins
           </button>
-          <button onClick={handleRefreshAllBalances} disabled={actionLoading} className="btn-primary flex items-center gap-2">
-            <RefreshCw size={18} className={actionLoading ? 'animate-spin' : ''} />
-            Refresh Balances
+          <button onClick={handleRefreshAllBalances} disabled={actionLoading} className="btn btn-soft-primary">
+            {actionLoading ? 'Refreshing...' : 'Refresh Balances'}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Sites" value={stats.sites} icon={Database} color="text-blue-500" bg="bg-blue-500/10" />
-        <StatCard title="Total Accounts" value={stats.accounts} icon={Users} color="text-green-500" bg="bg-green-500/10" />
-        <StatCard 
-          title="Next Checkin" 
-          value={status?.next_checkin ? format(new Date(status.next_checkin), 'HH:mm') : 'None'} 
-          subtitle={status?.checkin_cron}
-          icon={Clock} color="text-accent" bg="bg-accent/10" 
-        />
-        <StatCard 
-          title="Scheduler" 
-          value={status?.running ? 'Running' : 'Stopped'} 
-          icon={Activity} 
-          color={status?.running ? "text-success" : "text-error"} 
-          bg={status?.running ? "bg-success/10" : "bg-error/10"} 
-        />
-      </div>
+      <div className="dashboard-stat-grid">
+        <div className="stat-card animate-slide-up stagger-1">
+          <div className="stat-card-header">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+            </svg>
+            System Data
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-blue">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">Total Sites</div>
+              <div className="stat-value animate-count-up">{stats.sites}</div>
+            </div>
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-green">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">Total Accounts</div>
+              <div className="stat-value animate-count-up">{stats.accounts}</div>
+            </div>
+          </div>
+        </div>
 
-      <div className="glass-panel p-6">
-        <h2 className="text-xl font-semibold mb-4">System Overview</h2>
-        <p className="text-textSecondary">
-          AggrSite is operating normally. You have {stats.accounts} active accounts across {stats.sites} platforms.
-          The automated check-in and balance refresh jobs are scheduled.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, subtitle, icon: Icon, color, bg }: any) {
-  return (
-    <div className="glass-card p-6 flex items-center gap-4">
-      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${bg} ${color}`}>
-        <Icon size={28} />
-      </div>
-      <div>
-        <p className="text-sm font-medium text-textSecondary">{title}</p>
-        <p className="text-2xl font-bold text-white">{value}</p>
-        {subtitle && <p className="text-xs text-textSecondary mt-1">{subtitle}</p>}
+        <div className="stat-card animate-slide-up stagger-2">
+          <div className="stat-card-header">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Scheduler
+          </div>
+          <div className="stat-card-row">
+            <div className={`stat-icon ${status?.running ? 'stat-icon-green' : 'stat-icon-red'}`}>
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">Status</div>
+              <div className="stat-value animate-count-up" style={{ fontSize: 16 }}>
+                {status?.running ? 'Running' : 'Stopped'}
+              </div>
+            </div>
+          </div>
+          <div className="stat-card-row">
+            <div className="stat-icon stat-icon-yellow">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="dashboard-stat-content">
+              <div className="stat-label">Next Checkin</div>
+              <div className="stat-value animate-count-up" style={{ fontSize: 16 }}>
+                {status?.next_checkin ? format(new Date(status.next_checkin), 'HH:mm') : 'None'}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2 }}>
+                Cron: {status?.checkin_cron}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

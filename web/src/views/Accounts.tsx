@@ -60,61 +60,65 @@ export default function Accounts() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Accounts</h1>
-        <button onClick={() => openEdit()} className="btn-primary flex items-center gap-2">
-          <Plus size={18} /> Add Account
-        </button>
+    <div className="animate-fade-in">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h2 className="greeting">Accounts</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => openEdit()} className="btn btn-primary">
+            <Plus size={18} /> Add Account
+          </button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center p-12"><RefreshCw className="animate-spin text-primary" size={32} /></div>
+        <div className="flex justify-center p-12">
+          <span className="spinner spinner-lg text-primary" />
+        </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
           {accounts.map(acc => (
-            <div key={acc.id} className="glass-card p-5 group flex flex-col">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-green-500/10 text-green-500 flex items-center justify-center">
+            <div key={acc.id} className="card p-5 group flex flex-col" style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-success-soft)', color: 'var(--color-success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Users size={20} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-white">{acc.username || `Account #${acc.id}`}</h3>
-                    <span className="text-xs text-textSecondary">{acc.site_name}</span>
+                    <h3 style={{ fontWeight: 600, fontSize: 16, margin: 0 }}>{acc.username || `Account #${acc.id}`}</h3>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{acc.site_name}</span>
                   </div>
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="p-1.5 text-textSecondary hover:text-accent bg-white/5 rounded-lg hover:bg-accent/10" title="Checkin">
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-primary)' }} title="Checkin">
                     <Play size={16} className={actionLoading === acc.id ? 'animate-pulse' : ''} />
                   </button>
-                  <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="p-1.5 text-textSecondary hover:text-blue-500 bg-white/5 rounded-lg hover:bg-blue-500/10" title="Refresh Balance">
+                  <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-info)' }} title="Refresh Balance">
                     <RefreshCw size={16} className={actionLoading === acc.id ? 'animate-spin' : ''} />
                   </button>
-                  <button onClick={() => openEdit(acc)} className="p-1.5 text-textSecondary hover:text-white bg-white/5 rounded-lg hover:bg-white/10">
+                  <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
                     <Edit2 size={16} />
                   </button>
-                  <button onClick={() => handleDelete(acc.id)} className="p-1.5 text-textSecondary hover:text-error bg-white/5 rounded-lg hover:bg-error/10">
+                  <button onClick={() => handleDelete(acc.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 my-4 flex-1">
-                <div className="bg-black/20 rounded-lg p-3">
-                  <p className="text-xs text-textSecondary mb-1">Balance</p>
-                  <p className="text-lg font-bold text-white">${acc.balance?.toFixed(2) || '0.00'}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '12px 0', flex: 1 }}>
+                <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Balance</p>
+                  <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance?.toFixed(2) || '0.00'}</p>
                 </div>
-                <div className="bg-black/20 rounded-lg p-3">
-                  <p className="text-xs text-textSecondary mb-1">Usage</p>
-                  <p className="text-lg font-bold text-white">${acc.balance_used?.toFixed(2) || '0.00'}</p>
+                <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Usage</p>
+                  <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance_used?.toFixed(2) || '0.00'}</p>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-auto pt-4 border-t border-white/5 text-xs text-textSecondary">
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${acc.status === 'active' ? 'bg-success' : 'bg-error'}`} />
-                  <span className="capitalize">{acc.status}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: acc.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
+                  <span style={{ textTransform: 'capitalize' }}>{acc.status}</span>
                 </div>
                 <div>
                   Last Ref: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : 'Never'}
@@ -123,7 +127,7 @@ export default function Accounts() {
             </div>
           ))}
           {accounts.length === 0 && (
-            <div className="col-span-full text-center p-12 text-textSecondary glass-panel">
+            <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
               No accounts found. Add one to get started.
             </div>
           )}
@@ -172,48 +176,47 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="glass-panel w-full max-w-md p-6 relative animate-slide-up">
-        <button onClick={onClose} className="absolute top-4 right-4 text-textSecondary hover:text-white">
+    <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+      <div className="card animate-scale-in" style={{ width: '100%', maxWidth: 440, padding: 24, position: 'relative' }}>
+        <button onClick={onClose} className="btn btn-ghost" style={{ position: 'absolute', top: 16, right: 16, padding: 6, minWidth: 'auto' }}>
           <X size={20} />
         </button>
-        <h2 className="text-2xl font-bold mb-6">{account ? 'Edit Account' : 'Add Account'}</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{account ? 'Edit Account' : 'Add Account'}</h2>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Site</label>
-            <select className="input-field appearance-none" value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
-              {sites.map((s: Site) => <option key={s.id} value={s.id} className="bg-surface">{s.name}</option>)}
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Site</label>
+            <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
+              {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Username (optional)</label>
-            <input type="text" className="input-field" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Username (optional)</label>
+            <input type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Access Token</label>
-            <input required type="text" className="input-field" value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Access Token</label>
+            <input required type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-textSecondary mb-1">Status</label>
-            <select className="input-field appearance-none" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-              <option value="active" className="bg-surface">Active</option>
-              <option value="disabled" className="bg-surface">Disabled</option>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Status</label>
+            <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
             </select>
           </div>
-          <div className="flex items-center gap-2 pt-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <input 
               type="checkbox" 
               id="checkin_enabled"
               checked={formData.checkin_enabled} 
               onChange={e => setFormData({...formData, checkin_enabled: e.target.checked})}
-              className="w-4 h-4 rounded border-white/10 bg-black/20 text-primary focus:ring-primary focus:ring-offset-0"
             />
-            <label htmlFor="checkin_enabled" className="text-sm font-medium text-textPrimary">Enable Auto Check-in</label>
+            <label htmlFor="checkin_enabled" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Enable Auto Check-in</label>
           </div>
-          <div className="pt-4 flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={loading} className="btn-primary">
+          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="submit" disabled={loading} className="btn btn-primary">
               {loading ? 'Saving...' : 'Save'}
             </button>
           </div>

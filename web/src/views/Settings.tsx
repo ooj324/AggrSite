@@ -54,80 +54,84 @@ export default function Settings() {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><RefreshCw className="animate-spin text-primary" size={32} /></div>;
+  if (loading) return (
+    <div className="flex justify-center p-12">
+      <span className="spinner spinner-lg text-primary" />
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">System Settings</h1>
+    <div className="animate-fade-in">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h2 className="greeting">System Settings</h2>
       </div>
 
-      <div className="glass-panel p-6 max-w-2xl">
-        <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-4">
-          <div className="w-10 h-10 rounded-xl bg-accent/20 text-accent flex items-center justify-center">
-            <SettingsIcon size={24} />
+      <div className="card" style={{ maxWidth: 600, padding: 24, marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <SettingsIcon size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-semibold">Scheduler Configuration</h2>
-            <p className="text-sm text-textSecondary">Configure cron expressions for background jobs.</p>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Scheduler Configuration</h2>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>Configure cron expressions for background jobs.</p>
           </div>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-6">
+        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div>
-            <label className="block text-sm font-medium text-textPrimary mb-1">Check-in Cron Expression</label>
-            <p className="text-xs text-textSecondary mb-2">Controls how often automated check-ins run. Empty means disabled.</p>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Check-in Cron Expression</label>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>Controls how often automated check-ins run. Empty means disabled.</p>
             <input 
               type="text" 
-              className="input-field font-mono" 
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontFamily: 'monospace' }} 
               placeholder="e.g. 0 8 * * *" 
               value={formData.CHECKIN_CRON} 
               onChange={e => setFormData({...formData, CHECKIN_CRON: e.target.value})} 
             />
             {status?.next_checkin && (
-              <p className="text-xs text-success mt-2">Next Run: {new Date(status.next_checkin).toLocaleString()}</p>
+              <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 8 }}>Next Run: {new Date(status.next_checkin).toLocaleString()}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-textPrimary mb-1">Balance Refresh Cron Expression</label>
-            <p className="text-xs text-textSecondary mb-2">Controls how often account balances are synced. Empty means disabled.</p>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Balance Refresh Cron Expression</label>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>Controls how often account balances are synced. Empty means disabled.</p>
             <input 
               type="text" 
-              className="input-field font-mono" 
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontFamily: 'monospace' }} 
               placeholder="e.g. 0 * * * *" 
               value={formData.BALANCE_REFRESH_CRON} 
               onChange={e => setFormData({...formData, BALANCE_REFRESH_CRON: e.target.value})} 
             />
             {status?.next_balance_refresh && (
-              <p className="text-xs text-success mt-2">Next Run: {new Date(status.next_balance_refresh).toLocaleString()}</p>
+              <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 8 }}>Next Run: {new Date(status.next_balance_refresh).toLocaleString()}</p>
             )}
           </div>
 
-          <div className="pt-4 flex justify-end">
-            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
-              {saving ? <RefreshCw className="animate-spin" size={18} /> : <Save size={18} />}
+          <div style={{ paddingTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="submit" disabled={saving} className="btn btn-primary" style={{ gap: 8 }}>
+              {saving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
               {saving ? 'Saving...' : 'Save & Reload'}
             </button>
           </div>
         </form>
       </div>
 
-      <div className="glass-panel p-6 max-w-2xl">
-        <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-4">
-          <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
-            <SettingsIcon size={24} />
+      <div className="card" style={{ maxWidth: 600, padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-info-light)', color: 'var(--color-info)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <SettingsIcon size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-semibold">Data Management</h2>
-            <p className="text-sm text-textSecondary">Export your current database or import from a backup (supports V2 Legacy & AggrSite formats).</p>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Data Management</h2>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>Export or import from a backup.</p>
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div>
-            <h3 className="text-md font-medium text-textPrimary">Export Database</h3>
-            <p className="text-xs text-textSecondary mb-3">Download a JSON file containing all Sites and Accounts.</p>
+            <h3 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>Export Database</h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>Download a JSON file containing all Sites and Accounts.</p>
             <button 
               onClick={() => {
                 const url = api.defaults.baseURL ? api.defaults.baseURL + '/api/backup/export' : '/api/backup/export';
@@ -136,20 +140,20 @@ export default function Settings() {
                 a.download = 'aggrsite-backup.json';
                 a.click();
               }}
-              className="btn-secondary text-sm"
+              className="btn btn-secondary"
             >
               Export to JSON
             </button>
           </div>
 
-          <div className="pt-4 border-t border-white/5">
-            <h3 className="text-md font-medium text-textPrimary">Import Database</h3>
-            <p className="text-xs text-textSecondary mb-3">Upload a JSON backup to restore or migrate data. Duplicates are merged based on URLs/Usernames.</p>
-            <div className="flex gap-2 items-center">
+          <div style={{ paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>Import Database</h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>Upload a JSON backup to restore or migrate data.</p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input 
                 type="file" 
                 id="backup-upload"
-                className="hidden"
+                style={{ display: 'none' }}
                 accept=".json"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
@@ -174,7 +178,7 @@ export default function Settings() {
               <button 
                 onClick={() => document.getElementById('backup-upload')?.click()}
                 disabled={saving}
-                className="btn-primary text-sm"
+                className="btn btn-primary"
               >
                 Select Backup File
               </button>
