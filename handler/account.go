@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"metapi/aggrsite/db"
 	"metapi/aggrsite/platform"
 	"metapi/aggrsite/service"
@@ -9,6 +10,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+func getRequestOption(site *db.Site) *platform.RequestOption {
+	return &platform.RequestOption{
+		ProxyURL:       site.ProxyURL,
+		UseSystemProxy: site.UseSystemProxy,
+		CustomHeaders:  site.CustomHeaders,
+	}
+}
 
 func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	var input struct {
