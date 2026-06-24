@@ -1,0 +1,30 @@
+databases:
+  - name: aggrsite-db
+    databaseName: aggrsite
+    user: aggrsite_user
+    plan: free
+
+services:
+  - type: web
+    name: aggrsite
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: AUTH_TOKEN
+        sync: false
+      - key: TZ
+        value: Asia/Shanghai
+      - key: PORT
+        value: "4000"
+      - key: DB_URL
+        fromDatabase:
+          name: aggrsite-db
+          property: connectionString
+      - key: CHECKIN_CRON
+        value: "0 8 * * *"
+      - key: BALANCE_REFRESH_CRON
+        value: "0 * * * *"
+      - key: DATA_DIR
+        value: "/app/data"

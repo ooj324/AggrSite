@@ -1,0 +1,21 @@
+# Binaries
+aggrsite
+aggrsite.exe
+
+# Database and data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.*
+
+# Frontend build artifacts & dependencies
+web/node_modules/
+web/dist/
+web/.npm/
+
+# Go
+vendor/
