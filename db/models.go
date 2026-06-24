@@ -191,11 +191,14 @@ func GetAccountBySiteAndUsername(siteID int64, username string) (*Account, error
 }
 
 type CreateAccountInput struct {
-	SiteID         int64  `json:"site_id"`
-	Username       string `json:"username"`
-	AccessToken    string `json:"access_token"`
-	ApiToken       string `json:"api_token"`
-	CheckinEnabled bool   `json:"checkin_enabled"`
+	SiteID         int64   `json:"site_id"`
+	Username       string  `json:"username"`
+	AccessToken    string  `json:"access_token"`
+	ApiToken       string  `json:"api_token"`
+	CheckinEnabled bool    `json:"checkin_enabled"`
+	PlatformUserID *int64  `json:"platformUserId"`
+	CredentialMode string  `json:"credentialMode"`
+	SkipModelFetch bool    `json:"skipModelFetch"`
 }
 
 func CreateAccount(in CreateAccountInput) (int64, error) {
@@ -204,14 +207,29 @@ func CreateAccount(in CreateAccountInput) (int64, error) {
 	if !in.CheckinEnabled {
 		enabled = 0
 	}
+	
+	extraConfig := map[string]interface{}{}
+	if in.CredentialMode != "" {
+		extraConfig["credentialMode"] = in.CredentialMode
+	}
+	if in.PlatformUserID != nil {
+		extraConfig["platformUserId"] = *in.PlatformUserID
+	}
+	var extraConfigStr *string
+	if len(extraConfig) > 0 {
+		bs, _ := json.Marshal(extraConfig)
+		s := string(bs)
+		extraConfigStr = &s
+	}
+
 	if driverName == "postgres" {
 		var id int64
-		err := DB.QueryRowx(DB.Rebind(`INSERT INTO accounts (site_id, username, access_token, api_token, checkin_enabled, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?) RETURNING id`),
-			in.SiteID, nilIfEmpty(in.Username), in.AccessToken, nilIfEmpty(in.ApiToken), in.CheckinEnabled, now, now).Scan(&id)
+		err := DB.QueryRowx(DB.Rebind(`INSERT INTO accounts (site_id, username, access_token, api_token, checkin_enabled, status, extra_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?) RETURNING id`),
+			in.SiteID, nilIfEmpty(in.Username), in.AccessToken, nilIfEmpty(in.ApiToken), in.CheckinEnabled, extraConfigStr, now, now).Scan(&id)
 		return id, err
 	}
-	res, err := Exec(`INSERT INTO accounts (site_id, username, access_token, api_token, checkin_enabled, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-		in.SiteID, nilIfEmpty(in.Username), in.AccessToken, nilIfEmpty(in.ApiToken), enabled, now, now)
+	res, err := Exec(`INSERT INTO accounts (site_id, username, access_token, api_token, checkin_enabled, status, extra_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+		in.SiteID, nilIfEmpty(in.Username), in.AccessToken, nilIfEmpty(in.ApiToken), enabled, extraConfigStr, now, now)
 	if err != nil {
 		return 0, err
 	}

@@ -34,10 +34,12 @@ func MountRoutes(r chi.Router) {
 		// Accounts
 		r.Get("/api/accounts", ListAccounts)
 		r.Post("/api/accounts", CreateAccount)
+		r.Post("/api/accounts/verify-token", VerifyToken)
 		r.Post("/api/accounts/login", LoginAccount)
 		r.Get("/api/accounts/{id}", GetAccount)
 		r.Put("/api/accounts/{id}", UpdateAccount)
 		r.Delete("/api/accounts/{id}", DeleteAccount)
+		r.Post("/api/accounts/{id}/rebind-session", RebindSession)
 
 		// Account Tokens
 		r.Get("/api/accounts/{id}/tokens", ListAccountTokens)

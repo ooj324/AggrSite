@@ -127,7 +127,15 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger balance refresh asynchronously
 	go func() {
-		_, _ = service.RefreshBalance(accountID)
+		// refresh balance
+		service.RefreshBalance(accountID)
+		
+		// sync tokens
+		if tokens, err := adapter.GetApiTokens(site.URL, loginResult.AccessToken, 0, opt); err == nil {
+			for _, t := range tokens {
+				db.CreateAccountToken(accountID, t.Name, t.Key)
+			}
+		}
 	}()
 
 	account, _ := db.GetAccount(accountID)

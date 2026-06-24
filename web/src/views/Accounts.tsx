@@ -4,6 +4,20 @@ import type { Account, Site } from '../api';
 import { Plus, Edit2, Trash2, X } from 'lucide-react';
 import { format } from 'date-fns';
 
+const parseAccountExtraConfig = (account: any): Record<string, any> => {
+  try {
+    return JSON.parse(account?.extra_config || "{}") || {};
+  } catch {
+    return {};
+  }
+};
+
+const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
+  if (account?.api_token) return 'apikey';
+  if (typeof account?.access_token === 'string' && account.access_token.trim()) return 'session';
+  return 'apikey';
+};
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -41,11 +55,17 @@ export default function Accounts() {
     }
   };
 
-  const handleAction = async (id: number, type: 'checkin' | 'refresh') => {
+  const handleAction = async (id: number, type: 'checkin' | 'refresh' | 'toggle-checkin') => {
     setActionLoading(id);
     try {
       if (type === 'checkin') await api.post(`/api/checkin/${id}`);
       if (type === 'refresh') await api.post(`/api/balance/refresh/${id}`);
+      if (type === 'toggle-checkin') {
+        const acc = accounts.find(a => a.id === id);
+        if (acc) {
+          await api.put(`/api/accounts/${id}`, { checkin_enabled: !acc.checkin_enabled });
+        }
+      }
       loadData();
     } catch (err: any) {
       alert(`错误: ${err}`);
@@ -92,7 +112,7 @@ export default function Accounts() {
                     <th>运行健康状态</th>
                     <th>余额</th>
                     <th>已用</th>
-                    <th>签到</th>
+                    <th>签到信息</th>
                     <th style={{ textAlign: 'right' }}>操作</th>
                   </tr>
                 </thead>
@@ -103,14 +123,37 @@ export default function Accounts() {
                         <div style={{ fontWeight: 600 }}>
                           {acc.username || `Account #${acc.id}`}
                         </div>
+                        <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                          <span
+                            className={`badge ${resolveAccountCredentialMode(acc) === "apikey" ? "badge-warning" : "badge-info"}`}
+                            style={{ fontSize: 10 }}
+                          >
+                            {resolveAccountCredentialMode(acc) === "apikey"
+                              ? "API Key"
+                              : "Session"}
+                          </span>
+                          {parseAccountExtraConfig(acc)?.proxyUrl && (
+                            <span
+                              className="badge badge-purple"
+                              style={{ fontSize: 10 }}
+                            >
+                              代理
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         <span className="badge badge-muted">{acc.site_name || sites.find(s => s.id === acc.site_id)?.name || `Site #${acc.site_id}`}</span>
                       </td>
                       <td>
-                        <span className={`badge ${acc.status === 'active' ? 'badge-success' : 'badge-error'}`}>
-                          {acc.status === 'active' ? '正常' : '禁用'}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                          <span className={`badge ${acc.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                            {acc.status === 'active' ? '正常' : '禁用'}
+                          </span>
+                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary" style={{ padding: 0, fontSize: 12 }}>
+                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '刷新余额'}
+                          </button>
+                        </div>
                       </td>
                       <td style={{ fontVariantNumeric: "tabular-nums" }}>
                         <div style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
@@ -121,20 +164,37 @@ export default function Accounts() {
                         <div>${(acc.balance_used || 0).toFixed(2)}</div>
                       </td>
                       <td>
-                        <span className={`checkin-toggle-badge ${acc.checkin_enabled ? "is-on" : "is-off"}`}>
-                          {acc.checkin_enabled ? "ON" : "OFF"}
-                        </span>
-                        <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
-                          {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : '从未'}
+                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                          {acc.last_checkin_at ? (
+                            <>
+                              <div style={{ color: 'var(--color-success)', fontWeight: 500 }}>签到成功</div>
+                              <div>{format(new Date(acc.last_checkin_at), 'yyyy-MM-dd HH:mm')}</div>
+                            </>
+                          ) : (
+                            <div style={{ color: 'var(--color-text-muted)' }}>暂无签到记录</div>
+                          )}
                         </div>
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
-                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-warning">
-                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '签到'}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+                          <button
+                            type="button"
+                            className={`checkin-toggle-badge ${acc.checkin_enabled ? "is-on" : "is-off"}`}
+                            onClick={() => handleAction(acc.id, 'toggle-checkin')}
+                            disabled={actionLoading === acc.id}
+                            style={{ transform: 'scale(0.85)', transformOrigin: 'right center' }}
+                            title={acc.checkin_enabled ? '已开启自动签到' : '已关闭自动签到'}
+                          >
+                            {actionLoading === acc.id ? (
+                              <span className="spinner spinner-sm" />
+                            ) : acc.checkin_enabled ? (
+                              <span className="status-label">自动签到ON</span>
+                            ) : (
+                              <span className="status-label">自动签到OFF</span>
+                            )}
                           </button>
-                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary">
-                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '刷新'}
+                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-warning" style={{ padding: '0 4px' }}>
+                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '手动签到'}
                           </button>
                           <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
                             <Edit2 size={16} />
@@ -182,10 +242,49 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     password: '',
     access_token: account?.access_token || '',
     api_token: account?.api_token || '',
+    platform_user_id: account?.extra_config?.platformUserId || '',
     status: account?.status || 'active',
     checkin_enabled: account?.checkin_enabled ?? true,
+    credential_mode: account?.extra_config?.credentialMode || 'session',
   });
   const [loading, setLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<any>(null);
+
+  const handleVerify = async () => {
+    if (!formData.access_token) {
+      alert('请先输入 Access Token');
+      return;
+    }
+    setVerifyLoading(true);
+    try {
+      const res = await api.post('/api/accounts/verify-token', {
+        siteId: Number(formData.site_id),
+        accessToken: formData.access_token,
+        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0
+      });
+      setVerifyResult(res.data);
+      if (res.data.tokenType === 'session') {
+        setFormData(prev => ({ 
+          ...prev, 
+          username: prev.username || res.data.userInfo?.username || '',
+          api_token: prev.api_token || res.data.apiToken || '',
+          credential_mode: 'session'
+        }));
+      } else if (res.data.tokenType === 'apikey') {
+        setFormData(prev => ({ 
+          ...prev, 
+          credential_mode: 'apikey'
+        }));
+      }
+      alert(`验证成功！类型: ${res.data.tokenType}`);
+    } catch (err: any) {
+      alert(`验证失败: ${err}`);
+      setVerifyResult(null);
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,13 +304,21 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         }
       } else {
         // Token mode
+        const payload = {
+          site_id: Number(formData.site_id),
+          username: formData.username,
+          access_token: formData.access_token,
+          api_token: formData.api_token,
+          checkin_enabled: formData.checkin_enabled,
+          status: formData.status,
+          platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
+          credentialMode: formData.credential_mode
+        };
+        
         if (account) {
-          await api.put(`/api/accounts/${account.id}`, formData);
+          await api.put(`/api/accounts/${account.id}`, payload);
         } else {
-          await api.post('/api/accounts', {
-            ...formData,
-            site_id: Number(formData.site_id)
-          });
+          await api.post('/api/accounts', payload);
         }
       }
       onSaved();
@@ -265,8 +372,13 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
                 <input required type="password" style={inputStyle} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="密码" />
               ) : (
                 <>
-                  <input required type="text" style={inputStyle} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token" />
-                  <input type="text" style={inputStyle} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选)" />
+                  <input required type="text" style={inputStyle} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
+                  <input type="text" style={inputStyle} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
+                  <input type="number" style={inputStyle} value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
+                  <select style={inputStyle} value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
+                    <option value="session">模式: Session (支持签到)</option>
+                    <option value="apikey">模式: API Key (仅代理)</option>
+                  </select>
                 </>
               )}
 
@@ -295,6 +407,11 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         </div>
         
         <div className="modal-footer">
+          {mode === 'token' && !account && (
+            <button type="button" onClick={handleVerify} disabled={verifyLoading} className="btn btn-ghost" style={{ marginRight: 'auto', color: 'var(--color-primary)' }}>
+              {verifyLoading ? '验证中...' : '验证 Token'}
+            </button>
+          )}
           <button type="button" onClick={onClose} className="btn btn-ghost">取消</button>
           <button type="submit" form="account-form" disabled={loading} className="btn btn-primary">
             {loading ? '保存中...' : '保存'}

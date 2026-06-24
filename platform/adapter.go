@@ -35,6 +35,31 @@ type LoginResult struct {
 	Username    string `json:"username"`
 }
 
+// UserInfo holds user information from upstream.
+type UserInfo struct {
+	Username    string `json:"username,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Role        int    `json:"role,omitempty"`
+}
+
+// VerifyTokenResult holds the verification result.
+type VerifyTokenResult struct {
+	TokenType string       `json:"tokenType"` // "session", "apikey", "unknown"
+	UserInfo  *UserInfo    `json:"userInfo,omitempty"`
+	Balance   *BalanceInfo `json:"balance,omitempty"`
+	ApiToken  string       `json:"apiToken,omitempty"`
+	Models    []string     `json:"models,omitempty"`
+}
+
+// ApiTokenInfo holds information about a single upstream API token.
+type ApiTokenInfo struct {
+	Name       string `json:"name"`
+	Key        string `json:"key"`
+	Enabled    bool   `json:"enabled"`
+	TokenGroup string `json:"tokenGroup,omitempty"`
+}
+
 type RequestOption struct {
 	ProxyURL       *string
 	UseSystemProxy *bool
@@ -48,6 +73,9 @@ type Adapter interface {
 	GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error)
 	Login(baseURL, username, password string, opt *RequestOption) (*LoginResult, error)
 	GetApiToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error)
+	GetApiTokens(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error)
+	GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error)
+	VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error)
 }
 
 // BaseAdapter provides shared HTTP helpers.
@@ -57,6 +85,52 @@ type BaseAdapter struct {
 
 func (b *BaseAdapter) PlatformName() string {
 	return b.Name
+}
+
+// buildTransport creates an http.Transport with proxy settings from opt.
+func buildTransport(opt *RequestOption) *http.Transport {
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment, // default
+	}
+
+	if opt == nil {
+		return transport
+	}
+
+	if opt.ProxyURL != nil && *opt.ProxyURL != "" {
+		proxy, err := url.Parse(*opt.ProxyURL)
+		if err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+		}
+	} else if opt.UseSystemProxy != nil && *opt.UseSystemProxy {
+		systemProxy := config.C.SystemProxyURL
+		if dbSetting, err := db.GetSetting("system_proxy_url"); err == nil && dbSetting.Value != nil && *dbSetting.Value != "" {
+			systemProxy = strings.Trim(*dbSetting.Value, `"`)
+		}
+		if systemProxy != "" {
+			proxy, err := url.Parse(systemProxy)
+			if err == nil {
+				transport.Proxy = http.ProxyURL(proxy)
+			}
+		}
+	} else if opt.UseSystemProxy != nil && !*opt.UseSystemProxy {
+		transport.Proxy = nil // explicit no proxy
+	}
+
+	return transport
+}
+
+// applyCustomHeaders parses and applies custom headers from opt onto req.
+func applyCustomHeaders(req *http.Request, opt *RequestOption) {
+	if opt == nil || opt.CustomHeaders == nil || *opt.CustomHeaders == "" {
+		return
+	}
+	var custom map[string]string
+	if err := json.Unmarshal([]byte(*opt.CustomHeaders), &custom); err == nil {
+		for k, v := range custom {
+			req.Header.Set(k, v)
+		}
+	}
 }
 
 // FetchJSON makes a JSON request and decodes response.
@@ -79,45 +153,11 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment, // default
-	}
-
-	if opt != nil {
-		if opt.CustomHeaders != nil && *opt.CustomHeaders != "" {
-			var custom map[string]string
-			if err := json.Unmarshal([]byte(*opt.CustomHeaders), &custom); err == nil {
-				for k, v := range custom {
-					req.Header.Set(k, v)
-				}
-			}
-		}
-
-		if opt.ProxyURL != nil && *opt.ProxyURL != "" {
-			proxy, err := url.Parse(*opt.ProxyURL)
-			if err == nil {
-				transport.Proxy = http.ProxyURL(proxy)
-			}
-		} else if opt.UseSystemProxy != nil && *opt.UseSystemProxy {
-			systemProxy := config.C.SystemProxyURL
-			if dbSetting, err := db.GetSetting("system_proxy_url"); err == nil && dbSetting.Value != nil && *dbSetting.Value != "" {
-				systemProxy = strings.Trim(*dbSetting.Value, `"`)
-			}
-			if systemProxy != "" {
-				proxy, err := url.Parse(systemProxy)
-				if err == nil {
-					transport.Proxy = http.ProxyURL(proxy)
-				}
-			}
-		} else if opt.UseSystemProxy != nil && !*opt.UseSystemProxy {
-			transport.Proxy = nil // explicit no proxy
-		}
-	}
+	applyCustomHeaders(req, opt)
 
 	client := &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: transport,
+		Transport: buildTransport(opt),
 	}
 
 	resp, err := client.Do(req)
@@ -220,59 +260,163 @@ func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOpti
 
 // GetApiToken fetches the first enabled API token.
 func (b *BaseAdapter) GetApiToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
-	url := fmt.Sprintf("%s/api/token/?p=0&size=10", baseURL)
+	tokens, err := b.GetApiTokens(baseURL, accessToken, platformUserID, opt)
+	if err != nil {
+		return "", err
+	}
+	for _, t := range tokens {
+		if t.Enabled && t.Key != "" {
+			return t.Key, nil
+		}
+	}
+	if len(tokens) > 0 && tokens[0].Key != "" {
+		return tokens[0].Key, nil
+	}
+	return "", fmt.Errorf("no valid api token found")
+}
+
+func (b *BaseAdapter) GetApiTokens(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error) {
+	url := fmt.Sprintf("%s/api/token/?p=0&size=100", baseURL)
 	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
 	err := b.FetchJSON(url, "GET", headers, nil, &res, opt)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	success, _ := res["success"].(bool)
 	if !success {
-		return "", fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
+		return nil, fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
 	}
 
 	data, _ := res["data"].([]interface{})
-	for _, item := range data {
+	var tokens []ApiTokenInfo
+	for i, item := range data {
 		if m, ok := item.(map[string]interface{}); ok {
-			// Check if enabled or status is 1
 			enabled := false
 			if status, ok := m["status"].(float64); ok && status == 1 {
 				enabled = true
 			} else if e, ok := m["enabled"].(bool); ok && e {
 				enabled = true
-			}
-			// In some platforms, enabled is a boolean, some status is int
-			
-			// Let's just find the first token if we cannot determine status, or if it's enabled
-			// NewAPI uses status=1, OneAPI uses status=1
-			if !enabled {
-			    // fallback if no explicit enabled/status found? We prefer status=1
-			    if _, hasStatus := m["status"]; !hasStatus {
-			        if _, hasEnabled := m["enabled"]; !hasEnabled {
-			            enabled = true // default to true if we can't parse
-			        }
-			    }
-			}
-			
-			if enabled {
-				if key, ok := m["key"].(string); ok && key != "" {
-					return key, nil
+			} else if _, hasStatus := m["status"]; !hasStatus {
+				if _, hasEnabled := m["enabled"]; !hasEnabled {
+					enabled = true
 				}
+			}
+			
+			key, _ := m["key"].(string)
+			name, _ := m["name"].(string)
+			if name == "" {
+				name = fmt.Sprintf("token-%d", i+1)
+			}
+			group := ""
+			if g, ok := m["group"].(string); ok {
+				group = g
+			} else if gn, ok := m["group_name"].(string); ok {
+				group = gn
+			} else if tg, ok := m["token_group"].(string); ok {
+				group = tg
+			}
+
+			if key != "" {
+				tokens = append(tokens, ApiTokenInfo{
+					Name:       name,
+					Key:        key,
+					Enabled:    enabled,
+					TokenGroup: group,
+				})
 			}
 		}
 	}
-	
-	// fallback: just return the first one if we have any but none are clearly enabled
-	if len(data) > 0 {
-	    if m, ok := data[0].(map[string]interface{}); ok {
-	        if key, ok := m["key"].(string); ok && key != "" {
-	            return key, nil
-	        }
-	    }
+
+	return tokens, nil
+}
+
+func (b *BaseAdapter) GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error) {
+	url := fmt.Sprintf("%s/v1/models", baseURL)
+	headers := AuthHeaders(accessToken, platformUserID)
+
+	var res map[string]interface{}
+	err := b.FetchJSON(url, "GET", headers, nil, &res, opt)
+	if err != nil {
+		return nil, err
 	}
 
-	return "", fmt.Errorf("no valid api token found")
+	var models []string
+	if data, ok := res["data"].([]interface{}); ok {
+		for _, item := range data {
+			if m, ok := item.(map[string]interface{}); ok {
+				if id, ok := m["id"].(string); ok && id != "" {
+					models = append(models, id)
+				}
+			}
+		}
+		return models, nil
+	}
+
+	return nil, fmt.Errorf("no models array in response")
+}
+
+func (b *BaseAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
+	// 1. Try session validation: /api/user/self
+	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
+	headers := AuthHeaders(accessToken, platformUserID)
+	
+	var userRes map[string]interface{}
+	err := b.FetchJSON(userURL, "GET", headers, nil, &userRes, opt)
+	if err == nil {
+		success, _ := userRes["success"].(bool)
+		if success {
+			var ui *UserInfo
+			var bi *BalanceInfo
+			if data, ok := userRes["data"].(map[string]interface{}); ok && data != nil {
+				ui = &UserInfo{
+					Username:    fmt.Sprintf("%v", data["username"]),
+					DisplayName: fmt.Sprintf("%v", data["display_name"]),
+					Email:       fmt.Sprintf("%v", data["email"]),
+				}
+				if r, ok := data["role"].(float64); ok {
+					ui.Role = int(r)
+				}
+				
+				divisor := 500000.0
+				quota := 0.0
+				used := 0.0
+				if q, ok := data["quota"].(float64); ok {
+					quota = q / divisor
+				}
+				if u, ok := data["used_quota"].(float64); ok {
+					used = u / divisor
+				}
+				bi = &BalanceInfo{
+					Balance: quota,
+					Used:    used,
+					Quota:   quota + used,
+				}
+			}
+
+			apiToken, _ := b.GetApiToken(baseURL, accessToken, platformUserID, opt)
+
+			return &VerifyTokenResult{
+				TokenType: "session",
+				UserInfo:  ui,
+				Balance:   bi,
+				ApiToken:  apiToken,
+			}, nil
+		}
+	}
+
+	// 2. Try apikey validation: /v1/models
+	models, err := b.GetModels(baseURL, accessToken, platformUserID, opt)
+	if err == nil && len(models) > 0 {
+		return &VerifyTokenResult{
+			TokenType: "apikey",
+			Models:    models,
+		}, nil
+	}
+
+	return &VerifyTokenResult{
+		TokenType: "unknown",
+	}, nil
 }
