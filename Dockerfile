@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build backend
-FROM golang:1.22-alpine AS backend-builder
+FROM golang:1.23-alpine AS backend-builder
 WORKDIR /app
 # Install gcc/musl-dev for cgo (sqlite3)
 RUN apk add --no-cache gcc musl-dev
