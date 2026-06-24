@@ -1,9 +1,3 @@
-databases:
-  - name: aggrsite-db
-    databaseName: aggrsite
-    user: aggrsite_user
-    plan: free
-
 services:
   - type: web
     name: aggrsite
@@ -18,10 +12,10 @@ services:
         value: Asia/Shanghai
       - key: PORT
         value: "4000"
+      - key: DB_TYPE
+        value: sqlite
       - key: DB_URL
-        fromDatabase:
-          name: aggrsite-db
-          property: connectionString
+        sync: false
       - key: CHECKIN_CRON
         value: "0 8 * * *"
       - key: BALANCE_REFRESH_CRON
