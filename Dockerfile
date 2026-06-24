@@ -12,6 +12,8 @@ WORKDIR /app
 # Install gcc/musl-dev for cgo (sqlite3)
 RUN apk add --no-cache gcc musl-dev
 
+ENV GOPROXY=https://goproxy.cn,direct
+
 COPY go.mod go.sum ./
 RUN go mod download
 
