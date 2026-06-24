@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { CheckinLog, Event } from '../api';
-import { RefreshCw, CheckCircle2, XCircle, Info, AlertCircle, History } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function Logs() {
@@ -33,110 +33,136 @@ export default function Logs() {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 className="greeting">日志与事件</h2>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={loadData} className="btn btn-secondary">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} style={{ marginRight: 6 }} /> 
-            刷新
-          </button>
-        </div>
+      <div className="page-header">
+        <h2 className="page-title">日志与事件</h2>
+        <button onClick={loadData} className="btn btn-soft-primary">
+          {loading ? <span className="spinner spinner-sm" style={{ marginRight: 6 }} /> : <RefreshCw size={16} style={{ marginRight: 6 }} />}
+          刷新
+        </button>
       </div>
 
-      <div className="tabs">
+      <div className="pill-tabs" style={{ marginBottom: 16 }}>
         <button
           onClick={() => setActiveTab('checkin')}
-          className={`tab ${activeTab === 'checkin' ? 'active' : ''}`}
+          className={`pill-tab ${activeTab === 'checkin' ? 'active' : ''}`}
         >
-          签到日志
+          签到日志 <span style={{ fontVariantNumeric: "tabular-nums", opacity: 0.7 }}>{logs.length}</span>
         </button>
         <button
           onClick={() => setActiveTab('events')}
-          className={`tab ${activeTab === 'events' ? 'active' : ''}`}
+          className={`pill-tab ${activeTab === 'events' ? 'active' : ''}`}
         >
-          系统事件
+          系统事件 <span style={{ fontVariantNumeric: "tabular-nums", opacity: 0.7 }}>{events.length}</span>
         </button>
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="card" style={{ padding: 0, overflowX: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
         {loading ? (
-          <div className="flex justify-center p-12">
-            <span className="spinner spinner-lg text-primary" />
+          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} style={{ display: "flex", gap: 16 }}>
+                <div className="skeleton" style={{ width: 120, height: 16 }} />
+                <div className="skeleton" style={{ width: 80, height: 16 }} />
+                <div className="skeleton" style={{ width: 120, height: 16 }} />
+                <div className="skeleton" style={{ width: 70, height: 16 }} />
+                <div className="skeleton" style={{ flex: 1, height: 16 }} />
+              </div>
+            ))}
           </div>
         ) : activeTab === 'checkin' ? (
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>账户 ID</th>
-                  <th>状态</th>
-                  <th>消息</th>
-                  <th>奖励</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((log, i) => (
-                  <tr key={i}>
-                    <td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                      {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
-                    </td>
-                    <td>#{log.account_id}</td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {log.status === 'success' ? <CheckCircle2 size={16} color="var(--color-success)" /> :
-                         log.status === 'failed' ? <XCircle size={16} color="var(--color-danger)" /> :
-                         <History size={16} color="var(--color-text-secondary)" />}
-                        <span style={{ fontSize: 13 }}>
+          <>
+            {logs.length > 0 && (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>账户 ID</th>
+                    <th>状态</th>
+                    <th>消息</th>
+                    <th>奖励</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log, i) => (
+                    <tr key={i}>
+                      <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                        {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
+                      </td>
+                      <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>#{log.account_id}</td>
+                      <td>
+                        <span className={`badge ${log.status === 'success' ? 'badge-success' : log.status === 'failed' ? 'badge-error' : 'badge-muted'}`}>
                           {log.status === 'success' ? '成功' : log.status === 'failed' ? '失败' : '待处理'}
                         </span>
-                      </div>
-                    </td>
-                    <td style={{ maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={log.message}>{log.message}</td>
-                    <td style={{ fontWeight: 500, color: 'var(--color-primary)' }}>{log.reward}</td>
-                  </tr>
-                ))}
-                {logs.length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>未找到签到日志。</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+                      <td style={{ maxWidth: 360 }}>
+                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={log.message}>
+                          {log.message}
+                        </span>
+                      </td>
+                      <td>{log.reward || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {logs.length === 0 && (
+              <div className="empty-state">
+                <svg className="empty-state-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="empty-state-title">暂无签到日志</div>
+              </div>
+            )}
+          </>
         ) : (
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>类型</th>
-                  <th>标题</th>
-                  <th>消息</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((ev, i) => (
-                  <tr key={i}>
-                    <td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                      {format(new Date(ev.created_at), 'MM/dd HH:mm:ss')}
-                    </td>
-                    <td>
-                      <span className="badge">{ev.type}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {ev.level === 'error' ? <AlertCircle size={16} color="var(--color-danger)" /> : <Info size={16} color="var(--color-primary)" />}
-                        <span style={{ fontWeight: 500 }}>{ev.title}</span>
-                      </div>
-                    </td>
-                    <td style={{ maxWidth: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={ev.message}>{ev.message}</td>
+          <>
+            {events.length > 0 && (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>类型</th>
+                    <th>级别</th>
+                    <th>标题</th>
+                    <th>消息</th>
                   </tr>
-                ))}
-                {events.length === 0 && (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>未找到事件。</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {events.map((ev, i) => (
+                    <tr key={i}>
+                      <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                        {format(new Date(ev.created_at), 'MM/dd HH:mm:ss')}
+                      </td>
+                      <td>
+                        <span className="badge badge-info">{ev.type}</span>
+                      </td>
+                      <td>
+                        <span className={`badge ${ev.level === 'error' ? 'badge-error' : ev.level === 'warning' ? 'badge-warning' : 'badge-success'}`}>
+                          {ev.level}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                        {ev.title}
+                      </td>
+                      <td style={{ maxWidth: 400 }}>
+                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: 'var(--color-text-secondary)' }} title={ev.message}>
+                          {ev.message}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {events.length === 0 && (
+              <div className="empty-state">
+                <svg className="empty-state-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="empty-state-title">暂无系统事件</div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
