@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus, Edit2, Trash2, Users, RefreshCw, X, Play } from 'lucide-react';
+import { Plus, Edit2, Trash2, X } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function Accounts() {
@@ -87,53 +87,54 @@ export default function Accounts() {
               <table className="data-table accounts-table">
                 <thead>
                   <tr>
-                    <th>账户</th>
+                    <th>连接名称</th>
                     <th>站点</th>
-                    <th>状态</th>
-                    <th>余额 / 总额</th>
-                    <th>上次操作</th>
-                    <th style={{ width: 150, textAlign: 'right' }}>操作</th>
+                    <th>运行健康状态</th>
+                    <th>余额</th>
+                    <th>已用</th>
+                    <th>签到</th>
+                    <th style={{ textAlign: 'right' }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accounts.map(acc => (
-                    <tr key={acc.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Users size={16} color="var(--color-text-secondary)" />
-                          <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{acc.username || `Account #${acc.id}`}</span>
+                    <tr key={acc.id} className="animate-slide-up">
+                      <td style={{ color: "var(--color-text-primary)" }}>
+                        <div style={{ fontWeight: 600 }}>
+                          {acc.username || `Account #${acc.id}`}
                         </div>
                       </td>
                       <td>
-                        <span className="badge badge-muted">{acc.site_name}</span>
+                        <span className="badge badge-muted">{acc.site_name || sites.find(s => s.id === acc.site_id)?.name || `Site #${acc.site_id}`}</span>
                       </td>
                       <td>
                         <span className={`badge ${acc.status === 'active' ? 'badge-success' : 'badge-error'}`}>
-                          {acc.status === 'active' ? '已启用' : '已禁用'}
+                          {acc.status === 'active' ? '正常' : '禁用'}
                         </span>
                       </td>
-                      <td>
-                        <div className="site-balance-inline">
-                          <span className="site-balance-primary">${acc.balance?.toFixed(2) || '0.00'}</span>
-                          <span className="site-balance-divider">/</span>
-                          <span className="site-balance-subscription" title={`已用: $${acc.balance_used?.toFixed(2) || '0.00'}`}>
-                            ${acc.quota?.toFixed(2) || '0.00'}
-                          </span>
+                      <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                        <div style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+                          ${(acc.balance || 0).toFixed(2)}
                         </div>
                       </td>
+                      <td style={{ fontVariantNumeric: "tabular-nums", fontSize: 12 }}>
+                        <div>${(acc.balance_used || 0).toFixed(2)}</div>
+                      </td>
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                          <span>签到: {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : '从未'}</span>
-                          <span>刷新: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : '从未'}</span>
+                        <span className={`checkin-toggle-badge ${acc.checkin_enabled ? "is-on" : "is-off"}`}>
+                          {acc.checkin_enabled ? "ON" : "OFF"}
+                        </span>
+                        <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
+                          {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : '从未'}
                         </div>
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-primary)' }} title="签到">
-                            <Play size={16} className={actionLoading === acc.id ? 'animate-pulse' : ''} />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-warning">
+                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '签到'}
                           </button>
-                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-info)' }} title="刷新余额">
-                            <RefreshCw size={16} className={actionLoading === acc.id ? 'animate-spin' : ''} />
+                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary">
+                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '刷新'}
                           </button>
                           <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
                             <Edit2 size={16} />
