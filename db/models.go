@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"time"
 )
 
@@ -28,14 +27,14 @@ type Site struct {
 	URL                string         `db:"url" json:"url"`
 	Platform           string         `db:"platform" json:"platform"`
 	Status             string         `db:"status" json:"status"`
-	CreatedAt          sql.NullString `db:"created_at" json:"created_at"`
-	UpdatedAt          sql.NullString `db:"updated_at" json:"updated_at"`
-	IsPinned           sql.NullBool   `db:"is_pinned" json:"is_pinned"`
-	SortOrder          sql.NullInt64  `db:"sort_order" json:"sort_order"`
-	ProxyURL           sql.NullString `db:"proxy_url" json:"proxy_url"`
-	UseSystemProxy     sql.NullBool   `db:"use_system_proxy" json:"use_system_proxy"`
-	CustomHeaders      sql.NullString `db:"custom_headers" json:"custom_headers"`
-	ExternalCheckinURL sql.NullString `db:"external_checkin_url" json:"external_checkin_url"`
+	CreatedAt          *string `db:"created_at" json:"created_at"`
+	UpdatedAt          *string `db:"updated_at" json:"updated_at"`
+	IsPinned           *bool   `db:"is_pinned" json:"is_pinned"`
+	SortOrder          *int64  `db:"sort_order" json:"sort_order"`
+	ProxyURL           *string `db:"proxy_url" json:"proxy_url"`
+	UseSystemProxy     *bool   `db:"use_system_proxy" json:"use_system_proxy"`
+	CustomHeaders      *string `db:"custom_headers" json:"custom_headers"`
+	ExternalCheckinURL *string `db:"external_checkin_url" json:"external_checkin_url"`
 }
 
 func ListSites() ([]Site, error) {
@@ -112,21 +111,21 @@ const accountColumns = `id, site_id, username, access_token, api_token, balance,
 type Account struct {
 	ID                 int64           `db:"id" json:"id"`
 	SiteID             int64           `db:"site_id" json:"site_id"`
-	Username           sql.NullString  `db:"username" json:"username"`
-	AccessToken        string          `db:"access_token" json:"access_token"`
-	ApiToken           sql.NullString  `db:"api_token" json:"api_token"`
-	Balance            sql.NullFloat64 `db:"balance" json:"balance"`
-	BalanceUsed        sql.NullFloat64 `db:"balance_used" json:"balance_used"`
-	Quota              sql.NullFloat64 `db:"quota" json:"quota"`
-	Status             sql.NullString  `db:"status" json:"status"`
-	CheckinEnabled     sql.NullBool    `db:"checkin_enabled" json:"checkin_enabled"`
-	LastCheckinAt      sql.NullString  `db:"last_checkin_at" json:"last_checkin_at"`
-	LastBalanceRefresh sql.NullString  `db:"last_balance_refresh" json:"last_balance_refresh"`
-	ExtraConfig        sql.NullString  `db:"extra_config" json:"extra_config"`
-	CreatedAt          sql.NullString  `db:"created_at" json:"created_at"`
-	UpdatedAt          sql.NullString  `db:"updated_at" json:"updated_at"`
-	IsPinned           sql.NullBool    `db:"is_pinned" json:"is_pinned"`
-	SortOrder          sql.NullInt64   `db:"sort_order" json:"sort_order"`
+	Username           *string  `db:"username" json:"username"`
+	AccessToken        string   `db:"access_token" json:"access_token"`
+	ApiToken           *string  `db:"api_token" json:"api_token"`
+	Balance            *float64 `db:"balance" json:"balance"`
+	BalanceUsed        *float64 `db:"balance_used" json:"balance_used"`
+	Quota              *float64 `db:"quota" json:"quota"`
+	Status             *string  `db:"status" json:"status"`
+	CheckinEnabled     *bool    `db:"checkin_enabled" json:"checkin_enabled"`
+	LastCheckinAt      *string  `db:"last_checkin_at" json:"last_checkin_at"`
+	LastBalanceRefresh *string  `db:"last_balance_refresh" json:"last_balance_refresh"`
+	ExtraConfig        *string  `db:"extra_config" json:"extra_config"`
+	CreatedAt          *string  `db:"created_at" json:"created_at"`
+	UpdatedAt          *string  `db:"updated_at" json:"updated_at"`
+	IsPinned           *bool    `db:"is_pinned" json:"is_pinned"`
+	SortOrder          *int64   `db:"sort_order" json:"sort_order"`
 }
 
 func ListAccounts(siteID *int64) ([]Account, error) {
@@ -207,13 +206,13 @@ type AccountToken struct {
 	AccountID   int64          `db:"account_id" json:"account_id"`
 	Name        string         `db:"name" json:"name"`
 	Token       string         `db:"token" json:"token"`
-	TokenGroup  sql.NullString `db:"token_group" json:"token_group"`
-	ValueStatus string         `db:"value_status" json:"value_status"`
-	Source      sql.NullString `db:"source" json:"source"`
-	Enabled     sql.NullBool   `db:"enabled" json:"enabled"`
-	IsDefault   sql.NullBool   `db:"is_default" json:"is_default"`
-	CreatedAt   sql.NullString `db:"created_at" json:"created_at"`
-	UpdatedAt   sql.NullString `db:"updated_at" json:"updated_at"`
+	TokenGroup  *string `db:"token_group" json:"token_group"`
+	ValueStatus string  `db:"value_status" json:"value_status"`
+	Source      *string `db:"source" json:"source"`
+	Enabled     *bool   `db:"enabled" json:"enabled"`
+	IsDefault   *bool   `db:"is_default" json:"is_default"`
+	CreatedAt   *string `db:"created_at" json:"created_at"`
+	UpdatedAt   *string `db:"updated_at" json:"updated_at"`
 }
 
 func EnsureAccountTokensTable() {
@@ -296,9 +295,9 @@ type CheckinLog struct {
 	ID        int64          `db:"id" json:"id"`
 	AccountID int64          `db:"account_id" json:"account_id"`
 	Status    string         `db:"status" json:"status"`
-	Message   sql.NullString `db:"message" json:"message"`
-	Reward    sql.NullString `db:"reward" json:"reward"`
-	CreatedAt sql.NullString `db:"created_at" json:"created_at"`
+	Message   *string `db:"message" json:"message"`
+	Reward    *string `db:"reward" json:"reward"`
+	CreatedAt *string `db:"created_at" json:"created_at"`
 }
 
 func InsertCheckinLog(accountID int64, status, message, reward string) error {
@@ -327,12 +326,12 @@ type Event struct {
 	ID          int64          `db:"id" json:"id"`
 	Type        string         `db:"type" json:"type"`
 	Title       string         `db:"title" json:"title"`
-	Message     sql.NullString `db:"message" json:"message"`
-	Level       string         `db:"level" json:"level"`
-	Read        sql.NullBool   `db:"read" json:"read"`
-	RelatedID   sql.NullInt64  `db:"related_id" json:"related_id"`
-	RelatedType sql.NullString `db:"related_type" json:"related_type"`
-	CreatedAt   sql.NullString `db:"created_at" json:"created_at"`
+	Message     *string `db:"message" json:"message"`
+	Level       string  `db:"level" json:"level"`
+	Read        *bool   `db:"read" json:"read"`
+	RelatedID   *int64  `db:"related_id" json:"related_id"`
+	RelatedType *string `db:"related_type" json:"related_type"`
+	CreatedAt   *string `db:"created_at" json:"created_at"`
 }
 
 func InsertEvent(typ, title, message, level string, relatedID *int64, relatedType string) error {
@@ -368,7 +367,7 @@ func MarkAllEventsRead() error {
 
 type Setting struct {
 	Key   string         `db:"key" json:"key"`
-	Value sql.NullString `db:"value" json:"value"`
+	Value *string `db:"value" json:"value"`
 }
 
 func GetSetting(key string) (*Setting, error) {
@@ -393,11 +392,11 @@ func UpsertSetting(key, value string) error {
 
 type AccountWithSite struct {
 	Account
-	SiteName     string         `db:"site_name"`
-	SiteURL      string         `db:"site_url"`
-	SitePlatform string         `db:"site_platform"`
-	SiteStatus   string         `db:"site_status"`
-	SiteProxyURL sql.NullString `db:"site_proxy_url"`
+	SiteName     string  `db:"site_name"`
+	SiteURL      string  `db:"site_url"`
+	SitePlatform string  `db:"site_platform"`
+	SiteStatus   string  `db:"site_status"`
+	SiteProxyURL *string `db:"site_proxy_url"`
 }
 
 const accountWithSiteQuery = `

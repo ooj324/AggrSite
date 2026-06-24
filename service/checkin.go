@@ -1,7 +1,6 @@
 package service
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,19 +11,19 @@ import (
 
 // ---- Helpers ----
 
-func nullStr(ns sql.NullString) string {
-	if ns.Valid {
-		return ns.String
+func nullStr(ns *string) string {
+	if ns != nil {
+		return *ns
 	}
 	return ""
 }
 
-func resolvePlatformUserID(extraConfig sql.NullString) int64 {
-	if !extraConfig.Valid || extraConfig.String == "" {
+func resolvePlatformUserID(extraConfig *string) int64 {
+	if extraConfig == nil || *extraConfig == "" {
 		return 0
 	}
 	var cfg map[string]interface{}
-	if err := json.Unmarshal([]byte(extraConfig.String), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(*extraConfig), &cfg); err != nil {
 		return 0
 	}
 	if id, ok := cfg["platformUserId"].(float64); ok && id > 0 {

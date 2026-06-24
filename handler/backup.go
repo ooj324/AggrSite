@@ -102,10 +102,10 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 			}
 			id, _ := db.CreateAccount(db.CreateAccountInput{
 				SiteID:         newSiteID,
-				Username:       a.Username.String,
+				Username:       nullStr(a.Username),
 				AccessToken:    a.AccessToken,
-				ApiToken:       a.ApiToken.String,
-				CheckinEnabled: a.CheckinEnabled.Bool,
+				ApiToken:       nullStr(a.ApiToken),
+				CheckinEnabled: a.CheckinEnabled != nil && *a.CheckinEnabled,
 			})
 			if id > 0 {
 				importedAccounts++

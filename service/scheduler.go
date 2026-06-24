@@ -30,8 +30,8 @@ type SchedulerStatus struct {
 
 func getCronSetting(key, fallback string) string {
 	s, err := db.GetSetting(key)
-	if err == nil && s != nil && s.Value.Valid && s.Value.String != "" {
-		return s.Value.String
+	if err == nil && s.Value != nil && *s.Value != "" {
+		return *s.Value
 	}
 	return fallback
 }

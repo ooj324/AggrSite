@@ -10,6 +10,13 @@ import (
 
 // ---- JSON helpers ----
 
+func nullStr(ns *string) string {
+	if ns != nil {
+		return *ns
+	}
+	return ""
+}
+
 func writeJSON(w http.ResponseWriter, code int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
