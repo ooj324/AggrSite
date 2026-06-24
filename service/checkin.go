@@ -128,7 +128,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		status = "success"
 	default:
 		// Attempt auto-relogin on failure
-		if refreshedAccessToken := tryAutoRelogin(row, adapter, opt); refreshedAccessToken != "" {
+		if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
 			row.AccessToken = refreshedAccessToken
 			// Retry checkin
 			result, err = adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
@@ -212,15 +212,15 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 		return ""
 	}
 	
-	slog.Info("Attempting auto-relogin", "account_id", row.Accounts.ID)
+	slog.Info("Attempting auto-relogin", "account_id", row.ID)
 	loginResult, err := adapter.Login(row.SiteURL, username, password, opt)
 	if err != nil || loginResult == nil || !loginResult.Success || loginResult.AccessToken == "" {
-		slog.Warn("Auto-relogin failed", "account_id", row.Accounts.ID, "err", err, "message", loginResult.Message)
+		slog.Warn("Auto-relogin failed", "account_id", row.ID, "err", err, "message", loginResult.Message)
 		return ""
 	}
 	
-	slog.Info("Auto-relogin successful, updating access token", "account_id", row.Accounts.ID)
-	_ = db.UpdateAccount(row.Accounts.ID, map[string]interface{}{
+	slog.Info("Auto-relogin successful, updating access token", "account_id", row.ID)
+	_ = db.UpdateAccount(row.ID, map[string]interface{}{
 		"access_token": loginResult.AccessToken,
 	})
 	

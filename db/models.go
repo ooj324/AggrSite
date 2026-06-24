@@ -458,13 +458,14 @@ type AccountWithSite struct {
 	SiteProxyURL           *string `db:"site_proxy_url"`
 	SiteUseSystemProxy     *bool   `db:"site_use_system_proxy"`
 	SiteExternalCheckinURL *string `db:"site_external_checkin_url"`
+	SiteCustomHeaders      *string `db:"site_custom_headers"`
 }
 
 const accountWithSiteQuery = `
 	SELECT a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota,
 	       a.status, a.checkin_enabled, a.last_checkin_at, a.last_balance_refresh, a.extra_config,
 	       a.created_at, a.updated_at, a.is_pinned, a.sort_order,
-	       s.name AS site_name, s.url AS site_url, s.platform AS site_platform, s.status AS site_status, s.proxy_url AS site_proxy_url, s.use_system_proxy AS site_use_system_proxy, s.external_checkin_url AS site_external_checkin_url
+	       s.name AS site_name, s.url AS site_url, s.platform AS site_platform, s.status AS site_status, s.proxy_url AS site_proxy_url, s.use_system_proxy AS site_use_system_proxy, s.external_checkin_url AS site_external_checkin_url, s.custom_headers AS site_custom_headers
 	FROM accounts a
 	INNER JOIN sites s ON a.site_id = s.id
 `
