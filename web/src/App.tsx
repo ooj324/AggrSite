@@ -13,6 +13,32 @@ import Accounts from './views/Accounts';
 import Logs from './views/Logs';
 import Settings from './views/Settings';
 
+const LogoIcon = ({ size = 32 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <defs>
+      <linearGradient id="aggr-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#4f46e5" />
+        <stop offset="100%" stopColor="#06b6d4" />
+      </linearGradient>
+    </defs>
+    <circle cx="12" cy="12" r="3.5" fill="url(#aggr-gradient)" stroke="none" />
+    <circle cx="12" cy="12" r="6" stroke="url(#aggr-gradient)" strokeWidth="1.2" strokeDasharray="2 2" opacity={0.6} />
+    <circle cx="12" cy="12" r="9" stroke="url(#aggr-gradient)" strokeWidth="1.2" strokeDasharray="3 3" opacity={0.4} />
+    
+    <circle cx="6" cy="6" r="1.2" fill="url(#aggr-gradient)" stroke="none" />
+    <path d="M6.8 6.8C8.5 8.5 10 10 12 12" stroke="url(#aggr-gradient)" strokeWidth="1.5" />
+    
+    <circle cx="18" cy="6" r="1.2" fill="url(#aggr-gradient)" stroke="none" />
+    <path d="M17.2 6.8C15.5 8.5 14 10 12 12" stroke="url(#aggr-gradient)" strokeWidth="1.5" />
+    
+    <circle cx="6" cy="18" r="1.2" fill="url(#aggr-gradient)" stroke="none" />
+    <path d="M6.8 17.2C8.5 15.5 10 14 12 12" stroke="url(#aggr-gradient)" strokeWidth="1.5" />
+    
+    <circle cx="18" cy="18" r="1.2" fill="url(#aggr-gradient)" stroke="none" />
+    <path d="M17.2 17.2C15.5 15.5 14 14 12 12" stroke="url(#aggr-gradient)" strokeWidth="1.5" />
+  </svg>
+);
+
 function Login() {
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
@@ -42,7 +68,7 @@ function Login() {
           <div className="login-brand-header">
             <div className="brand-mark-frame brand-mark-frame-hero">
               <div className="brand-mark-canvas">
-                <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #4f46e5, #06b6d4)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>A</div>
+                <LogoIcon size={32} />
               </div>
             </div>
             <div className="login-brand-summary">
@@ -126,7 +152,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     <>
       <header className="topbar">
         <div className="topbar-logo">
-          <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg, #4f46e5, #06b6d4)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>A</div>
+          <LogoIcon size={28} />
           <span className="topbar-logo-text">AggrSite</span>
         </div>
         
