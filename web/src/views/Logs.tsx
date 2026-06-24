@@ -34,11 +34,11 @@ export default function Logs() {
   return (
     <div className="animate-fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 className="greeting">Logs & Events</h2>
+        <h2 className="greeting">日志与事件</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={loadData} className="btn btn-secondary">
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} style={{ marginRight: 6 }} /> 
-            Refresh
+            刷新
           </button>
         </div>
       </div>
@@ -54,7 +54,7 @@ export default function Logs() {
             boxShadow: activeTab === 'checkin' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
           }}
         >
-          Checkin Logs
+          签到日志
         </button>
         <button
           onClick={() => setActiveTab('events')}
@@ -66,7 +66,7 @@ export default function Logs() {
             boxShadow: activeTab === 'events' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
           }}
         >
-          System Events
+          系统事件
         </button>
       </div>
 
@@ -80,11 +80,11 @@ export default function Logs() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Account ID</th>
-                  <th>Status</th>
-                  <th>Message</th>
-                  <th>Reward</th>
+                  <th>时间</th>
+                  <th>账户 ID</th>
+                  <th>状态</th>
+                  <th>消息</th>
+                  <th>奖励</th>
                 </tr>
               </thead>
               <tbody>
@@ -99,7 +99,9 @@ export default function Logs() {
                         {log.status === 'success' ? <CheckCircle2 size={16} color="var(--color-success)" /> :
                          log.status === 'failed' ? <XCircle size={16} color="var(--color-danger)" /> :
                          <History size={16} color="var(--color-text-secondary)" />}
-                        <span style={{ textTransform: 'capitalize', fontSize: 13 }}>{log.status}</span>
+                        <span style={{ fontSize: 13 }}>
+                          {log.status === 'success' ? '成功' : log.status === 'failed' ? '失败' : '待处理'}
+                        </span>
                       </div>
                     </td>
                     <td style={{ maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text-secondary)' }} title={log.message}>{log.message}</td>
@@ -107,7 +109,7 @@ export default function Logs() {
                   </tr>
                 ))}
                 {logs.length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>No checkin logs found.</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>未找到签到日志。</td></tr>
                 )}
               </tbody>
             </table>
@@ -117,10 +119,10 @@ export default function Logs() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Type</th>
-                  <th>Title</th>
-                  <th>Message</th>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>标题</th>
+                  <th>消息</th>
                 </tr>
               </thead>
               <tbody>
@@ -142,7 +144,7 @@ export default function Logs() {
                   </tr>
                 ))}
                 {events.length === 0 && (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>No events found.</td></tr>
+                  <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>未找到事件。</td></tr>
                 )}
               </tbody>
             </table>

@@ -28,7 +28,7 @@ function Login() {
       await api.get('/api/platforms');
       navigate('/');
     } catch (err: any) {
-      setError('Invalid token or server error');
+      setError('无效的 Token 或服务器错误');
       setAuthToken('');
     } finally {
       setLoading(false);
@@ -47,28 +47,28 @@ function Login() {
             </div>
             <div className="login-brand-summary">
               <div className="login-brand-name">AggrSite</div>
-              <div className="login-brand-kicker">Unified API Aggregator</div>
+              <div className="login-brand-kicker">统一 API 聚合器</div>
             </div>
           </div>
           <div className="login-brand-copy-block">
             <p className="login-brand-copy">
-              Manage your accounts, API keys, and track usage across multiple platforms seamlessly.
+              无缝管理您的账户、API 密钥并追踪多个平台的使用情况。
             </p>
           </div>
         </section>
 
         <section className="login-auth-stage">
           <div className="login-auth-panel">
-            <div className="login-auth-eyebrow">Admin Portal</div>
-            <h2 className="login-auth-title">Login</h2>
-            <p className="login-auth-copy">Enter your admin token to continue.</p>
+            <div className="login-auth-eyebrow">管理员门户</div>
+            <h2 className="login-auth-title">登录</h2>
+            <p className="login-auth-copy">请输入您的管理员 Token 以继续。</p>
             
             <form onSubmit={handleLogin} className="space-y-4">
-              <label className="login-auth-label" htmlFor="admin-token-input">Admin Token</label>
+              <label className="login-auth-label" htmlFor="admin-token-input">管理员 Token</label>
               <input
                 id="admin-token-input"
                 type="password"
-                placeholder="Admin Token"
+                placeholder="管理员 Token"
                 className="login-auth-input"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
@@ -84,7 +84,7 @@ function Login() {
                 disabled={loading || !token}
                 className="btn btn-primary login-auth-submit w-full"
               >
-                {loading ? <><span className="spinner spinner-sm" style={{ borderTopColor: 'white', borderColor: 'rgba(255,255,255,0.3)' }} /> Verifying...</> : 'Login'}
+                {loading ? <><span className="spinner spinner-sm" style={{ borderTopColor: 'white', borderColor: 'rgba(255,255,255,0.3)' }} /> 验证中...</> : '登录'}
               </button>
             </form>
           </div>
@@ -106,11 +106,11 @@ function Layout({ children }: { children: React.ReactNode }) {
   }, [themeMode]);
 
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/sites', label: 'Sites', icon: Globe },
-    { path: '/accounts', label: 'Accounts', icon: Users },
-    { path: '/logs', label: 'Logs', icon: History },
-    { path: '/settings', label: 'Settings', icon: SettingsIcon },
+    { path: '/', label: '仪表盘', icon: LayoutDashboard },
+    { path: '/sites', label: '站点', icon: Globe },
+    { path: '/accounts', label: '账户', icon: Users },
+    { path: '/logs', label: '日志', icon: History },
+    { path: '/settings', label: '设置', icon: SettingsIcon },
   ];
 
   const handleLogout = () => {
@@ -131,21 +131,21 @@ function Layout({ children }: { children: React.ReactNode }) {
         </div>
         
         <div className="topbar-right">
-          <button className="topbar-search-trigger" aria-label="Search">
+          <button className="topbar-search-trigger" aria-label="搜索">
             <Search size={16} />
-            <span className="topbar-search-label">Search</span>
+            <span className="topbar-search-label">搜索</span>
             <kbd className="topbar-search-kbd">Ctrl K</kbd>
           </button>
           
           <button
             className="topbar-icon-btn"
             onClick={toggleTheme}
-            aria-label="Toggle Theme"
+            aria-label="切换主题"
           >
             {themeMode === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
 
-          <button onClick={handleLogout} className="topbar-icon-btn" style={{ color: 'var(--color-danger)' }} title="Logout">
+          <button onClick={handleLogout} className="topbar-icon-btn" style={{ color: 'var(--color-danger)' }} title="退出登录">
             <LogOut size={18} />
           </button>
         </div>
@@ -154,7 +154,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <div className="app-layout">
         <aside className="sidebar">
           <div className="sidebar-group">
-            <div className="sidebar-group-label">Console</div>
+            <div className="sidebar-group-label">控制台</div>
             {navItems.map(item => {
               const Icon = item.icon;
               return (

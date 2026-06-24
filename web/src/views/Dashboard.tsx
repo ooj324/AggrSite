@@ -33,26 +33,26 @@ export default function Dashboard() {
   }, []);
 
   const handleRunAllCheckins = async () => {
-    if (!confirm('Run all checkins now?')) return;
+    if (!confirm('确定要现在执行所有签到吗？')) return;
     setActionLoading(true);
     try {
       await api.post('/api/checkin/all');
-      alert('All checkins triggered successfully.');
+      alert('所有签到已成功触发。');
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleRefreshAllBalances = async () => {
-    if (!confirm('Refresh all balances now?')) return;
+    if (!confirm('确定要现在刷新所有余额吗？')) return;
     setActionLoading(true);
     try {
       await api.post('/api/balance/refresh/all');
-      alert('All balances refreshed successfully.');
+      alert('所有余额已成功刷新。');
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
     } finally {
       setActionLoading(false);
     }
@@ -70,14 +70,14 @@ export default function Dashboard() {
     <div className="animate-fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h2 className="greeting">
-          Dashboard
+          仪表盘
         </h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleRunAllCheckins} disabled={actionLoading} className="btn btn-primary">
-            Run Checkins
+            执行签到
           </button>
           <button onClick={handleRefreshAllBalances} disabled={actionLoading} className="btn btn-soft-primary">
-            {actionLoading ? 'Refreshing...' : 'Refresh Balances'}
+            {actionLoading ? '刷新中...' : '刷新余额'}
           </button>
         </div>
       </div>
@@ -88,7 +88,7 @@ export default function Dashboard() {
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
             </svg>
-            System Data
+            系统数据
           </div>
           <div className="stat-card-row">
             <div className="stat-icon stat-icon-blue">
@@ -97,18 +97,18 @@ export default function Dashboard() {
               </svg>
             </div>
             <div className="dashboard-stat-content">
-              <div className="stat-label">Total Sites</div>
+              <div className="stat-label">站点总数</div>
               <div className="stat-value animate-count-up">{stats.sites}</div>
             </div>
           </div>
           <div className="stat-card-row">
             <div className="stat-icon stat-icon-green">
               <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 0-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
             <div className="dashboard-stat-content">
-              <div className="stat-label">Total Accounts</div>
+              <div className="stat-label">账户总数</div>
               <div className="stat-value animate-count-up">{stats.accounts}</div>
             </div>
           </div>
@@ -119,7 +119,7 @@ export default function Dashboard() {
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Scheduler
+            调度器
           </div>
           <div className="stat-card-row">
             <div className={`stat-icon ${status?.running ? 'stat-icon-green' : 'stat-icon-red'}`}>
@@ -128,9 +128,9 @@ export default function Dashboard() {
               </svg>
             </div>
             <div className="dashboard-stat-content">
-              <div className="stat-label">Status</div>
+              <div className="stat-label">状态</div>
               <div className="stat-value animate-count-up" style={{ fontSize: 16 }}>
-                {status?.running ? 'Running' : 'Stopped'}
+                {status?.running ? '运行中' : '已停止'}
               </div>
             </div>
           </div>
@@ -141,12 +141,12 @@ export default function Dashboard() {
               </svg>
             </div>
             <div className="dashboard-stat-content">
-              <div className="stat-label">Next Checkin</div>
+              <div className="stat-label">下次签到</div>
               <div className="stat-value animate-count-up" style={{ fontSize: 16 }}>
-                {status?.next_checkin ? format(new Date(status.next_checkin), 'HH:mm') : 'None'}
+                {status?.next_checkin ? format(new Date(status.next_checkin), 'HH:mm') : '无'}
               </div>
               <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2 }}>
-                Cron: {status?.checkin_cron}
+                Cron 表达式: {status?.checkin_cron}
               </div>
             </div>
           </div>

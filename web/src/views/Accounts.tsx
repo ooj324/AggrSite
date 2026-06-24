@@ -32,12 +32,12 @@ export default function Accounts() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Delete this account?')) return;
+    if (!confirm('确定要删除此账户吗？')) return;
     try {
       await api.delete(`/api/accounts/${id}`);
       loadData();
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
     }
   };
 
@@ -48,7 +48,7 @@ export default function Accounts() {
       if (type === 'refresh') await api.post(`/api/balance/refresh/${id}`);
       loadData();
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
     } finally {
       setActionLoading(null);
     }
@@ -62,10 +62,10 @@ export default function Accounts() {
   return (
     <div className="animate-fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 className="greeting">Accounts</h2>
+        <h2 className="greeting">账户</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => openEdit()} className="btn btn-primary">
-            <Plus size={18} /> Add Account
+            <Plus size={18} /> 添加账户
           </button>
         </div>
       </div>
@@ -89,10 +89,10 @@ export default function Accounts() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-primary)' }} title="Checkin">
+                  <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-primary)' }} title="签到">
                     <Play size={16} className={actionLoading === acc.id ? 'animate-pulse' : ''} />
                   </button>
-                  <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-info)' }} title="Refresh Balance">
+                  <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-info)' }} title="刷新余额">
                     <RefreshCw size={16} className={actionLoading === acc.id ? 'animate-spin' : ''} />
                   </button>
                   <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
@@ -106,41 +106,41 @@ export default function Accounts() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, margin: '12px 0', flex: 1 }}>
                   <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Balance</p>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>余额</p>
                     <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance?.toFixed(2) || '0.00'}</p>
                   </div>
                   <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Usage</p>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>已用额度</p>
                     <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.balance_used?.toFixed(2) || '0.00'}</p>
                   </div>
                   <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Quota</p>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>总配额</p>
                     <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>${acc.quota?.toFixed(2) || '0.00'}</p>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Last Refresh: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : 'Never'}</span>
-                    <span>Last Checkin: {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : 'Never'}</span>
+                    <span>上次刷新: {acc.last_balance_refresh ? format(new Date(acc.last_balance_refresh), 'MM/dd HH:mm') : '从未'}</span>
+                    <span>上次签到: {acc.last_checkin_at ? format(new Date(acc.last_checkin_at), 'MM/dd HH:mm') : '从未'}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>API Token: {acc.api_token ? '✅ Setup' : '❌ Missing'}</span>
-                    <span>Auto Checkin: {acc.checkin_enabled ? '✅ On' : '❌ Off'}</span>
+                    <span>API 令牌: {acc.api_token ? '✅ 已设置' : '❌ 未设置'}</span>
+                    <span>自动签到: {acc.checkin_enabled ? '✅ 开启' : '❌ 关闭'}</span>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: acc.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
-                    <span style={{ textTransform: 'capitalize' }}>{acc.status}</span>
+                    <span>{acc.status === 'active' ? '已激活' : '已禁用'}</span>
                   </div>
                 </div>
               </div>
             ))}
             {accounts.length === 0 && (
               <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
-                No accounts found. Add one to get started.
+                未找到账户。添加一个以开始。
               </div>
             )}
           </div>
@@ -183,9 +183,9 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
           password: formData.password,
         });
         if (res.data.api_token_found) {
-          alert('Successfully logged in and fetched API token!');
+          alert('成功登录并获取 API 令牌！');
         } else {
-          alert('Successfully logged in, but no active API token found.');
+          alert('成功登录，但未找到活跃的 API 令牌。');
         }
       } else {
         // Token mode
@@ -200,7 +200,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
       }
       onSaved();
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
       setLoading(false);
     }
   };
@@ -211,7 +211,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         <button onClick={onClose} className="btn btn-ghost" style={{ position: 'absolute', top: 16, right: 16, padding: 6, minWidth: 'auto' }}>
           <X size={20} />
         </button>
-        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{account ? 'Edit Account' : 'Add Account'}</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{account ? '编辑账户' : '添加账户'}</h2>
         
         {!account && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 24, background: 'var(--color-bg)', padding: 4, borderRadius: 'var(--radius-md)' }}>
@@ -220,36 +220,36 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               onClick={() => setMode('login')} 
               style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: mode === 'login' ? 'var(--color-bg-elevated)' : 'transparent', color: mode === 'login' ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: mode === 'login' ? 600 : 500, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
             >
-              Login Mode
+              登录模式
             </button>
             <button 
               type="button"
               onClick={() => setMode('token')} 
               style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--radius-sm)', background: mode === 'token' ? 'var(--color-bg-elevated)' : 'transparent', color: mode === 'token' ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontWeight: mode === 'token' ? 600 : 500, border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
             >
-              Token Mode
+              令牌模式
             </button>
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Site</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>站点</label>
             <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
               {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Username {mode === 'token' && '(optional)'}</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>用户名 {mode === 'token' && '(可选)'}</label>
             <input required={mode === 'login'} type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
           </div>
 
           {mode === 'login' && !account ? (
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Password</label>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>密码</label>
               <input required type="password" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8 }}>Password is used to automatically refresh tokens. It will be stored encrypted.</p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 8 }}>密码用于自动刷新令牌。它将被加密存储。</p>
             </div>
           ) : (
             <>
@@ -258,7 +258,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
                 <input required type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>API Token (optional)</label>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>API Token (可选)</label>
                 <input type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} />
               </div>
             </>
@@ -266,10 +266,10 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
 
           {mode === 'token' && (
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Status</label>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>状态</label>
               <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
+                <option value="active">启用</option>
+                <option value="disabled">禁用</option>
               </select>
             </div>
           )}
@@ -281,12 +281,12 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               checked={formData.checkin_enabled} 
               onChange={e => setFormData({...formData, checkin_enabled: e.target.checked})}
             />
-            <label htmlFor="checkin_enabled" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Enable Auto Check-in</label>
+            <label htmlFor="checkin_enabled" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>启用自动签到</label>
           </div>
           <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="button" onClick={onClose} className="btn btn-ghost">取消</button>
             <button type="submit" disabled={loading} className="btn btn-primary">
-              {loading ? 'Saving...' : 'Save'}
+              {loading ? '保存中...' : '保存'}
             </button>
           </div>
         </form>

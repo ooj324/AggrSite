@@ -30,12 +30,12 @@ export default function Sites() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this site?')) return;
+    if (!confirm('您确定要删除此站点吗？')) return;
     try {
       await api.delete(`/api/sites/${id}`);
       loadData();
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
     }
   };
 
@@ -47,10 +47,10 @@ export default function Sites() {
   return (
     <div className="animate-fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 className="greeting">Sites</h2>
+        <h2 className="greeting">站点</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => openEdit()} className="btn btn-primary">
-            <Plus size={18} /> Add Site
+            <Plus size={18} /> 添加站点
           </button>
         </div>
       </div>
@@ -85,13 +85,13 @@ export default function Sites() {
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={site.url}>{site.url}</p>
               <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: site.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)' }} />
-                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', textTransform: 'capitalize' }}>{site.status}</span>
+                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{site.status === 'active' ? '已启用' : '已禁用'}</span>
               </div>
             </div>
           ))}
           {sites.length === 0 && (
             <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: 'var(--color-text-secondary)' }}>
-              No sites found. Add one to get started.
+              未找到站点。添加一个以开始。
             </div>
           )}
         </div>
@@ -134,7 +134,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
       }
       onSaved();
     } catch (err: any) {
-      alert(`Error: ${err}`);
+      alert(`错误: ${err}`);
       setLoading(false);
     }
   };
@@ -145,11 +145,11 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
         <button onClick={onClose} className="btn btn-ghost" style={{ position: 'absolute', top: 16, right: 16, padding: 6, minWidth: 'auto' }}>
           <X size={20} />
         </button>
-        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{site ? 'Edit Site' : 'Add Site'}</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>{site ? '编辑站点' : '添加站点'}</h2>
         
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Name</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>名称</label>
             <input required type="text" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           </div>
           <div>
@@ -157,28 +157,28 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
             <input required type="url" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Platform</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>平台</label>
             <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
               {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Status</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>状态</label>
             <select style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-              <option value="active">Active</option>
-              <option value="disabled">Disabled</option>
+              <option value="active">启用</option>
+              <option value="disabled">禁用</option>
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Proxy URL (optional)</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>代理 URL (可选)</label>
             <input type="url" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="http://127.0.0.1:7890" />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>External Checkin URL (optional)</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>外部签到 URL (可选)</label>
             <input type="url" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)' }} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="https://..." />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>Custom Headers (JSON)</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>自定义 Header (JSON 格式)</label>
             <textarea 
               style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', minHeight: '60px', fontFamily: 'monospace' }} 
               value={formData.custom_headers} 
@@ -193,12 +193,12 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
               checked={formData.use_system_proxy} 
               onChange={e => setFormData({...formData, use_system_proxy: e.target.checked})}
             />
-            <label htmlFor="use_system_proxy" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Use System Proxy</label>
+            <label htmlFor="use_system_proxy" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>使用系统代理</label>
           </div>
           <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+            <button type="button" onClick={onClose} className="btn btn-ghost">取消</button>
             <button type="submit" disabled={loading} className="btn btn-primary">
-              {loading ? 'Saving...' : 'Save'}
+              {loading ? '保存中...' : '保存'}
             </button>
           </div>
         </form>
