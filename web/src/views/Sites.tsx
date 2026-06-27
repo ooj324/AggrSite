@@ -9,6 +9,13 @@ export default function Sites() {
   const [showModal, setShowModal] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [platforms, setPlatforms] = useState<string[]>([]);
+  
+  // Selection & Batch
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+
+  // Sorting
+  const [sortBy, setSortBy] = useState<'custom' | 'balance'>('custom');
 
   const loadData = async () => {
     try {
@@ -30,14 +37,76 @@ export default function Sites() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('您确定要删除此站点吗？')) return;
+    if (!confirm('您确定要删除此站点吗？关联账号也会被一并删除。')) return;
     try {
       await api.delete(`/api/sites/${id}`);
+      setSelectedIds(selectedIds.filter(x => x !== id));
       loadData();
     } catch (err: any) {
       alert(`错误: ${err}`);
     }
   };
+
+  const handleToggleStatus = async (site: Site) => {
+    const newStatus = site.status === 'active' ? 'disabled' : 'active';
+    if (newStatus === 'disabled') {
+      if (!confirm(`确定要禁用站点 [${site.name}] 吗？\n所有关联的账号将会被一并禁用！`)) return;
+    }
+    try {
+      await api.put(`/api/sites/${site.id}`, { status: newStatus });
+      loadData();
+    } catch (err: any) {
+      alert(`错误: ${err}`);
+    }
+  };
+
+  const handleBatchAction = async (action: string) => {
+    if (selectedIds.length === 0) return;
+    if (action === 'delete') {
+      if (!confirm(`确定要删除选中的 ${selectedIds.length} 个站点吗？关联账号也会被一并删除。`)) return;
+    } else if (action === 'disable') {
+      if (!confirm(`确定要禁用选中的 ${selectedIds.length} 个站点吗？所有关联的账号将会被一并禁用！`)) return;
+    }
+
+    setBatchLoading(true);
+    try {
+      const res = await api.post('/api/sites/batch', { ids: selectedIds, action });
+      const data = (res as any).data || res;
+      if (data.failedItems && data.failedItems.length > 0) {
+        alert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+      }
+      setSelectedIds([]);
+      loadData();
+    } catch (err: any) {
+      alert(`错误: ${err}`);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(sortedSites.map(s => s.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const toggleSelect = (id: number, checked: boolean) => {
+    if (checked) {
+      setSelectedIds([...selectedIds, id]);
+    } else {
+      setSelectedIds(selectedIds.filter(x => x !== id));
+    }
+  };
+
+  const sortedSites = [...sites].sort((a, b) => {
+    if (sortBy === 'balance') {
+      return (b.total_balance || 0) - (a.total_balance || 0);
+    }
+    // 'custom' sort -> usually we sort by sort_order but since we don't have it exposed yet, fallback to ID
+    return a.id - b.id;
+  });
 
   const openEdit = (site?: Site) => {
     setEditingSite(site || null);
@@ -46,12 +115,33 @@ export default function Sites() {
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header">
-        <h2 className="page-title">站点</h2>
+      <div className="page-header" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <h2 className="page-title">站点</h2>
+          <div className="pill-tabs" style={{ background: 'var(--color-bg)' }}>
+            <div className={`pill-tab ${sortBy === 'custom' ? 'active' : ''}`} onClick={() => setSortBy('custom')}>自定义排序</div>
+            <div className={`pill-tab ${sortBy === 'balance' ? 'active' : ''}`} onClick={() => setSortBy('balance')}>按余额排序</div>
+          </div>
+        </div>
         <button onClick={() => openEdit()} className="btn btn-primary">
           <Plus size={16} style={{ marginRight: 6 }} /> 添加站点
         </button>
       </div>
+
+      {selectedIds.length > 0 && (
+        <div className="batch-action-bar animate-fade-in">
+          <div className="batch-action-count">已选择 {selectedIds.length} 个站点</div>
+          <div className="batch-action-buttons">
+            <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className="btn btn-secondary btn-sm">启用</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className="btn btn-secondary btn-sm">禁用</button>
+            <div className="batch-action-divider" />
+            <button disabled={batchLoading} onClick={() => handleBatchAction('enableSystemProxy')} className="btn btn-secondary btn-sm">开系统代理</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('disableSystemProxy')} className="btn btn-secondary btn-sm">关系统代理</button>
+            <div className="batch-action-divider" />
+            <button disabled={batchLoading} onClick={() => handleBatchAction('delete')} className="btn btn-danger btn-sm">删除</button>
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflowX: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
         {loading ? (
@@ -72,37 +162,72 @@ export default function Sites() {
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 40, textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={sites.length > 0 && selectedIds.length === sites.length}
+                        onChange={(e) => toggleSelectAll(e.target.checked)}
+                      />
+                    </th>
                     <th>名称</th>
-                    <th>平台</th>
-                    <th>URL</th>
+                    <th>外部签到站URL</th>
+                    <th>总余额</th>
                     <th>状态</th>
-                    <th style={{ width: 100, textAlign: 'right' }}>操作</th>
+                    <th>系统代理</th>
+                    <th>权重</th>
+                    <th>平台</th>
+                    <th>创建时间</th>
+                    <th className="sites-actions-col" style={{ width: 100, textAlign: 'right' }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sites.map(site => (
-                    <tr key={site.id}>
+                  {sortedSites.map(site => (
+                    <tr key={site.id} className={selectedIds.includes(site.id) ? 'selected-row' : ''}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(site.id)}
+                          onChange={(e) => toggleSelect(site.id, e.target.checked)}
+                        />
+                      </td>
                       <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
                         {site.name}
                       </td>
                       <td>
-                        <span className="badge badge-info">{site.platform}</span>
-                      </td>
-                      <td>
-                        {site.url ? (
-                          <a href={site.url} target="_blank" rel="noopener noreferrer" className="badge-link">
+                        {site.external_checkin_url || site.url ? (
+                          <a href={site.external_checkin_url || site.url} target="_blank" rel="noopener noreferrer" className="badge-link">
                             <span className="badge badge-muted" style={{ fontSize: 11 }}>
-                              {site.url}
+                              {site.external_checkin_url || site.url}
                             </span>
                           </a>
                         ) : (
                           <span className="badge badge-muted" style={{ fontSize: 11 }}>-</span>
                         )}
                       </td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                        ${(site.total_balance || 0).toFixed(2)}
+                      </td>
                       <td>
-                        <span className={`badge ${site.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                        <span 
+                          className={`badge ${site.status === 'active' ? 'badge-success' : 'badge-error'}`} 
+                          style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                          onClick={() => handleToggleStatus(site)}
+                          title="点击切换状态"
+                        >
                           {site.status === 'active' ? '已启用' : '已禁用'}
                         </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${site.use_system_proxy ? 'badge-info' : 'badge-muted'}`}>
+                          {site.use_system_proxy ? 'ON' : 'OFF'}
+                        </span>
+                      </td>
+                      <td>{site.sort_order || 0}</td>
+                      <td>
+                        <span className="badge badge-info">{site.platform}</span>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                        {site.created_at ? new Date(site.created_at).toLocaleDateString() : '-'}
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>

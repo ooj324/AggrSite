@@ -39,15 +39,30 @@ func ListCheckinLogs(w http.ResponseWriter, r *http.Request) {
 	limit := queryInt(r, "limit", 50)
 	offset := queryInt(r, "offset", 0)
 
-	logs, total, err := db.ListCheckinLogs(accountID, limit, offset)
+	logs, total, err := db.ListCheckinLogsWithAccounts(accountID, limit, offset)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	// Add failure reason logic
+	type logWithReason struct {
+		db.CheckinLogWithAccount
+		FailureReason *service.FailureReason `json:"failureReason,omitempty"`
+	}
+
+	enhancedLogs := make([]logWithReason, len(logs))
+	for i, l := range logs {
+		enhanced := logWithReason{CheckinLogWithAccount: l}
+		if l.Status == "failed" && l.Message != nil {
+			enhanced.FailureReason = service.AnalyzeCheckinFailure(*l.Message)
+		}
+		enhancedLogs[i] = enhanced
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"data":    logs,
+		"data":    enhancedLogs,
 		"total":   total,
 		"limit":   limit,
 		"offset":  offset,

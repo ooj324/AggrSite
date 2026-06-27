@@ -27,6 +27,7 @@ func MountRoutes(r chi.Router) {
 		// Sites
 		r.Get("/api/sites", ListSites)
 		r.Post("/api/sites", CreateSite)
+		r.Post("/api/sites/batch", BatchSites)
 		r.Get("/api/sites/{id}", GetSite)
 		r.Put("/api/sites/{id}", UpdateSite)
 		r.Delete("/api/sites/{id}", DeleteSite)
@@ -34,6 +35,7 @@ func MountRoutes(r chi.Router) {
 		// Accounts
 		r.Get("/api/accounts", ListAccounts)
 		r.Post("/api/accounts", CreateAccount)
+		r.Post("/api/accounts/batch", BatchAccounts)
 		r.Post("/api/accounts/verify-token", VerifyToken)
 		r.Post("/api/accounts/login", LoginAccount)
 		r.Get("/api/accounts/{id}", GetAccount)

@@ -139,6 +139,56 @@ func DeleteSite(id int64) error {
 	return err
 }
 
+// UpdateAccountsBySite batch-updates all accounts belonging to a site.
+func UpdateAccountsBySite(siteID int64, fields map[string]interface{}) error {
+	fields["updated_at"] = TimeNow()
+	query := "UPDATE accounts SET "
+	args := []interface{}{}
+	i := 0
+	for k, v := range fields {
+		safeKey := ""
+		for _, c := range k {
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+				safeKey += string(c)
+			}
+		}
+		if safeKey == "" {
+			continue
+		}
+		if i > 0 {
+			query += ", "
+		}
+		query += safeKey + " = ?"
+		args = append(args, v)
+		i++
+	}
+	if i == 0 {
+		return nil
+	}
+	query += " WHERE site_id = ?"
+	args = append(args, siteID)
+	_, err := Exec(query, args...)
+	return err
+}
+
+// GetSiteBalances returns a map of site_id -> total_balance for all sites.
+func GetSiteBalances() (map[int64]float64, error) {
+	type row struct {
+		SiteID  int64   `db:"site_id"`
+		Balance float64 `db:"total_balance"`
+	}
+	var rows []row
+	err := Select(&rows, `SELECT site_id, COALESCE(SUM(balance), 0) AS total_balance FROM accounts WHERE status = 'active' GROUP BY site_id`)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]float64)
+	for _, r := range rows {
+		result[r.SiteID] = r.Balance
+	}
+	return result, nil
+}
+
 // ---- Account ----
 
 const accountColumns = `id, site_id, username, access_token, api_token, balance, balance_used, quota, status, checkin_enabled, last_checkin_at, last_balance_refresh, extra_config, created_at, updated_at, is_pinned, sort_order`
@@ -277,6 +327,28 @@ func DeleteAccount(id int64) error {
 	return err
 }
 
+// AccountWithSiteName is used for listing accounts with their site info.
+type AccountWithSiteName struct {
+	Account
+	SiteName     string `db:"site_name" json:"site_name"`
+	SitePlatform string `db:"site_platform" json:"site_platform"`
+	SiteURL      string `db:"site_url" json:"site_url"`
+}
+
+func ListAccountsWithSites(siteID *int64) ([]AccountWithSiteName, error) {
+	var accounts []AccountWithSiteName
+	baseQuery := `SELECT ` + accountColumns + `, s.name AS site_name, s.platform AS site_platform, s.url AS site_url FROM accounts a INNER JOIN sites s ON a.site_id = s.id`
+	// Prefix account columns with table alias
+	aliasedColumns := `a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota, a.status, a.checkin_enabled, a.last_checkin_at, a.last_balance_refresh, a.extra_config, a.created_at, a.updated_at, a.is_pinned, a.sort_order`
+	baseQuery = `SELECT ` + aliasedColumns + `, s.name AS site_name, s.platform AS site_platform, s.url AS site_url FROM accounts a INNER JOIN sites s ON a.site_id = s.id`
+	if siteID != nil {
+		err := Select(&accounts, baseQuery+` WHERE a.site_id = ? ORDER BY a.sort_order ASC, a.id ASC`, *siteID)
+		return accounts, err
+	}
+	err := Select(&accounts, baseQuery+` ORDER BY a.sort_order ASC, a.id ASC`)
+	return accounts, err
+}
+
 // ---- AccountToken ----
 
 type AccountToken struct {
@@ -395,6 +467,38 @@ func ListCheckinLogs(accountID *int64, limit, offset int) ([]CheckinLog, int, er
 	}
 	_ = Get(&total, `SELECT COUNT(*) FROM checkin_logs`)
 	err := Select(&logs, `SELECT * FROM checkin_logs ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	return logs, total, err
+}
+
+// CheckinLogWithAccount is a join of checkin_logs + accounts + sites.
+type CheckinLogWithAccount struct {
+	ID        int64   `db:"id" json:"id"`
+	AccountID int64   `db:"account_id" json:"account_id"`
+	Status    string  `db:"status" json:"status"`
+	Message   *string `db:"message" json:"message"`
+	Reward    *string `db:"reward" json:"reward"`
+	CreatedAt *string `db:"created_at" json:"created_at"`
+	// Joined fields
+	AccountUsername *string `db:"account_username" json:"account_username"`
+	SiteName        *string `db:"site_name" json:"site_name"`
+	SiteURL         *string `db:"site_url" json:"site_url"`
+}
+
+func ListCheckinLogsWithAccounts(accountID *int64, limit, offset int) ([]CheckinLogWithAccount, int, error) {
+	var logs []CheckinLogWithAccount
+	var total int
+	baseQuery := `SELECT cl.id, cl.account_id, cl.status, cl.message, cl.reward, cl.created_at,
+		a.username AS account_username, s.name AS site_name, s.url AS site_url
+		FROM checkin_logs cl
+		LEFT JOIN accounts a ON cl.account_id = a.id
+		LEFT JOIN sites s ON a.site_id = s.id`
+	if accountID != nil {
+		_ = Get(&total, `SELECT COUNT(*) FROM checkin_logs WHERE account_id = ?`, *accountID)
+		err := Select(&logs, baseQuery+` WHERE cl.account_id = ? ORDER BY cl.created_at DESC LIMIT ? OFFSET ?`, *accountID, limit, offset)
+		return logs, total, err
+	}
+	_ = Get(&total, `SELECT COUNT(*) FROM checkin_logs`)
+	err := Select(&logs, baseQuery+` ORDER BY cl.created_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	return logs, total, err
 }
 

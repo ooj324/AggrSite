@@ -26,6 +26,10 @@ export default function Accounts() {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
+  // Selection & Batch
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+
   const loadData = async () => {
     try {
       const [accRes, sitesRes] = await Promise.all([
@@ -49,9 +53,48 @@ export default function Accounts() {
     if (!confirm('确定要删除此账户吗？')) return;
     try {
       await api.delete(`/api/accounts/${id}`);
+      setSelectedIds(selectedIds.filter(x => x !== id));
       loadData();
     } catch (err: any) {
       alert(`错误: ${err}`);
+    }
+  };
+
+  const handleBatchAction = async (action: string) => {
+    if (selectedIds.length === 0) return;
+    if (action === 'delete') {
+      if (!confirm(`确定要删除选中的 ${selectedIds.length} 个账号吗？`)) return;
+    }
+
+    setBatchLoading(true);
+    try {
+      const res = await api.post('/api/accounts/batch', { ids: selectedIds, action });
+      const data = (res as any).data || res;
+      if (data.failedItems && data.failedItems.length > 0) {
+        alert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+      }
+      setSelectedIds([]);
+      loadData();
+    } catch (err: any) {
+      alert(`错误: ${err}`);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(accounts.map(s => s.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const toggleSelect = (id: number, checked: boolean) => {
+    if (checked) {
+      setSelectedIds([...selectedIds, id]);
+    } else {
+      setSelectedIds(selectedIds.filter(x => x !== id));
     }
   };
 
@@ -88,6 +131,18 @@ export default function Accounts() {
         </button>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="batch-action-bar animate-fade-in">
+          <div className="batch-action-count">已选择 {selectedIds.length} 个账号</div>
+          <div className="batch-action-buttons">
+            <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className="btn btn-secondary btn-sm">启用</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className="btn btn-secondary btn-sm">禁用</button>
+            <div className="batch-action-divider" />
+            <button disabled={batchLoading} onClick={() => handleBatchAction('delete')} className="btn btn-danger btn-sm">删除</button>
+          </div>
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflowX: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
         {loading ? (
           <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -107,18 +162,32 @@ export default function Accounts() {
               <table className="data-table accounts-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 40, textAlign: 'center' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={accounts.length > 0 && selectedIds.length === accounts.length}
+                        onChange={(e) => toggleSelectAll(e.target.checked)}
+                      />
+                    </th>
                     <th>连接名称</th>
                     <th>站点</th>
                     <th>运行健康状态</th>
                     <th>余额</th>
                     <th>已用</th>
-                    <th>签到信息</th>
+                    <th>签到</th>
                     <th style={{ textAlign: 'right' }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accounts.map(acc => (
-                    <tr key={acc.id} className="animate-slide-up">
+                    <tr key={acc.id} className={`animate-slide-up ${selectedIds.includes(acc.id) ? 'selected-row' : ''}`}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(acc.id)}
+                          onChange={(e) => toggleSelect(acc.id, e.target.checked)}
+                        />
+                      </td>
                       <td style={{ color: "var(--color-text-primary)" }}>
                         <div style={{ fontWeight: 600 }}>
                           {acc.username || `Account #${acc.id}`}
@@ -143,7 +212,14 @@ export default function Accounts() {
                         </div>
                       </td>
                       <td>
-                        <span className="badge badge-muted">{acc.site_name || sites.find(s => s.id === acc.site_id)?.name || `Site #${acc.site_id}`}</span>
+                        <span className="badge badge-muted">
+                          {acc.site_name || sites.find(s => s.id === acc.site_id)?.name || `Site #${acc.site_id}`}
+                        </span>
+                        {acc.site_platform && (
+                          <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-muted)' }}>
+                            {acc.site_platform}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
@@ -262,6 +338,15 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         accessToken: formData.access_token,
         platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0
       });
+      if (res.data.shieldBlocked) {
+        alert('验证失败: 该站点存在防爬拦截 (Shield)。建议手动在浏览器提取 Token。' + (res.data.message || ''));
+        return;
+      }
+      if (res.data.needsUserId) {
+        alert('验证失败: 此类型的令牌需要提供 Platform User ID (例如 new-api 平台)。' + (res.data.message || ''));
+        return;
+      }
+
       if (res.data.tokenType === 'session') {
         setFormData(prev => ({ 
           ...prev, 

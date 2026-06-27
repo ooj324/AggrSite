@@ -43,12 +43,16 @@ export interface Site {
   external_checkin_url?: string;
   custom_headers?: string;
   created_at: string;
+  total_balance?: number;
+  sort_order?: number;
 }
 
 export interface Account {
   id: number;
   site_id: number;
   site_name: string;
+  site_platform?: string;
+  site_url?: string;
   username: string;
   access_token: string;
   api_token?: string;
@@ -59,6 +63,15 @@ export interface Account {
   checkin_enabled: boolean;
   last_checkin_at: string;
   last_balance_refresh: string;
+  extra_config?: string;
+}
+
+export interface FailureReason {
+  code: string;
+  category: string;
+  title: string;
+  actionHint: string;
+  detailHint: string;
 }
 
 export interface CheckinLog {
@@ -68,6 +81,10 @@ export interface CheckinLog {
   message: string;
   reward: string;
   created_at: string;
+  account_username?: string;
+  site_name?: string;
+  site_url?: string;
+  failureReason?: FailureReason;
 }
 
 export interface Event {

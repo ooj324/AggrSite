@@ -76,9 +76,12 @@ export default function Logs() {
                 <thead>
                   <tr>
                     <th>时间</th>
-                    <th>账户 ID</th>
+                    <th>账号</th>
+                    <th>站点</th>
                     <th>状态</th>
-                    <th>消息</th>
+                    <th>分类</th>
+                    <th>信息</th>
+                    <th>建议</th>
                     <th>奖励</th>
                   </tr>
                 </thead>
@@ -88,18 +91,37 @@ export default function Logs() {
                       <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                         {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>#{log.account_id}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                        {log.account_username || `Account #${log.account_id}`}
+                      </td>
+                      <td style={{ fontSize: 13, color: 'var(--color-text-muted)', fontWeight: 400 }}>
+                        {log.site_name || '-'}
+                      </td>
                       <td>
                         <span className={`badge ${log.status === 'success' ? 'badge-success' : log.status === 'failed' ? 'badge-error' : 'badge-muted'}`}>
-                          {log.status === 'success' ? '成功' : log.status === 'failed' ? '失败' : '待处理'}
+                          {log.status === 'success' ? '成功' : log.status === 'failed' ? '失败' : '跳过'}
                         </span>
                       </td>
-                      <td style={{ maxWidth: 360 }}>
+                      <td>
+                        {log.failureReason ? (
+                          <span className="badge badge-warning">{log.failureReason.title}</span>
+                        ) : log.status === 'success' ? (
+                          <span className="badge badge-success">正常</span>
+                        ) : (
+                          <span className="badge badge-muted">-</span>
+                        )}
+                      </td>
+                      <td style={{ maxWidth: 280 }}>
                         <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={log.message}>
                           {log.message}
                         </span>
                       </td>
-                      <td>{log.reward || '-'}</td>
+                      <td style={{ color: 'var(--color-text-secondary)' }}>
+                        {log.failureReason?.actionHint || '-'}
+                      </td>
+                      <td style={{ color: log.reward ? 'var(--color-success)' : 'inherit' }}>
+                        {log.reward || '-'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -7,6 +7,7 @@ import (
 	"metapi/aggrsite/platform"
 	"metapi/aggrsite/service"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -49,11 +50,22 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 
 	loginResult, err := adapter.Login(site.URL, input.Username, input.Password, opt)
 	if err != nil {
-		fail(w, http.StatusInternalServerError, "login error: "+err.Error())
+		errStr := err.Error()
+		shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
+		if shieldBlocked {
+			fail(w, http.StatusBadRequest, "站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。")
+			return
+		}
+		fail(w, http.StatusInternalServerError, "login error: "+errStr)
 		return
 	}
 
 	if !loginResult.Success {
+		shieldBlocked := strings.Contains(loginResult.Message, "acw_sc__v2") || strings.Contains(loginResult.Message, "var arg1") || strings.Contains(loginResult.Message, "challenge")
+		if shieldBlocked {
+			fail(w, http.StatusBadRequest, "站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。")
+			return
+		}
 		fail(w, http.StatusBadRequest, "login failed: "+loginResult.Message)
 		return
 	}

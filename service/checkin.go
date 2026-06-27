@@ -118,34 +118,60 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 
 	alreadyCheckedIn := isAlreadyCheckedIn(result.Message)
 	unsupported := isUnsupportedCheckin(result.Message)
-	effectiveSuccess := result.Success || alreadyCheckedIn || unsupported
+	
+	failureReason := AnalyzeCheckinFailure(result.Message)
+	turnstileRequired := failureReason.Code == "TURNSTILE_REQUIRED"
+
+	effectiveSuccess := result.Success || alreadyCheckedIn || unsupported || turnstileRequired
 
 	var status string
 	switch {
-	case unsupported:
+	case unsupported || turnstileRequired:
 		status = "skipped"
 	case effectiveSuccess:
 		status = "success"
 	default:
-		// Attempt auto-relogin on failure
-		if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
-			row.AccessToken = refreshedAccessToken
-			// Retry checkin
-			result, err = adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
-			if err != nil {
-				result = &platform.CheckinResult{Success: false, Message: err.Error()}
-			}
-			
-			alreadyCheckedIn = isAlreadyCheckedIn(result.Message)
-			unsupported = isUnsupportedCheckin(result.Message)
-			effectiveSuccess = result.Success || alreadyCheckedIn || unsupported
-			if effectiveSuccess {
-				status = "success"
+		// Attempt auto-relogin ONLY if token is expired
+		if failureReason.Code == "TOKEN_EXPIRED" {
+			if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
+				row.AccessToken = refreshedAccessToken
+				// Retry checkin
+				result, err = adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
+				if err != nil {
+					result = &platform.CheckinResult{Success: false, Message: err.Error()}
+				}
+				
+				alreadyCheckedIn = isAlreadyCheckedIn(result.Message)
+				unsupported = isUnsupportedCheckin(result.Message)
+				newFailure := AnalyzeCheckinFailure(result.Message)
+				turnstileRequired = newFailure.Code == "TURNSTILE_REQUIRED"
+				
+				effectiveSuccess = result.Success || alreadyCheckedIn || unsupported || turnstileRequired
+				if unsupported || turnstileRequired {
+					status = "skipped"
+				} else if effectiveSuccess {
+					status = "success"
+				} else {
+					status = "failed"
+				}
 			} else {
 				status = "failed"
 			}
 		} else {
 			status = "failed"
+		}
+	}
+
+	// Reward inference if success but no explicit reward
+	if result.Success && !alreadyCheckedIn && !unsupported && !turnstileRequired && result.Reward == "" {
+		if preBalance, err := adapter.GetBalance(checkinURL, row.AccessToken, platformUserID, opt); err == nil {
+			postBalance, err2 := RefreshBalance(accountID)
+			if err2 == nil && postBalance != nil && postBalance.Balance != nil {
+				delta := postBalance.Balance.Quota - preBalance.Quota
+				if delta > 0 {
+					result.Reward = fmt.Sprintf("推断奖励: %.2f", delta)
+				}
+			}
 		}
 	}
 
@@ -163,14 +189,14 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		eventLevel, &accountID, "account")
 
 	// Update last_checkin_at on success
-	if result.Success && !alreadyCheckedIn && !unsupported {
+	if result.Success && !alreadyCheckedIn && !unsupported && !turnstileRequired {
 		_ = db.UpdateAccount(accountID, map[string]interface{}{
 			"last_checkin_at": db.TimeNow(),
 		})
 	}
 
-	// Also try refreshing balance on success
-	if effectiveSuccess && !unsupported {
+	// Try refreshing balance on success (if not already done by inference)
+	if effectiveSuccess && !unsupported && !turnstileRequired && result.Reward == "" {
 		go func() {
 			_, _ = RefreshBalance(accountID)
 		}()

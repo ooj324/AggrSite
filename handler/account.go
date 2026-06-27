@@ -7,6 +7,7 @@ import (
 	"metapi/aggrsite/service"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -43,9 +44,49 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opt := getRequestOption(site)
+
+	// Mode handling
+	credentialMode := r.URL.Query().Get("credentialMode")
+	if credentialMode == "" {
+		credentialMode = "session"
+	}
+
+	if credentialMode == "apikey" {
+		// API Key mode: just test if we can fetch models
+		models, err := ad.GetModels(site.URL, input.AccessToken, input.PlatformUserID, opt)
+		if err != nil {
+			errStr := err.Error()
+			shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
+			if shieldBlocked {
+				ok(w, map[string]interface{}{"shieldBlocked": true, "message": "被反爬或防火墙拦截"})
+				return
+			}
+			fail(w, http.StatusInternalServerError, errStr)
+			return
+		}
+		ok(w, map[string]interface{}{
+			"tokenType":  "apikey",
+			"modelCount": len(models),
+			"models":     models,
+		})
+		return
+	}
+
 	res, err := ad.VerifyToken(site.URL, input.AccessToken, input.PlatformUserID, opt)
 	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
+		errStr := err.Error()
+		// Detect needsUserId or shield
+		needsUserId := strings.Contains(errStr, "New-API-User") || strings.Contains(errStr, "user id required")
+		shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
+		if needsUserId || shieldBlocked {
+			ok(w, map[string]interface{}{
+				"needsUserId":   needsUserId,
+				"shieldBlocked": shieldBlocked,
+				"message":       errStr,
+			})
+			return
+		}
+		fail(w, http.StatusInternalServerError, errStr)
 		return
 	}
 
@@ -78,22 +119,48 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "account not found")
 		return
 	}
+	site, err := db.GetSite(account.SiteID)
+	if err != nil {
+		fail(w, http.StatusNotFound, "site not found")
+		return
+	}
 
 	updates := map[string]interface{}{
 		"access_token": input.AccessToken,
 	}
 
+	var cfg map[string]interface{}
+	if account.ExtraConfig != nil && *account.ExtraConfig != "" {
+		json.Unmarshal([]byte(*account.ExtraConfig), &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+
+	platformUserID := int64(0)
 	if input.PlatformUserID != nil {
-		var cfg map[string]interface{}
-		if account.ExtraConfig != nil && *account.ExtraConfig != "" {
-			json.Unmarshal([]byte(*account.ExtraConfig), &cfg)
+		platformUserID = *input.PlatformUserID
+		cfg["platformUserId"] = platformUserID
+	} else if existingID, ok := cfg["platformUserId"].(float64); ok {
+		platformUserID = int64(existingID)
+	}
+
+	cfgBytes, _ := json.Marshal(cfg)
+	updates["extra_config"] = string(cfgBytes)
+
+	// Verify the new token
+	ad := platform.GetAdapter(site.Platform)
+	if ad != nil {
+		opt := getRequestOption(site)
+		res, err := ad.VerifyToken(site.URL, input.AccessToken, platformUserID, opt)
+		if err == nil && res != nil {
+			if res.UserInfo != nil && res.UserInfo.Username != "" {
+				updates["username"] = res.UserInfo.Username
+			}
+			if res.ApiToken != "" {
+				updates["api_token"] = res.ApiToken
+			}
 		}
-		if cfg == nil {
-			cfg = make(map[string]interface{})
-		}
-		cfg["platformUserId"] = *input.PlatformUserID
-		cfgBytes, _ := json.Marshal(cfg)
-		updates["extra_config"] = string(cfgBytes)
 	}
 
 	if err := db.UpdateAccount(id, updates); err != nil {
@@ -106,7 +173,7 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 
 func ListAccounts(w http.ResponseWriter, r *http.Request) {
 	siteID := queryInt64Ptr(r, "siteId")
-	accounts, err := db.ListAccounts(siteID)
+	accounts, err := db.ListAccountsWithSites(siteID)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
