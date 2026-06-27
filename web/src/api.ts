@@ -103,3 +103,9 @@ export interface SchedulerStatus {
   balance_refresh_cron: string;
   next_balance_refresh: string;
 }
+
+export const detectSite = (url: string) =>
+  api.post('/api/sites/detect', { url });
+
+export const pingSite = (url: string) =>
+  api.post('/api/sites/ping', { url });

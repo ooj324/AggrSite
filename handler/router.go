@@ -25,6 +25,8 @@ func MountRoutes(r chi.Router) {
 		})
 
 		// Sites
+		r.Post("/api/sites/detect", DetectSite)
+		r.Post("/api/sites/ping", PingSite)
 		r.Get("/api/sites", ListSites)
 		r.Post("/api/sites", CreateSite)
 		r.Post("/api/sites/batch", BatchSites)

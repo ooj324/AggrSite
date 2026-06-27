@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
-	"metapi/aggrsite/db"
 	"net/http"
+	"strings"
+	"time"
+
+	"metapi/aggrsite/db"
 )
 
 func ListSites(w http.ResponseWriter, r *http.Request) {
@@ -235,5 +240,88 @@ func BatchSites(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]interface{}{
 		"successIds":  successIDs,
 		"failedItems": failedItems,
+	})
+}
+
+func DetectSite(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		URL string `json:"url"`
+	}
+	if err := parseBody(r, &input); err != nil {
+		fail(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	url := strings.TrimSpace(input.URL)
+	if url == "" {
+		fail(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	url = strings.TrimSuffix(url, "/")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, _ := http.NewRequest("GET", url+"/api/status", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		// Cannot connect, return empty or error
+		ok(w, map[string]interface{}{"platform": nil, "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		var data map[string]interface{}
+		body, _ := io.ReadAll(resp.Body)
+		if json.Unmarshal(body, &data) == nil {
+			if sysName, isStr := data["system_name"].(string); isStr && strings.Contains(strings.ToLower(sysName), "new api") {
+				ok(w, map[string]interface{}{"platform": "newapi", "url": url})
+				return
+			}
+			if _, hasVer := data["version"]; hasVer {
+				ok(w, map[string]interface{}{"platform": "oneapi", "url": url})
+				return
+			}
+		}
+	}
+	ok(w, map[string]interface{}{"platform": nil, "error": "Could not detect platform"})
+}
+
+func PingSite(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		URL string `json:"url"`
+	}
+	if err := parseBody(r, &input); err != nil {
+		fail(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	url := strings.TrimSpace(input.URL)
+	if url == "" {
+		fail(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	start := time.Now()
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	
+	resp, err := client.Do(req)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		ok(w, map[string]interface{}{
+			"success":    false,
+			"latency_ms": latency,
+			"error":      err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	ok(w, map[string]interface{}{
+		"success":     true,
+		"latency_ms":  latency,
+		"status_code": resp.StatusCode,
 	})
 }

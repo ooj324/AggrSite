@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, detectSite, pingSite } from '../api';
 import type { Site } from '../api';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Activity } from 'lucide-react';
 import { Modal } from '../components/Modal';
 
 export default function Sites() {
@@ -112,6 +112,19 @@ export default function Sites() {
   const openEdit = (site?: Site) => {
     setEditingSite(site || null);
     setShowModal(true);
+  };
+
+  const handleListPing = async (url: string) => {
+    try {
+      const res: any = await pingSite(url);
+      if (res && res.success) {
+        alert(`连通成功! 延迟: ${res.latency_ms}ms (HTTP ${res.status_code})`);
+      } else {
+        alert(`连通失败: ${res?.error} (延迟: ${res?.latency_ms}ms)`);
+      }
+    } catch (err: any) {
+      alert(`请求失败: ${err}`);
+    }
   };
 
   const btnPrimaryClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-primary rounded-sm transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
@@ -248,6 +261,9 @@ export default function Sites() {
                       </td>
                       <td className="text-center">
                         <div className="flex items-center justify-center gap-1 transition-opacity">
+                          <button onClick={() => handleListPing(site.url)} className="p-1.5 text-textSecondary hover:text-info hover:bg-info/10 rounded-md transition-colors" title="测试连通性">
+                            <Activity size={16} />
+                          </button>
                           <button onClick={() => openEdit(site)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors" title="编辑">
                             <Edit2 size={16} />
                           </button>
@@ -340,6 +356,49 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
   }, [site]);
 
   const [loading, setLoading] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [pinging, setPinging] = useState(false);
+
+  const handleDetect = async () => {
+    if (!formData.url.trim()) {
+      alert('请先输入 URL');
+      return;
+    }
+    setDetecting(true);
+    try {
+      const res: any = await detectSite(formData.url);
+      if (res && res.platform) {
+        setFormData(prev => ({ ...prev, platform: res.platform, url: res.url || prev.url }));
+        alert(`已识别为平台: ${res.platform}`);
+      } else {
+        alert(res?.error || '未能识别平台');
+      }
+    } catch (err: any) {
+      alert(`检测失败: ${err}`);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handlePing = async () => {
+    if (!formData.url.trim()) {
+      alert('请先输入 URL');
+      return;
+    }
+    setPinging(true);
+    try {
+      const res: any = await pingSite(formData.url);
+      if (res && res.success) {
+        alert(`连通成功! 延迟: ${res.latency_ms}ms (HTTP ${res.status_code})`);
+      } else {
+        alert(`连通失败: ${res?.error} (延迟: ${res?.latency_ms}ms)`);
+      }
+    } catch (err: any) {
+      alert(`请求失败: ${err}`);
+    } finally {
+      setPinging(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -384,22 +443,30 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
           <form id="site-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <input required type="text" className={inputClass} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
-              <input required type="url" className={inputClass} value={formData.url} onChange={e => {
-                const url = e.target.value;
-                let nextPlatform = formData.platform;
-                if (!nextPlatform || nextPlatform === 'anyrouter') {
-                  if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
-                    nextPlatform = 'newapi';
-                  } else if (url.includes('sub2api') || url.includes('aiproxy')) {
-                    nextPlatform = 'sub2api';
-                  } else if (url.includes('donehub') || url.includes('oaifree')) {
-                    nextPlatform = 'donehub';
-                  } else if (url.includes('veloera')) {
-                    nextPlatform = 'veloera';
+              <div className="flex gap-2">
+                <input required type="url" className={`${inputClass} flex-1`} value={formData.url} onChange={e => {
+                  const url = e.target.value;
+                  let nextPlatform = formData.platform;
+                  if (!nextPlatform || nextPlatform === 'anyrouter') {
+                    if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
+                      nextPlatform = 'newapi';
+                    } else if (url.includes('sub2api') || url.includes('aiproxy')) {
+                      nextPlatform = 'sub2api';
+                    } else if (url.includes('donehub') || url.includes('oaifree')) {
+                      nextPlatform = 'donehub';
+                    } else if (url.includes('veloera')) {
+                      nextPlatform = 'veloera';
+                    }
                   }
-                }
-                setFormData({...formData, url, platform: nextPlatform});
-              }} placeholder="URL (例如: https://api.example.com)" />
+                  setFormData({...formData, url, platform: nextPlatform});
+                }} placeholder="URL (例如: https://api.example.com)" />
+                <button type="button" onClick={handleDetect} disabled={detecting || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
+                  {detecting ? '检测中' : '自动识别'}
+                </button>
+                <button type="button" onClick={handlePing} disabled={pinging || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
+                  {pinging ? 'Ping...' : 'Ping'}
+                </button>
+              </div>
               <select className={inputClass} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
                 <option value="" disabled>选择平台</option>
                 {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
