@@ -55,6 +55,7 @@ func Init() {
 
 	EnsureAccountTokensTable()
 	EnsureSettingsTable()
+	EnsureSiteExternalCheckinColumns()
 }
 
 // NowUTC returns a UTC datetime string compatible with the active database

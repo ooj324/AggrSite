@@ -215,6 +215,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		db.CreateAccountInput
 		ProxyURL       *string `json:"proxyUrl"`
 		UseSystemProxy *bool   `json:"useSystemProxy"`
+		CheckinCredential *string `json:"checkin_credential"`
 	}
 	if err := parseBody(r, &input); err != nil {
 		fail(w, http.StatusBadRequest, "invalid body: "+err.Error())
@@ -281,6 +282,9 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		if input.UseSystemProxy != nil {
 			cfg["useSystemProxy"] = *input.UseSystemProxy
+		}
+		if input.CheckinCredential != nil && *input.CheckinCredential != "" {
+			cfg["checkin_credential"] = *input.CheckinCredential
 		}
 		bs, _ := json.Marshal(cfg)
 		db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
@@ -367,6 +371,17 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 			cfg["credentialMode"] = s
 		}
 		delete(fields, "credentialMode")
+		cfgModified = true
+	}
+	if v, ok := fields["checkin_credential"]; ok {
+		if s, isStr := v.(string); isStr {
+			if s != "" {
+				cfg["checkin_credential"] = s
+			} else {
+				delete(cfg, "checkin_credential")
+			}
+		}
+		delete(fields, "checkin_credential")
 		cfgModified = true
 	}
 	if v, ok := fields["platformUserId"]; ok {

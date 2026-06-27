@@ -103,7 +103,7 @@ export default function Accounts() {
     if (type === 'rebind') {
       const token = prompt('请输入新的 Access Token 进行换绑：');
       if (!token) return;
-      
+
       let platformUserId: number | undefined;
       const pid = prompt('请输入 Platform User ID（如果不需要请留空）：');
       if (pid) {
@@ -211,8 +211,8 @@ export default function Accounts() {
                   {accounts.map(acc => (
                     <tr key={acc.id} className={`group animate-slide-up ${selectedIds.includes(acc.id) ? '!bg-primary/5' : ''}`}>
                       <td className="text-center">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={selectedIds.includes(acc.id)}
                           onChange={(e) => toggleSelect(acc.id, e.target.checked)}
                         />
@@ -284,9 +284,9 @@ export default function Accounts() {
                             {actionLoading === acc.id ? (
                               <span className="w-2.5 h-2.5 border-2 border-current/20 border-t-current rounded-full animate-spin" />
                             ) : acc.checkin_enabled ? (
-                              <span>自动签到ON</span>
+                              <span>ON</span>
                             ) : (
-                              <span>自动签到OFF</span>
+                              <span>OFF</span>
                             )}
                           </button>
                           <div className="w-[1px] h-3 bg-border" />
@@ -324,11 +324,11 @@ export default function Accounts() {
       </div>
 
       {showModal && (
-        <AccountModal 
-          account={editingAccount} 
+        <AccountModal
+          account={editingAccount}
           sites={sites}
-          onClose={() => setShowModal(false)} 
-          onSaved={() => { setShowModal(false); loadData(); }} 
+          onClose={() => setShowModal(false)}
+          onSaved={() => { setShowModal(false); loadData(); }}
         />
       )}
     </div>
@@ -349,9 +349,11 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     credential_mode: account?.extra_config?.credentialMode || 'session',
     proxy_url: account?.extra_config?.proxyUrl || '',
     use_system_proxy: account?.extra_config?.useSystemProxy || false,
+    checkin_credential: account?.extra_config?.checkin_credential || '',
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ success: boolean; tokenType?: string } | null>(null);
 
   const handleVerify = async () => {
     if (!formData.access_token) {
@@ -367,28 +369,32 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
       });
       if (res.data.shieldBlocked) {
         alert('验证失败: 该站点存在防爬拦截 (Shield)。建议手动在浏览器提取 Token。' + (res.data.message || ''));
+        setVerifyResult(null);
         return;
       }
       if (res.data.needsUserId) {
         alert('验证失败: 此类型的令牌需要提供 Platform User ID (例如 new-api 平台)。' + (res.data.message || ''));
+        setVerifyResult(null);
         return;
       }
 
       if (res.data.tokenType === 'session') {
-        setFormData(prev => ({ 
-          ...prev, 
+        setFormData(prev => ({
+          ...prev,
           username: prev.username || res.data.userInfo?.username || '',
           api_token: prev.api_token || res.data.apiToken || '',
           credential_mode: 'session'
         }));
       } else if (res.data.tokenType === 'apikey') {
-        setFormData(prev => ({ 
-          ...prev, 
+        setFormData(prev => ({
+          ...prev,
           credential_mode: 'apikey'
         }));
       }
+      setVerifyResult({ success: true, tokenType: res.data.tokenType });
       alert(`验证成功！类型: ${res.data.tokenType}`);
     } catch (err: any) {
+      setVerifyResult(null);
       alert(`验证失败: ${err}`);
     } finally {
       setVerifyLoading(false);
@@ -413,6 +419,12 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         }
       } else {
         // Token mode
+        if (!account && !verifyResult?.success) {
+          alert('请先验证 Token 成功后再添加账号');
+          setLoading(false);
+          return;
+        }
+
         const payload = {
           site_id: Number(formData.site_id),
           username: formData.username,
@@ -423,9 +435,10 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
           platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
           credentialMode: formData.credential_mode,
           proxyUrl: formData.proxy_url,
-          useSystemProxy: formData.use_system_proxy
+          useSystemProxy: formData.use_system_proxy,
+          checkin_credential: formData.checkin_credential
         };
-        
+
         if (account) {
           await api.put(`/api/accounts/${account.id}`, payload);
         } else {
@@ -444,99 +457,100 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
   return (
     <Modal title={account ? '编辑账户' : '添加账户'} onClose={onClose}>
       <div className="p-6">
-          {!account && (
-            <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
-              <button 
-                type="button"
-                onClick={() => setMode('login')} 
-                className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
-              >
-                登录模式
-              </button>
-              <button 
-                type="button"
-                onClick={() => setMode('token')} 
-                className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'token' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
-              >
-                令牌模式
-              </button>
-            </div>
-          )}
-
-          <form id="account-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <select className={inputClass} value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
-                {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              
-              <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
-
-              {mode === 'login' && !account ? (
-                <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="密码" />
-              ) : (
-                <>
-                  <input required type="text" className={inputClass} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
-                  <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
-                  <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
-                  <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="账号代理 URL (可选，覆盖站点)" />
-                  <select className={inputClass} value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
-                    <option value="session">模式: Session (支持签到)</option>
-                    <option value="apikey">模式: API Key (仅代理)</option>
-                  </select>
-                </>
-              )}
-
-              {mode === 'token' && (
-                <select className={inputClass} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                  <option value="active">启用状态: 启用</option>
-                  <option value="disabled">启用状态: 禁用</option>
-                </select>
-              )}
-            </div>
-
-            {mode === 'login' && !account && (
-              <p className="text-[12px] text-textMuted mt-[-8px]">密码用于自动刷新令牌。它将被加密存储。</p>
-            )}
-            
-            <div className="flex items-center gap-6 mt-2">
-              <div className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
-                  id="checkin_enabled"
-                  className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
-                  checked={formData.checkin_enabled} 
-                  onChange={e => setFormData({...formData, checkin_enabled: e.target.checked})}
-                />
-                <label htmlFor="checkin_enabled" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">开启自动签到</label>
-              </div>
-
-              {mode === 'token' && (
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="use_system_proxy"
-                    className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
-                    checked={formData.use_system_proxy} 
-                    onChange={e => setFormData({...formData, use_system_proxy: e.target.checked})}
-                  />
-                  <label htmlFor="use_system_proxy" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">使用系统代理 (覆盖站点)</label>
-                </div>
-              )}
-            </div>
-          </form>
-        </div>
-        
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-black/5 dark:bg-white/5 rounded-b-2xl">
-          {mode === 'token' && !account && (
-            <button type="button" onClick={handleVerify} disabled={verifyLoading} className="mr-auto px-4 py-2 text-[13px] font-medium text-primary hover:text-primaryHover transition-colors disabled:opacity-50">
-              {verifyLoading ? '验证中...' : '验证 Token'}
+        {!account && (
+          <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
+            <button
+              type="button"
+              onClick={() => { setMode('login'); setVerifyResult(null); }}
+              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+            >
+              登录模式
             </button>
+            <button
+              type="button"
+              onClick={() => { setMode('token'); setVerifyResult(null); }}
+              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'token' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+            >
+              令牌模式
+            </button>
+          </div>
+        )}
+
+        <form id="account-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <select className={inputClass} value={formData.site_id} onChange={e => { setFormData({ ...formData, site_id: Number(e.target.value) }); setVerifyResult(null); }}>
+              {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+
+            <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
+
+            {mode === 'login' && !account ? (
+              <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} placeholder="密码" />
+            ) : (
+              <>
+                <input required type="text" className={inputClass} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="Access Token 或 API Key" />
+                <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({ ...formData, api_token: e.target.value })} placeholder="API Token (可选，验证可自动获取)" />
+                <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value }); setVerifyResult(null); }} placeholder="Platform User ID (部分站点需要)" />
+                <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({ ...formData, proxy_url: e.target.value })} placeholder="账号代理 URL (可选，覆盖站点)" />
+                <select className={inputClass} value={formData.credential_mode} onChange={e => setFormData({ ...formData, credential_mode: e.target.value })}>
+                  <option value="session">模式: Session (支持签到)</option>
+                  <option value="apikey">模式: API Key (仅代理)</option>
+                </select>
+                <input type="text" className={inputClass} value={formData.checkin_credential} onChange={e => setFormData({ ...formData, checkin_credential: e.target.value })} placeholder="独立签到凭据 (可选，覆盖默认Token)" />
+              </>
+            )}
+
+            {mode === 'token' && (
+              <select className={inputClass} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>
+                <option value="active">启用状态: 启用</option>
+                <option value="disabled">启用状态: 禁用</option>
+              </select>
+            )}
+          </div>
+
+          {mode === 'login' && !account && (
+            <p className="text-[12px] text-textMuted mt-[-8px]">密码用于自动刷新令牌。它将被加密存储。</p>
           )}
-          <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
-          <button type="submit" form="account-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-            {loading ? '保存中...' : '保存'}
+
+          <div className="flex items-center gap-6 mt-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="checkin_enabled"
+                className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                checked={formData.checkin_enabled}
+                onChange={e => setFormData({ ...formData, checkin_enabled: e.target.checked })}
+              />
+              <label htmlFor="checkin_enabled" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">开启自动签到</label>
+            </div>
+
+            {mode === 'token' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="use_system_proxy"
+                  className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                  checked={formData.use_system_proxy}
+                  onChange={e => setFormData({ ...formData, use_system_proxy: e.target.checked })}
+                />
+                <label htmlFor="use_system_proxy" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">使用系统代理 (覆盖站点)</label>
+              </div>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-black/5 dark:bg-white/5 rounded-b-2xl">
+        {mode === 'token' && !account && (
+          <button type="button" onClick={handleVerify} disabled={verifyLoading} className="mr-auto px-4 py-2 text-[13px] font-medium text-primary hover:text-primaryHover transition-colors disabled:opacity-50">
+            {verifyLoading ? '验证中...' : '验证 Token'}
           </button>
-        </div>
+        )}
+        <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
+        <button type="submit" form="account-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+          {loading ? '保存中...' : '保存'}
+        </button>
+      </div>
     </Modal>
   );
 }

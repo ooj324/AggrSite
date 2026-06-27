@@ -298,16 +298,60 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     custom_headers: site?.custom_headers || '',
   });
 
+  const [useAdvancedCheckin, setUseAdvancedCheckin] = useState(false);
+  const [advCheckin, setAdvCheckin] = useState({
+    method: 'POST',
+    url: '',
+    auth_header: 'Authorization',
+    auth_prefix: 'Bearer '
+  });
+
+  useEffect(() => {
+    if (site?.external_checkin_url) {
+      const val = site.external_checkin_url.trim();
+      if (val.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(val);
+          setAdvCheckin({
+            method: parsed.method || 'POST',
+            url: parsed.url || '',
+            auth_header: parsed.auth_header || 'Authorization',
+            auth_prefix: parsed.auth_prefix ?? 'Bearer '
+          });
+          setUseAdvancedCheckin(true);
+        } catch (e) {}
+      } else if (val.indexOf('|') > 0) {
+        const idx = val.indexOf('|');
+        setAdvCheckin({
+          method: val.substring(0, idx).toUpperCase(),
+          url: val.substring(idx + 1),
+          auth_header: 'Authorization',
+          auth_prefix: 'Bearer '
+        });
+        setUseAdvancedCheckin(true);
+      }
+    }
+  }, [site]);
+
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const submitData = { ...formData };
+      if (useAdvancedCheckin) {
+        if (advCheckin.url) {
+          submitData.external_checkin_url = JSON.stringify(advCheckin);
+        } else {
+          submitData.external_checkin_url = '';
+        }
+      }
+
       if (site) {
-        await api.put(`/api/sites/${site.id}`, formData);
+        await api.put(`/api/sites/${site.id}`, submitData);
       } else {
-        await api.post('/api/sites', formData);
+        await api.post('/api/sites', submitData);
       }
       onSaved();
     } catch (err: any) {
@@ -349,8 +393,44 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 <option value="disabled">启用状态: 禁用</option>
               </select>
               <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="代理 URL (可选, http://127.0.0.1:7890)" />
-              <input type="url" className={inputClass} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
+              
+              {!useAdvancedCheckin && (
+                <input type="url" className={inputClass} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
+              )}
             </div>
+
+            <div className="flex items-center gap-2">
+              <input 
+                type="checkbox" 
+                id="use_advanced_checkin"
+                className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                checked={useAdvancedCheckin} 
+                onChange={e => setUseAdvancedCheckin(e.target.checked)}
+              />
+              <label htmlFor="use_advanced_checkin" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">高级签到配置 (自定义请求方法与认证头)</label>
+            </div>
+
+            {useAdvancedCheckin && (
+              <div className="bg-black/5 dark:bg-white/5 p-4 rounded-xl flex flex-col gap-3 border border-border/50">
+                <div className="flex gap-3">
+                  <select className={`${inputClass} w-[100px] flex-shrink-0`} value={advCheckin.method} onChange={e => setAdvCheckin({...advCheckin, method: e.target.value})}>
+                    <option value="POST">POST</option>
+                    <option value="GET">GET</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                  </select>
+                  <input type="url" className={`${inputClass} flex-1`} value={advCheckin.url} onChange={e => setAdvCheckin({...advCheckin, url: e.target.value})} placeholder="签到目标 URL" />
+                </div>
+                <div className="flex gap-3">
+                  <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_header} onChange={e => setAdvCheckin({...advCheckin, auth_header: e.target.value})} placeholder='认证Header名称 (例如: Cookie, X-Api-Key, Authorization)' />
+                  <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_prefix} onChange={e => setAdvCheckin({...advCheckin, auth_prefix: e.target.value})} placeholder='认证前缀 (例如: "Bearer ", 注留空即可)' />
+                </div>
+                <div className="text-[11px] text-textMuted leading-relaxed">
+                  提示：认证信息将通过设置 <code>{advCheckin.auth_header || 'Authorization'}: {advCheckin.auth_prefix || ''}[账号签到凭据]</code> 发送。若需禁用认证可将 Header 名称设为 <code>none</code>。独立签到凭据请在账号设置中配置。
+                </div>
+              </div>
+            )}
+
             <textarea 
               className={inputClass}
               style={{ minHeight: 60, resize: 'vertical' }} 

@@ -77,6 +77,49 @@ func isUnsupportedCheckin(message string) bool {
 	return false
 }
 
+type ExternalCheckinConfig struct {
+	Method     string `json:"method"`
+	URL        string `json:"url"`
+	AuthHeader string `json:"auth_header"`
+	AuthPrefix string `json:"auth_prefix"`
+}
+
+func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *platform.RequestOption, customHeaders *string) (*platform.CheckinResult, error) {
+	base := platform.BaseAdapter{}
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	
+	if config.AuthHeader != "none" && config.AuthHeader != "None" && config.AuthHeader != "" {
+		headers[config.AuthHeader] = config.AuthPrefix + credential
+	}
+
+	if customHeaders != nil && *customHeaders != "" {
+		var ch map[string]string
+		if err := json.Unmarshal([]byte(*customHeaders), &ch); err == nil {
+			for k, v := range ch {
+				headers[k] = v
+			}
+		}
+	}
+
+	var res map[string]interface{}
+	err := base.FetchJSON(config.URL, config.Method, headers, nil, &res, opt)
+	result := &platform.CheckinResult{}
+	if err != nil {
+		result.Success = false
+		result.Message = err.Error()
+		return result, nil
+	}
+	msg := platform.ExtractMessage(res)
+	if msg == "" {
+		msg = "check-in override executed"
+	}
+	result.Success = true
+	result.Message = msg
+	return result, nil
+}
+
 func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	row, err := db.GetAccountWithSite(accountID)
 	if err != nil {
@@ -97,11 +140,37 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		return &CheckinAccountResult{Success: false, Status: "skipped", Message: msg}, nil
 	}
 
-	// Check if external checkin URL is provided
 	checkinURL := row.SiteURL
+	hasOverrideURL := false
+	var overrideConfig ExternalCheckinConfig
+	useGeneric := false
+
 	if row.SiteExternalCheckinURL != nil && *row.SiteExternalCheckinURL != "" {
-		checkinURL = *row.SiteExternalCheckinURL
-		slog.Info("Using external checkin URL", "account_id", accountID, "url", checkinURL)
+		hasOverrideURL = true
+		checkinURL = strings.TrimSpace(*row.SiteExternalCheckinURL)
+		
+		overrideConfig.URL = checkinURL
+		
+		if row.SiteExternalCheckinMethod != nil && *row.SiteExternalCheckinMethod != "" {
+			useGeneric = true
+			overrideConfig.Method = *row.SiteExternalCheckinMethod
+		} else {
+			overrideConfig.Method = "POST"
+		}
+		
+		if row.SiteExternalCheckinAuthHeader != nil && *row.SiteExternalCheckinAuthHeader != "" {
+			useGeneric = true
+			overrideConfig.AuthHeader = *row.SiteExternalCheckinAuthHeader
+		} else {
+			overrideConfig.AuthHeader = "Authorization"
+		}
+		
+		if row.SiteExternalCheckinAuthPrefix != nil {
+			useGeneric = true
+			overrideConfig.AuthPrefix = *row.SiteExternalCheckinAuthPrefix
+		} else {
+			overrideConfig.AuthPrefix = "Bearer "
+		}
 	}
 
 	opt := &platform.RequestOption{
@@ -109,6 +178,8 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		UseSystemProxy: row.SiteUseSystemProxy,
 		CustomHeaders:  row.SiteCustomHeaders,
 	}
+	
+	checkinCredential := row.AccessToken
 	if row.ExtraConfig != nil && *row.ExtraConfig != "" {
 		var cfg map[string]interface{}
 		if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err == nil {
@@ -118,11 +189,32 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 			if useSystemProxy, ok := cfg["useSystemProxy"].(bool); ok {
 				opt.UseSystemProxy = &useSystemProxy
 			}
+			if cred, ok := cfg["checkin_credential"].(string); ok && cred != "" {
+				checkinCredential = cred
+			}
 		}
 	}
 
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
-	result, err := adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
+	
+	executeCheckin := func(token string, overrideCred string) (*platform.CheckinResult, error) {
+		if useGeneric {
+			return doGenericCheckin(overrideConfig, overrideCred, opt, row.SiteCustomHeaders)
+		}
+		
+		// Try adapter first (reuses main site auth method)
+		res, err := adapter.Checkin(checkinURL, overrideCred, platformUserID, opt)
+		
+		// If adapter returns unsupported, AND we have an override URL, fallback to generic checkin
+		if err == nil && res != nil && hasOverrideURL && isUnsupportedCheckin(res.Message) {
+			slog.Info("Adapter checkin unsupported, falling back to generic checkin", "url", overrideConfig.URL)
+			return doGenericCheckin(overrideConfig, overrideCred, opt, row.SiteCustomHeaders)
+		}
+		
+		return res, err
+	}
+
+	result, err := executeCheckin(row.AccessToken, checkinCredential)
 	if err != nil {
 		result = &platform.CheckinResult{Success: false, Message: err.Error()}
 	}
@@ -147,7 +239,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 			if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
 				row.AccessToken = refreshedAccessToken
 				// Retry checkin
-				result, err = adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)
+				result, err = executeCheckin(row.AccessToken, checkinCredential)
 				if err != nil {
 					result = &platform.CheckinResult{Success: false, Message: err.Error()}
 				}
