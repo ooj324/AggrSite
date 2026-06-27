@@ -92,7 +92,10 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 	}
 	
 	if config.AuthHeader != "none" && config.AuthHeader != "None" && config.AuthHeader != "" {
-		headers[config.AuthHeader] = config.AuthPrefix + credential
+		cleanToken := strings.TrimSpace(credential)
+		cleanToken = strings.TrimPrefix(cleanToken, "Bearer ")
+		cleanToken = strings.TrimSpace(cleanToken)
+		headers[config.AuthHeader] = config.AuthPrefix + cleanToken
 	}
 
 	if customHeaders != nil && *customHeaders != "" {
@@ -176,6 +179,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 
 	if row.SiteExternalCheckinURL != nil && *row.SiteExternalCheckinURL != "" {
 		hasOverrideURL = true
+		useGeneric = true
 		checkinURL = strings.TrimSpace(*row.SiteExternalCheckinURL)
 		
 		overrideConfig.URL = checkinURL
@@ -185,7 +189,6 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		}
 
 		if row.SiteExternalCheckinMethod != nil && *row.SiteExternalCheckinMethod != "" {
-			useGeneric = true
 			overrideConfig.Method = *row.SiteExternalCheckinMethod
 
 			// Only respect AuthHeader/AuthPrefix if Method is also provided (Advanced Mode)

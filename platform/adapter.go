@@ -122,7 +122,7 @@ func buildTransport(opt *RequestOption) *http.Transport {
 
 // applyCustomHeaders parses and applies custom headers from opt onto req.
 func applyCustomHeaders(req *http.Request, opt *RequestOption) {
-	if opt == nil || opt.CustomHeaders == nil || *opt.CustomHeaders == "" {
+	if opt == nil || opt.CustomHeaders == nil || *opt.CustomHeaders == "" || *opt.CustomHeaders == "{}" {
 		return
 	}
 	var custom map[string]string
@@ -131,6 +131,17 @@ func applyCustomHeaders(req *http.Request, opt *RequestOption) {
 			req.Header.Set(k, v)
 		}
 	}
+}
+
+// preserveHeadersRedirect preserves sensitive headers like Authorization and Cookie during redirects.
+func preserveHeadersRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	for key, val := range via[0].Header {
+		req.Header[key] = val
+	}
+	return nil
 }
 
 // FetchJSON makes a JSON request and decodes response.
@@ -166,8 +177,9 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	applyCustomHeaders(req, opt)
 
 	client := &http.Client{
-		Timeout:   60 * time.Second,
-		Transport: buildTransport(opt),
+		Timeout:       60 * time.Second,
+		Transport:     buildTransport(opt),
+		CheckRedirect: preserveHeadersRedirect,
 	}
 
 	resp, err := client.Do(req)
@@ -200,8 +212,12 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 
 // AuthHeaders builds common user-id headers used by new-api / one-api family.
 func AuthHeaders(accessToken string, platformUserID int64) map[string]string {
+	cleanToken := strings.TrimSpace(accessToken)
+	cleanToken = strings.TrimPrefix(cleanToken, "Bearer ")
+	cleanToken = strings.TrimSpace(cleanToken)
+
 	h := map[string]string{
-		"Authorization": "Bearer " + accessToken,
+		"Authorization": "Bearer " + cleanToken,
 	}
 	if platformUserID > 0 {
 		uid := fmt.Sprintf("%d", platformUserID)

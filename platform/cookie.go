@@ -292,8 +292,9 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		applyCustomHeaders(req, opt)
 
 		client := &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: buildTransport(opt),
+			Timeout:       30 * time.Second,
+			Transport:     buildTransport(opt),
+			CheckRedirect: preserveHeadersRedirect,
 		}
 
 		resp, err := client.Do(req)
