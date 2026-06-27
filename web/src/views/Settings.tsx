@@ -66,8 +66,8 @@ export default function Settings() {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 className="greeting">系统设置</h2>
+      <div className="page-header" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <h2 className="page-title">系统设置</h2>
       </div>
 
       <div className="card" style={{ maxWidth: 600, padding: 24, marginBottom: 24 }}>
@@ -87,7 +87,8 @@ export default function Settings() {
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>全局 HTTP 代理（例如 http://127.0.0.1:7890）。留空则使用环境变量或禁用。</p>
             <input 
               type="text" 
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontFamily: 'monospace' }} 
+              className="form-control"
+              style={{ fontFamily: 'monospace' }} 
               placeholder="http://127.0.0.1:7890" 
               value={formData.SYSTEM_PROXY_URL} 
               onChange={e => setFormData({...formData, SYSTEM_PROXY_URL: e.target.value})} 
@@ -99,7 +100,8 @@ export default function Settings() {
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>控制自动签到的运行频率。留空表示禁用。</p>
             <input 
               type="text" 
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontFamily: 'monospace' }} 
+              className="form-control"
+              style={{ fontFamily: 'monospace' }} 
               placeholder="例如 0 8 * * *" 
               value={formData.CHECKIN_CRON} 
               onChange={e => setFormData({...formData, CHECKIN_CRON: e.target.value})} 
@@ -114,7 +116,8 @@ export default function Settings() {
             <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>控制同步账户余额的频率。留空表示禁用。</p>
             <input 
               type="text" 
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontFamily: 'monospace' }} 
+              className="form-control"
+              style={{ fontFamily: 'monospace' }} 
               placeholder="例如 0 * * * *" 
               value={formData.BALANCE_REFRESH_CRON} 
               onChange={e => setFormData({...formData, BALANCE_REFRESH_CRON: e.target.value})} 

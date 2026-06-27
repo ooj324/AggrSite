@@ -102,8 +102,8 @@ export default function Logs() {
         {activeTab === 'checkin' && (
           <div style={{ display: 'flex', gap: 8 }}>
             <select 
-              className="form-select" 
-              style={{ fontSize: 13, padding: '4px 28px 4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}
+              className="form-control form-control-sm form-select-sm"
+              style={{ width: 'auto' }}
               value={timeFilter} 
               onChange={e => setTimeFilter(e.target.value as any)}
             >
@@ -112,8 +112,8 @@ export default function Logs() {
               <option value="week">最近7天</option>
             </select>
             <select 
-              className="form-select" 
-              style={{ fontSize: 13, padding: '4px 28px 4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}
+              className="form-control form-control-sm form-select-sm"
+              style={{ width: 'auto' }}
               value={statusFilter} 
               onChange={e => setStatusFilter(e.target.value as any)}
             >

@@ -74,10 +74,8 @@ export default function Dashboard() {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 className="greeting">
-          仪表盘
-        </h2>
+      <div className="page-header" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <h2 className="page-title">仪表盘</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleRunAllCheckins} disabled={actionLoading} className="btn btn-primary">
             执行签到

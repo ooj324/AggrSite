@@ -298,10 +298,10 @@ export default function Accounts() {
                           <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary" style={{ padding: '0 4px' }}>
                             换绑
                           </button>
-                          <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
+                          <button onClick={() => openEdit(acc)} className="btn btn-ghost btn-icon">
                             <Edit2 size={16} />
                           </button>
-                          <button onClick={() => handleDelete(acc.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
+                          <button onClick={() => handleDelete(acc.id)} className="btn btn-ghost btn-icon" style={{ color: 'var(--color-danger)' }}>
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -440,7 +440,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     }
   };
 
-  const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none' };
+  // removed inputStyle since we use form-control class
 
   return (
     <Modal title={account ? '编辑账户' : '添加账户'} onClose={onClose}>
@@ -468,21 +468,21 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
 
           <form id="account-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="responsive-form-grid responsive-form-grid-2">
-              <select style={inputStyle} value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
+              <select className="form-control" value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
                 {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               
-              <input required={mode === 'login'} type="text" style={inputStyle} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
+              <input required={mode === 'login'} type="text" className="form-control" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
 
               {mode === 'login' && !account ? (
-                <input required type="password" style={inputStyle} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="密码" />
+                <input required type="password" className="form-control" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="密码" />
               ) : (
                 <>
-                  <input required type="text" style={inputStyle} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
-                  <input type="text" style={inputStyle} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
-                  <input type="number" style={inputStyle} value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
-                  <input type="url" style={inputStyle} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="账号代理 URL (可选，覆盖站点)" />
-                  <select style={inputStyle} value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
+                  <input required type="text" className="form-control" value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
+                  <input type="text" className="form-control" value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
+                  <input type="number" className="form-control" value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
+                  <input type="url" className="form-control" value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="账号代理 URL (可选，覆盖站点)" />
+                  <select className="form-control" value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
                     <option value="session">模式: Session (支持签到)</option>
                     <option value="apikey">模式: API Key (仅代理)</option>
                   </select>
@@ -490,7 +490,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               )}
 
               {mode === 'token' && (
-                <select style={inputStyle} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                <select className="form-control" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
                   <option value="active">启用状态: 启用</option>
                   <option value="disabled">启用状态: 禁用</option>
                 </select>

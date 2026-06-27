@@ -231,10 +231,10 @@ export default function Sites() {
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                          <button onClick={() => openEdit(site)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
+                          <button onClick={() => openEdit(site)} className="btn btn-ghost btn-icon">
                             <Edit2 size={16} />
                           </button>
-                          <button onClick={() => handleDelete(site.id)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto', color: 'var(--color-danger)' }}>
+                          <button onClick={() => handleDelete(site.id)} className="btn btn-ghost btn-icon" style={{ color: 'var(--color-danger)' }}>
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -299,15 +299,15 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     }
   };
 
-  const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none' };
+  // removed inputStyle since we use form-control class
 
   return (
     <Modal title={site ? '编辑站点' : '添加站点'} onClose={onClose}>
       <div className="modal-body">
           <form id="site-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="responsive-form-grid responsive-form-grid-2">
-              <input required type="text" style={inputStyle} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
-              <input required type="url" style={inputStyle} value={formData.url} onChange={e => {
+              <input required type="text" className="form-control" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
+              <input required type="url" className="form-control" value={formData.url} onChange={e => {
                 const url = e.target.value;
                 let nextPlatform = formData.platform;
                 if (!nextPlatform || nextPlatform === 'anyrouter') {
@@ -323,19 +323,20 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 }
                 setFormData({...formData, url, platform: nextPlatform});
               }} placeholder="URL (例如: https://api.example.com)" />
-              <select style={inputStyle} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
+              <select className="form-control" value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
                 <option value="" disabled>选择平台</option>
                 {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select style={inputStyle} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+              <select className="form-control" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
                 <option value="active">启用状态: 启用</option>
                 <option value="disabled">启用状态: 禁用</option>
               </select>
-              <input type="url" style={inputStyle} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="代理 URL (可选, http://127.0.0.1:7890)" />
-              <input type="url" style={inputStyle} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
+              <input type="url" className="form-control" value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="代理 URL (可选, http://127.0.0.1:7890)" />
+              <input type="url" className="form-control" value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
             </div>
             <textarea 
-              style={{ ...inputStyle, minHeight: 60, fontFamily: 'monospace', resize: 'vertical' }} 
+              className="form-control"
+              style={{ minHeight: 60, fontFamily: 'monospace', resize: 'vertical' }} 
               value={formData.custom_headers} 
               onChange={e => setFormData({...formData, custom_headers: e.target.value})} 
               placeholder='自定义 Header (JSON 格式, 可选)&#10;{"X-My-Header": "value"}' 
