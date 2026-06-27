@@ -158,7 +158,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 			overrideConfig.Method = "POST"
 		}
 		
-		if row.SiteExternalCheckinAuthHeader != nil && *row.SiteExternalCheckinAuthHeader != "" {
+		if row.SiteExternalCheckinAuthHeader != nil {
 			useGeneric = true
 			overrideConfig.AuthHeader = *row.SiteExternalCheckinAuthHeader
 		} else {

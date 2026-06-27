@@ -295,19 +295,25 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     proxy_url: site?.proxy_url || '',
     use_system_proxy: site?.use_system_proxy || false,
     external_checkin_url: site?.external_checkin_url || '',
+    external_checkin_method: site?.external_checkin_method || '',
+    external_checkin_auth_header: site?.external_checkin_auth_header || '',
+    external_checkin_auth_prefix: site?.external_checkin_auth_prefix ?? '',
     custom_headers: site?.custom_headers || '',
   });
 
-  const [useAdvancedCheckin, setUseAdvancedCheckin] = useState(false);
+  const [useAdvancedCheckin, setUseAdvancedCheckin] = useState(
+    !!site?.external_checkin_method || !!site?.external_checkin_auth_header
+  );
   const [advCheckin, setAdvCheckin] = useState({
-    method: 'POST',
-    url: '',
-    auth_header: 'Authorization',
-    auth_prefix: 'Bearer '
+    method: site?.external_checkin_method || 'POST',
+    url: site?.external_checkin_url || '',
+    auth_header: site?.external_checkin_auth_header ?? 'Authorization',
+    auth_prefix: site?.external_checkin_auth_prefix ?? 'Bearer '
   });
 
   useEffect(() => {
-    if (site?.external_checkin_url) {
+    // Legacy string parsing fallback (if migration from JSON string is needed)
+    if (site?.external_checkin_url && !site?.external_checkin_method) {
       const val = site.external_checkin_url.trim();
       if (val.startsWith('{')) {
         try {
@@ -315,7 +321,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
           setAdvCheckin({
             method: parsed.method || 'POST',
             url: parsed.url || '',
-            auth_header: parsed.auth_header || 'Authorization',
+            auth_header: parsed.auth_header ?? 'Authorization',
             auth_prefix: parsed.auth_prefix ?? 'Bearer '
           });
           setUseAdvancedCheckin(true);
@@ -339,13 +345,23 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     e.preventDefault();
     setLoading(true);
     try {
-      const submitData = { ...formData };
+      const submitData: any = { ...formData };
       if (useAdvancedCheckin) {
         if (advCheckin.url) {
-          submitData.external_checkin_url = JSON.stringify(advCheckin);
+          submitData.external_checkin_url = advCheckin.url;
+          submitData.external_checkin_method = advCheckin.method;
+          submitData.external_checkin_auth_header = advCheckin.auth_header;
+          submitData.external_checkin_auth_prefix = advCheckin.auth_prefix;
         } else {
           submitData.external_checkin_url = '';
+          submitData.external_checkin_method = '';
+          submitData.external_checkin_auth_header = '';
+          submitData.external_checkin_auth_prefix = '';
         }
+      } else {
+        submitData.external_checkin_method = '';
+        submitData.external_checkin_auth_header = '';
+        submitData.external_checkin_auth_prefix = '';
       }
 
       if (site) {
@@ -426,7 +442,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                   <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_prefix} onChange={e => setAdvCheckin({...advCheckin, auth_prefix: e.target.value})} placeholder='认证前缀 (例如: "Bearer ", 注留空即可)' />
                 </div>
                 <div className="text-[11px] text-textMuted leading-relaxed">
-                  提示：认证信息将通过设置 <code>{advCheckin.auth_header || 'Authorization'}: {advCheckin.auth_prefix || ''}[账号签到凭据]</code> 发送。若需禁用认证可将 Header 名称设为 <code>none</code>。独立签到凭据请在账号设置中配置。
+                  提示：认证信息将通过设置 <code>{advCheckin.auth_header || '[无Header]'}: {advCheckin.auth_prefix || ''}[账号签到凭据]</code> 发送。若无需发送认证，请将 Header 名称清空即可。独立签到凭据请在账号设置中配置。
                 </div>
               </div>
             )}
