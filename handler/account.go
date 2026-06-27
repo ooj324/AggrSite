@@ -22,9 +22,12 @@ func getRequestOption(site *db.Site) *platform.RequestOption {
 
 func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		SiteID         int64  `json:"siteId"`
-		AccessToken    string `json:"accessToken"`
-		PlatformUserID int64  `json:"platformUserId"`
+		SiteID         int64   `json:"siteId"`
+		AccessToken    string  `json:"accessToken"`
+		PlatformUserID *int64  `json:"platformUserId"`
+		CredentialMode string  `json:"credentialMode"`
+		ProxyURL       *string `json:"proxyUrl"`
+		UseSystemProxy *bool   `json:"useSystemProxy"`
 	}
 	if err := parseBody(r, &input); err != nil {
 		fail(w, http.StatusBadRequest, "invalid body")
@@ -44,16 +47,27 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opt := getRequestOption(site)
+	if input.ProxyURL != nil {
+		opt.ProxyURL = *input.ProxyURL
+	}
+	if input.UseSystemProxy != nil {
+		opt.UseSystemProxy = *input.UseSystemProxy
+	}
 
 	// Mode handling
-	credentialMode := r.URL.Query().Get("credentialMode")
+	credentialMode := input.CredentialMode
 	if credentialMode == "" {
 		credentialMode = "session"
 	}
 
+	var platformUserID int64
+	if input.PlatformUserID != nil {
+		platformUserID = *input.PlatformUserID
+	}
+
 	if credentialMode == "apikey" {
 		// API Key mode: just test if we can fetch models
-		models, err := ad.GetModels(site.URL, input.AccessToken, input.PlatformUserID, opt)
+		models, err := ad.GetModels(site.URL, input.AccessToken, platformUserID, opt)
 		if err != nil {
 			errStr := err.Error()
 			shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
@@ -72,7 +86,7 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := ad.VerifyToken(site.URL, input.AccessToken, input.PlatformUserID, opt)
+	res, err := ad.VerifyToken(site.URL, input.AccessToken, platformUserID, opt)
 	if err != nil {
 		errStr := err.Error()
 		// Detect needsUserId or shield
@@ -197,7 +211,11 @@ func GetAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateAccount(w http.ResponseWriter, r *http.Request) {
-	var input db.CreateAccountInput
+	var input struct {
+		db.CreateAccountInput
+		ProxyURL       *string `json:"proxyUrl"`
+		UseSystemProxy *bool   `json:"useSystemProxy"`
+	}
 	if err := parseBody(r, &input); err != nil {
 		fail(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return
@@ -223,7 +241,37 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "unknown platform")
 		return
 	}
+
+	var cfg map[string]interface{}
+	if input.ExtraConfig != "" {
+		json.Unmarshal([]byte(input.ExtraConfig), &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+	if input.PlatformUserID != nil {
+		cfg["platformUserId"] = *input.PlatformUserID
+	}
+	if input.ProxyURL != nil {
+		if *input.ProxyURL == "" {
+			delete(cfg, "proxyUrl")
+		} else {
+			cfg["proxyUrl"] = *input.ProxyURL
+		}
+	}
+	if input.UseSystemProxy != nil {
+		cfg["useSystemProxy"] = *input.UseSystemProxy
+	}
+	cfgBytes, _ := json.Marshal(cfg)
+	input.ExtraConfig = string(cfgBytes)
+
 	opt := getRequestOption(site)
+	if input.ProxyURL != nil {
+		opt.ProxyURL = *input.ProxyURL
+	}
+	if input.UseSystemProxy != nil {
+		opt.UseSystemProxy = *input.UseSystemProxy
+	}
 
 	// If missing ApiToken and it's a session token, try to fetch it
 	if input.ApiToken == "" && input.AccessToken != "" && input.CredentialMode != "apikey" {
@@ -236,7 +284,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id, err := db.CreateAccount(input)
+	id, err := db.CreateAccount(input.CreateAccountInput)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return

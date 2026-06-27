@@ -109,6 +109,17 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		UseSystemProxy: row.SiteUseSystemProxy,
 		CustomHeaders:  row.SiteCustomHeaders,
 	}
+	if row.ExtraConfig != "" {
+		var cfg map[string]interface{}
+		if err := json.Unmarshal([]byte(row.ExtraConfig), &cfg); err == nil {
+			if proxyUrl, ok := cfg["proxyUrl"].(string); ok && proxyUrl != "" {
+				opt.ProxyURL = &proxyUrl
+			}
+			if useSystemProxy, ok := cfg["useSystemProxy"].(bool); ok {
+				opt.UseSystemProxy = &useSystemProxy
+			}
+		}
+	}
 
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
 	result, err := adapter.Checkin(checkinURL, row.AccessToken, platformUserID, opt)

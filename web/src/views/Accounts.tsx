@@ -98,7 +98,33 @@ export default function Accounts() {
     }
   };
 
-  const handleAction = async (id: number, type: 'checkin' | 'refresh' | 'toggle-checkin') => {
+  const handleAction = async (id: number, type: 'checkin' | 'refresh' | 'toggle-checkin' | 'rebind') => {
+    if (type === 'rebind') {
+      const token = prompt('请输入新的 Access Token 进行换绑：');
+      if (!token) return;
+      
+      let platformUserId: number | undefined;
+      const pid = prompt('请输入 Platform User ID（如果不需要请留空）：');
+      if (pid) {
+        platformUserId = parseInt(pid, 10);
+      }
+
+      setActionLoading(id);
+      try {
+        await api.post(`/api/accounts/${id}/rebind-session`, {
+          accessToken: token,
+          platformUserId: platformUserId || undefined
+        });
+        alert('换绑成功！');
+        loadData();
+      } catch (err: any) {
+        alert(`换绑失败: ${err}`);
+      } finally {
+        setActionLoading(null);
+      }
+      return;
+    }
+
     setActionLoading(id);
     try {
       if (type === 'checkin') await api.post(`/api/checkin/${id}`);
@@ -272,6 +298,9 @@ export default function Accounts() {
                           <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-warning" style={{ padding: '0 4px' }}>
                             {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '手动签到'}
                           </button>
+                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary" style={{ padding: '0 4px' }}>
+                            换绑
+                          </button>
                           <button onClick={() => openEdit(acc)} className="btn btn-ghost" style={{ padding: 6, minWidth: 'auto' }}>
                             <Edit2 size={16} />
                           </button>
@@ -322,6 +351,8 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     status: account?.status || 'active',
     checkin_enabled: account?.checkin_enabled ?? true,
     credential_mode: account?.extra_config?.credentialMode || 'session',
+    proxy_url: account?.extra_config?.proxyUrl || '',
+    use_system_proxy: account?.extra_config?.useSystemProxy || false,
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -394,7 +425,9 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
           checkin_enabled: formData.checkin_enabled,
           status: formData.status,
           platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
-          credentialMode: formData.credential_mode
+          credentialMode: formData.credential_mode,
+          proxyUrl: formData.proxy_url,
+          useSystemProxy: formData.use_system_proxy
         };
         
         if (account) {
@@ -457,6 +490,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
                   <input required type="text" style={inputStyle} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
                   <input type="text" style={inputStyle} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
                   <input type="number" style={inputStyle} value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
+                  <input type="url" style={inputStyle} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="账号代理 URL (可选，覆盖站点)" />
                   <select style={inputStyle} value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
                     <option value="session">模式: Session (支持签到)</option>
                     <option value="apikey">模式: API Key (仅代理)</option>
@@ -483,7 +517,19 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
                 checked={formData.checkin_enabled} 
                 onChange={e => setFormData({...formData, checkin_enabled: e.target.checked})}
               />
-              <label htmlFor="checkin_enabled" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>启用自动签到</label>
+              <label htmlFor="checkin_enabled" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginRight: 16 }}>开启自动签到</label>
+
+              {mode === 'token' && (
+                <>
+                  <input 
+                    type="checkbox" 
+                    id="use_system_proxy"
+                    checked={formData.use_system_proxy} 
+                    onChange={e => setFormData({...formData, use_system_proxy: e.target.checked})}
+                  />
+                  <label htmlFor="use_system_proxy" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>使用系统代理 (覆盖站点)</label>
+                </>
+              )}
             </div>
           </form>
         </div>

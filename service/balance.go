@@ -30,6 +30,18 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		CustomHeaders:  row.SiteCustomHeaders,
 	}
 
+	if row.ExtraConfig != "" {
+		var cfg map[string]interface{}
+		if err := json.Unmarshal([]byte(row.ExtraConfig), &cfg); err == nil {
+			if proxyUrl, ok := cfg["proxyUrl"].(string); ok && proxyUrl != "" {
+				opt.ProxyURL = &proxyUrl
+			}
+			if useSystemProxy, ok := cfg["useSystemProxy"].(bool); ok {
+				opt.UseSystemProxy = &useSystemProxy
+			}
+		}
+	}
+
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
 	info, err := adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
 	if err != nil {
