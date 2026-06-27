@@ -25,6 +25,7 @@ export default function Accounts() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [rebindAccount, setRebindAccount] = useState<Account | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   // Selection & Batch
@@ -101,28 +102,8 @@ export default function Accounts() {
 
   const handleAction = async (id: number, type: 'checkin' | 'refresh' | 'toggle-checkin' | 'rebind') => {
     if (type === 'rebind') {
-      const token = prompt('请输入新的 Access Token 进行换绑：');
-      if (!token) return;
-
-      let platformUserId: number | undefined;
-      const pid = prompt('请输入 Platform User ID（如果不需要请留空）：');
-      if (pid) {
-        platformUserId = parseInt(pid, 10);
-      }
-
-      setActionLoading(id);
-      try {
-        await api.post(`/api/accounts/${id}/rebind-session`, {
-          accessToken: token,
-          platformUserId: platformUserId || undefined
-        });
-        alert('换绑成功！');
-        loadData();
-      } catch (err: any) {
-        alert(`换绑失败: ${err}`);
-      } finally {
-        setActionLoading(null);
-      }
+      const target = accounts.find(a => a.id === id);
+      if (target) setRebindAccount(target);
       return;
     }
 
@@ -329,6 +310,17 @@ export default function Accounts() {
           sites={sites}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); loadData(); }}
+        />
+      )}
+      {rebindAccount !== null && (
+        <RebindModal
+          account={rebindAccount}
+          sites={sites}
+          onClose={() => setRebindAccount(null)}
+          onSaved={() => {
+            setRebindAccount(null);
+            loadData();
+          }}
         />
       )}
     </div>
@@ -607,6 +599,118 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
         <button type="submit" form="account-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
           {loading ? '保存中...' : (isBatchApiKeyInput ? '批量添加连接' : '保存')}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function RebindModal({ account, sites, onClose, onSaved }: any) {
+  const currentSite = sites.find((s: Site) => s.id === account.site_id);
+  const isSub2Api = currentSite?.platform === 'sub2api';
+  
+  const [formData, setFormData] = useState({
+    access_token: '',
+    platform_user_id: account?.extra_config?.platformUserId || '',
+    refresh_token: account?.extra_config?.sub2apiAuth?.refreshToken || '',
+    token_expires_at: account?.extra_config?.sub2apiAuth?.tokenExpiresAt?.toString() || '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<any>(null);
+
+  const handleVerify = async () => {
+    if (!formData.access_token) {
+      alert('请先输入 Token');
+      return;
+    }
+    setVerifyLoading(true);
+    setVerifyResult(null);
+    try {
+      const res = await api.post('/api/accounts/verify-token', {
+        siteId: Number(account.site_id),
+        accessToken: formData.access_token,
+        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0,
+        credentialMode: 'session',
+      });
+      setVerifyResult(res.data);
+    } catch (err: any) {
+      setVerifyResult({ success: false, message: err.toString() });
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifyResult?.success || verifyResult?.tokenType !== 'session') {
+      alert('请先验证 Session Token 成功后再绑定');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.post(`/api/accounts/${account.id}/rebind-session`, {
+        accessToken: formData.access_token,
+        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
+        refreshToken: formData.refresh_token,
+        tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : undefined,
+      });
+      alert('换绑成功！');
+      onSaved();
+    } catch (err: any) {
+      alert(`错误: ${err}`);
+      setLoading(false);
+    }
+  };
+
+  const inputClass = "w-full px-3.5 py-2.5 bg-background border border-border rounded-lg text-[13px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-mono";
+
+  return (
+    <Modal title={`重新绑定 Session (${account.username || account.id})`} onClose={onClose}>
+      <div className="p-6">
+        <form id="rebind-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <textarea required className={`${inputClass} min-h-[80px]`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴新的 Session Token" />
+          
+          <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value }); setVerifyResult(null); }} placeholder="用户 ID (可选，部分站点需要)" />
+          
+          {isSub2Api && (
+            <>
+              <input type="text" className={inputClass} value={formData.refresh_token} onChange={e => setFormData({ ...formData, refresh_token: e.target.value })} placeholder="Sub2API refresh_token (可选)" />
+              <input type="number" className={inputClass} value={formData.token_expires_at} onChange={e => setFormData({ ...formData, token_expires_at: e.target.value })} placeholder="token_expires_at (可选)" />
+            </>
+          )}
+
+          {verifyResult && verifyResult.success && verifyResult.tokenType === "session" && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-lg text-[13px] border border-blue-200 dark:border-blue-800">
+              <div className="font-semibold mb-1">Session 验证成功，可以重新绑定</div>
+            </div>
+          )}
+          {verifyResult && verifyResult.success && verifyResult.tokenType !== "session" && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-lg text-[13px] border border-red-200 dark:border-red-800">
+              <div className="font-semibold">这不是一个 Session Token</div>
+            </div>
+          )}
+          {verifyResult && !verifyResult.success && verifyResult.needsUserId && (
+            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300 rounded-lg text-[13px] border border-yellow-200 dark:border-yellow-800">
+              <div className="font-semibold">此站点要求用户 ID，请补充后重新验证</div>
+            </div>
+          )}
+          {verifyResult && !verifyResult.success && !verifyResult.needsUserId && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-lg text-[13px] border border-red-200 dark:border-red-800">
+              <div className="font-semibold">Token 无效或已过期</div>
+              <div className="opacity-80 mt-1">{verifyResult.message}</div>
+            </div>
+          )}
+        </form>
+      </div>
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-black/5 dark:bg-white/5 rounded-b-2xl">
+        <button type="button" onClick={handleVerify} disabled={verifyLoading} className="mr-auto px-4 py-2 text-[13px] font-medium text-primary hover:text-primaryHover transition-colors disabled:opacity-50">
+          {verifyLoading ? '验证中...' : '验证 Token'}
+        </button>
+        <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
+        <button type="submit" form="rebind-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+          {loading ? '绑定中...' : '重新绑定'}
         </button>
       </div>
     </Modal>
