@@ -336,7 +336,7 @@ export default function Accounts() {
 }
 
 function AccountModal({ account, sites, onClose, onSaved }: any) {
-  const [mode, setMode] = useState<'login' | 'token'>(account ? 'token' : 'login');
+  const [mode, setMode] = useState<'login' | 'session' | 'apikey'>(account ? (account.extra_config?.credentialMode === 'apikey' ? 'apikey' : 'session') : 'session');
   const [formData, setFormData] = useState({
     site_id: account?.site_id || (sites[0]?.id ?? 0),
     username: account?.username || '',
@@ -346,56 +346,45 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     platform_user_id: account?.extra_config?.platformUserId || '',
     status: account?.status || 'active',
     checkin_enabled: account?.checkin_enabled ?? true,
-    credential_mode: account?.extra_config?.credentialMode || 'session',
     proxy_url: account?.extra_config?.proxyUrl || '',
     use_system_proxy: account?.extra_config?.useSystemProxy || false,
     checkin_credential: account?.extra_config?.checkin_credential || '',
+    skip_model_fetch: false,
+    refresh_token: account?.extra_config?.sub2apiAuth?.refreshToken || '',
+    token_expires_at: account?.extra_config?.sub2apiAuth?.tokenExpiresAt?.toString() || '',
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
-  const [verifyResult, setVerifyResult] = useState<{ success: boolean; tokenType?: string } | null>(null);
+  const [verifyResult, setVerifyResult] = useState<{ success: boolean; tokenType?: string; needsUserId?: boolean; shieldBlocked?: boolean; message?: string; modelCount?: number; models?: string[] } | null>(null);
+
+  const parsedApiKeys = mode === 'apikey' && formData.access_token ? formData.access_token.split(/[\n, ]+/).map(k => k.trim()).filter(Boolean) : [];
+  const isBatchApiKeyInput = mode === 'apikey' && parsedApiKeys.length > 1;
+  const currentSite = sites.find((s: Site) => s.id === formData.site_id);
+  const isSub2Api = currentSite?.platform === 'sub2api';
 
   const handleVerify = async () => {
     if (!formData.access_token) {
-      alert('请先输入 Access Token');
+      alert('请先输入 Token');
+      return;
+    }
+    if (isBatchApiKeyInput) {
+      alert(`检测到 ${parsedApiKeys.length} 个 API Key，批量模式会在添加时逐条校验`);
       return;
     }
     setVerifyLoading(true);
+    setVerifyResult(null);
     try {
       const res = await api.post('/api/accounts/verify-token', {
         siteId: Number(formData.site_id),
         accessToken: formData.access_token,
-        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0
+        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0,
+        credentialMode: mode,
       });
-      if (res.data.shieldBlocked) {
-        alert('验证失败: 该站点存在防爬拦截 (Shield)。建议手动在浏览器提取 Token。' + (res.data.message || ''));
-        setVerifyResult(null);
-        return;
-      }
-      if (res.data.needsUserId) {
-        alert('验证失败: 此类型的令牌需要提供 Platform User ID (例如 new-api 平台)。' + (res.data.message || ''));
-        setVerifyResult(null);
-        return;
-      }
-
-      if (res.data.tokenType === 'session') {
-        setFormData(prev => ({
-          ...prev,
-          username: prev.username || res.data.userInfo?.username || '',
-          api_token: prev.api_token || res.data.apiToken || '',
-          credential_mode: 'session'
-        }));
-      } else if (res.data.tokenType === 'apikey') {
-        setFormData(prev => ({
-          ...prev,
-          credential_mode: 'apikey'
-        }));
-      }
-      setVerifyResult({ success: true, tokenType: res.data.tokenType });
-      alert(`验证成功！类型: ${res.data.tokenType}`);
+      
+      const result = res.data;
+      setVerifyResult(result);
     } catch (err: any) {
-      setVerifyResult(null);
-      alert(`验证失败: ${err}`);
+      setVerifyResult({ success: false, message: err.toString() });
     } finally {
       setVerifyLoading(false);
     }
@@ -403,10 +392,16 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (mode !== 'login' && !account && !isBatchApiKeyInput && !verifyResult?.success && !formData.skip_model_fetch) {
+      alert('请先验证 Token 成功后再添加账号');
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === 'login' && !account) {
-        // Login mode (creating new or updating existing by username)
+        // Login mode
         const res = await api.post('/api/accounts/login', {
           site_id: Number(formData.site_id),
           username: formData.username,
@@ -419,30 +414,33 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
         }
       } else {
         // Token mode
-        if (!account && !verifyResult?.success) {
-          alert('请先验证 Token 成功后再添加账号');
-          setLoading(false);
-          return;
-        }
-
         const payload = {
           site_id: Number(formData.site_id),
           username: formData.username,
           access_token: formData.access_token,
+          accessTokens: isBatchApiKeyInput ? parsedApiKeys : undefined,
           api_token: formData.api_token,
           checkin_enabled: formData.checkin_enabled,
           status: formData.status,
           platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
-          credentialMode: formData.credential_mode,
+          credentialMode: mode,
           proxyUrl: formData.proxy_url,
           useSystemProxy: formData.use_system_proxy,
-          checkin_credential: formData.checkin_credential
+          checkin_credential: formData.checkin_credential,
+          skipModelFetch: formData.skip_model_fetch,
+          refreshToken: formData.refresh_token,
+          tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : undefined,
         };
 
         if (account) {
           await api.put(`/api/accounts/${account.id}`, payload);
         } else {
-          await api.post('/api/accounts', payload);
+          const res = await api.post('/api/accounts', payload);
+          if (res.data?.batch) {
+             alert(`批量添加完成：成功 ${res.data.createdCount}，失败 ${res.data.failedCount}`);
+          } else if (res.data?.queued) {
+             // alert(res.data.message || '账号已添加，后台正在同步初始化信息。');
+          }
         }
       }
       onSaved();
@@ -464,14 +462,21 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               onClick={() => { setMode('login'); setVerifyResult(null); }}
               className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
             >
-              登录模式
+              账号密码
             </button>
             <button
               type="button"
-              onClick={() => { setMode('token'); setVerifyResult(null); }}
-              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'token' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+              onClick={() => { setMode('session'); setVerifyResult(null); }}
+              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'session' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
             >
-              令牌模式
+              Session 令牌
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('apikey'); setVerifyResult(null); }}
+              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'apikey' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+            >
+              API Key
             </button>
           </div>
         )}
@@ -482,37 +487,77 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
 
-            <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
+            <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} placeholder={`用户名 / 连接名称 ${mode !== 'login' ? '(可选)' : ''}`} />
 
             {mode === 'login' && !account ? (
               <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} placeholder="密码" />
             ) : (
               <>
-                <input required type="text" className={inputClass} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="Access Token 或 API Key" />
-                <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({ ...formData, api_token: e.target.value })} placeholder="API Token (可选，验证可自动获取)" />
-                <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value }); setVerifyResult(null); }} placeholder="Platform User ID (部分站点需要)" />
-                <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({ ...formData, proxy_url: e.target.value })} placeholder="账号代理 URL (可选，覆盖站点)" />
-                <select className={inputClass} value={formData.credential_mode} onChange={e => setFormData({ ...formData, credential_mode: e.target.value })}>
-                  <option value="session">模式: Session (支持签到)</option>
-                  <option value="apikey">模式: API Key (仅代理)</option>
-                </select>
-                <input type="text" className={inputClass} value={formData.checkin_credential} onChange={e => setFormData({ ...formData, checkin_credential: e.target.value })} placeholder="独立签到凭据 (可选，覆盖默认Token)" />
+                {mode === 'apikey' && !account ? (
+                  <textarea required className={`${inputClass} min-h-[80px] col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴 API Key (支持换行/逗号批量粘贴)" />
+                ) : (
+                  <input required type="text" className={inputClass} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder={mode === 'session' ? "Access Token (Session)" : "API Key"} />
+                )}
+                
+                {mode === 'session' && (
+                  <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({ ...formData, api_token: e.target.value })} placeholder="API Token (可选，验证可自动获取)" />
+                )}
+                
+                <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value }); setVerifyResult(null); }} placeholder="用户 ID (可选，部分站点需要)" />
+                {mode === 'session' && isSub2Api && (
+                  <>
+                    <input type="text" className={inputClass} value={formData.refresh_token} onChange={e => setFormData({ ...formData, refresh_token: e.target.value })} placeholder="Sub2API refresh_token (可选)" />
+                    <input type="number" className={inputClass} value={formData.token_expires_at} onChange={e => setFormData({ ...formData, token_expires_at: e.target.value })} placeholder="token_expires_at (可选)" />
+                  </>
+                )}
+                <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({ ...formData, proxy_url: e.target.value })} placeholder="代理 URL (可选)" />
+                
+                {mode === 'session' && (
+                  <input type="text" className={inputClass} value={formData.checkin_credential} onChange={e => setFormData({ ...formData, checkin_credential: e.target.value })} placeholder="独立签到凭据 (可选)" />
+                )}
               </>
             )}
 
-            {mode === 'token' && (
+            {mode !== 'login' && (
               <select className={inputClass} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>
                 <option value="active">启用状态: 启用</option>
                 <option value="disabled">启用状态: 禁用</option>
               </select>
             )}
           </div>
+          
+          {parsedApiKeys.length > 0 && (
+             <div className="text-[12px] text-textMuted mt-[-4px]">已识别 {parsedApiKeys.length} 个 API Key{isBatchApiKeyInput ? '，添加时会逐条创建同站点连接并参与轮询' : ''}</div>
+          )}
+
+          {verifyResult && verifyResult.success && verifyResult.tokenType === "apikey" && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-lg text-[13px] border border-blue-200 dark:border-blue-800">
+              <div className="font-semibold mb-1">API Key 验证成功</div>
+              <div>可用模型: <strong>{verifyResult.modelCount} 个</strong></div>
+            </div>
+          )}
+          {verifyResult && verifyResult.success && verifyResult.tokenType === "session" && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-lg text-[13px] border border-blue-200 dark:border-blue-800">
+              <div className="font-semibold mb-1">Session 验证成功</div>
+            </div>
+          )}
+          {verifyResult && !verifyResult.success && verifyResult.needsUserId && (
+            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300 rounded-lg text-[13px] border border-yellow-200 dark:border-yellow-800">
+              <div className="font-semibold">此站点要求用户 ID，请补充后重新验证</div>
+            </div>
+          )}
+          {verifyResult && !verifyResult.success && !verifyResult.needsUserId && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-lg text-[13px] border border-red-200 dark:border-red-800">
+              <div className="font-semibold">Token 无效或已过期</div>
+              <div className="opacity-80 mt-1">{verifyResult.message}</div>
+            </div>
+          )}
 
           {mode === 'login' && !account && (
             <p className="text-[12px] text-textMuted mt-[-8px]">密码用于自动刷新令牌。它将被加密存储。</p>
           )}
 
-          <div className="flex items-center gap-6 mt-2">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mt-2">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -524,7 +569,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               <label htmlFor="checkin_enabled" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">开启自动签到</label>
             </div>
 
-            {mode === 'token' && (
+            {mode !== 'login' && (
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -533,7 +578,20 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
                   checked={formData.use_system_proxy}
                   onChange={e => setFormData({ ...formData, use_system_proxy: e.target.checked })}
                 />
-                <label htmlFor="use_system_proxy" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">使用系统代理 (覆盖站点)</label>
+                <label htmlFor="use_system_proxy" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">使用系统代理</label>
+              </div>
+            )}
+            
+            {mode === 'apikey' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="skip_model_fetch"
+                  className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                  checked={formData.skip_model_fetch}
+                  onChange={e => setFormData({ ...formData, skip_model_fetch: e.target.checked })}
+                />
+                <label htmlFor="skip_model_fetch" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">跳过模型验证（直接添加 API Key）</label>
               </div>
             )}
           </div>
@@ -541,14 +599,14 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
       </div>
 
       <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-black/5 dark:bg-white/5 rounded-b-2xl">
-        {mode === 'token' && !account && (
-          <button type="button" onClick={handleVerify} disabled={verifyLoading} className="mr-auto px-4 py-2 text-[13px] font-medium text-primary hover:text-primaryHover transition-colors disabled:opacity-50">
-            {verifyLoading ? '验证中...' : '验证 Token'}
+        {mode !== 'login' && !account && (
+          <button type="button" onClick={handleVerify} disabled={verifyLoading || isBatchApiKeyInput} className="mr-auto px-4 py-2 text-[13px] font-medium text-primary hover:text-primaryHover transition-colors disabled:opacity-50">
+            {verifyLoading ? '验证中...' : (isBatchApiKeyInput ? '批量添加时校验' : '验证 Token')}
           </button>
         )}
         <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
         <button type="submit" form="account-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-          {loading ? '保存中...' : '保存'}
+          {loading ? '保存中...' : (isBatchApiKeyInput ? '批量添加连接' : '保存')}
         </button>
       </div>
     </Modal>

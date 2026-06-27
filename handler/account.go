@@ -72,13 +72,14 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 			errStr := err.Error()
 			shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
 			if shieldBlocked {
-				ok(w, map[string]interface{}{"shieldBlocked": true, "message": "被反爬或防火墙拦截"})
+				ok(w, map[string]interface{}{"success": false, "shieldBlocked": true, "message": "被反爬或防火墙拦截"})
 				return
 			}
 			fail(w, http.StatusInternalServerError, errStr)
 			return
 		}
 		ok(w, map[string]interface{}{
+			"success":    true,
 			"tokenType":  "apikey",
 			"modelCount": len(models),
 			"models":     models,
@@ -94,6 +95,7 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
 		if needsUserId || shieldBlocked {
 			ok(w, map[string]interface{}{
+				"success":       false,
 				"needsUserId":   needsUserId,
 				"shieldBlocked": shieldBlocked,
 				"message":       errStr,
@@ -104,7 +106,13 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok(w, res)
+	ok(w, map[string]interface{}{
+		"success":   true,
+		"tokenType": res.TokenType,
+		"userInfo":  res.UserInfo,
+		"balance":   res.Balance,
+		"apiToken":  res.ApiToken,
+	})
 }
 
 func RebindSession(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +125,8 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		AccessToken    string `json:"accessToken"`
 		PlatformUserID *int64 `json:"platformUserId"`
+		RefreshToken   *string `json:"refreshToken"`
+		TokenExpiresAt *int64  `json:"tokenExpiresAt"`
 	}
 	if err := parseBody(r, &input); err != nil {
 		fail(w, http.StatusBadRequest, "invalid body")
@@ -157,6 +167,22 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 		cfg["platformUserId"] = platformUserID
 	} else if existingID, ok := cfg["platformUserId"].(float64); ok {
 		platformUserID = int64(existingID)
+	}
+
+	if input.RefreshToken != nil {
+		sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
+		if sub2apiAuth == nil {
+			sub2apiAuth = make(map[string]interface{})
+		}
+		if *input.RefreshToken != "" {
+			sub2apiAuth["refreshToken"] = *input.RefreshToken
+			if input.TokenExpiresAt != nil {
+				sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
+			}
+			cfg["sub2apiAuth"] = sub2apiAuth
+		} else {
+			delete(cfg, "sub2apiAuth")
+		}
 	}
 
 	cfgBytes, _ := json.Marshal(cfg)
@@ -213,9 +239,13 @@ func GetAccount(w http.ResponseWriter, r *http.Request) {
 func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		db.CreateAccountInput
-		ProxyURL       *string `json:"proxyUrl"`
-		UseSystemProxy *bool   `json:"useSystemProxy"`
-		CheckinCredential *string `json:"checkin_credential"`
+		AccessTokens      []string `json:"accessTokens"`
+		SkipModelFetch    *bool    `json:"skipModelFetch"`
+		ProxyURL          *string  `json:"proxyUrl"`
+		UseSystemProxy    *bool    `json:"useSystemProxy"`
+		CheckinCredential *string  `json:"checkin_credential"`
+		RefreshToken      *string  `json:"refreshToken"`
+		TokenExpiresAt    *int64   `json:"tokenExpiresAt"`
 	}
 	if err := parseBody(r, &input); err != nil {
 		fail(w, http.StatusBadRequest, "invalid body: "+err.Error())
@@ -227,8 +257,8 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.AccessToken == "" && input.ApiToken == "" {
-		fail(w, http.StatusBadRequest, "access_token or api_token is required")
+	if input.AccessToken == "" && input.ApiToken == "" && len(input.AccessTokens) == 0 {
+		fail(w, http.StatusBadRequest, "access_token, api_token or accessTokens is required")
 		return
 	}
 
@@ -251,6 +281,71 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		opt.UseSystemProxy = input.UseSystemProxy
 	}
 
+	// Batch Processing
+	if len(input.AccessTokens) > 0 {
+		var createdCount int
+		var failedCount int
+		var items []map[string]interface{}
+
+		for _, token := range input.AccessTokens {
+			if strings.TrimSpace(token) == "" {
+				continue
+			}
+			cloneInput := input.CreateAccountInput
+			cloneInput.AccessToken = token
+
+			id, err := db.CreateAccount(cloneInput)
+			if err != nil {
+				failedCount++
+				items = append(items, map[string]interface{}{"status": "failed", "token": token, "message": err.Error()})
+				continue
+			}
+
+			// Save extra config
+			cfg := make(map[string]interface{})
+			if input.CredentialMode != "" {
+				cfg["credentialMode"] = input.CredentialMode
+			}
+			if input.PlatformUserID != nil {
+				cfg["platformUserId"] = *input.PlatformUserID
+			}
+			if input.ProxyURL != nil && *input.ProxyURL != "" {
+				cfg["proxyUrl"] = *input.ProxyURL
+			}
+			if input.UseSystemProxy != nil {
+				cfg["useSystemProxy"] = *input.UseSystemProxy
+			}
+			if input.CheckinCredential != nil && *input.CheckinCredential != "" {
+				cfg["checkin_credential"] = *input.CheckinCredential
+			}
+			if input.RefreshToken != nil && *input.RefreshToken != "" {
+				sub2apiAuth := make(map[string]interface{})
+				sub2apiAuth["refreshToken"] = *input.RefreshToken
+				if input.TokenExpiresAt != nil {
+					sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
+				}
+				cfg["sub2apiAuth"] = sub2apiAuth
+			}
+			bs, _ := json.Marshal(cfg)
+			db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
+
+			createdCount++
+			items = append(items, map[string]interface{}{"status": "success", "id": id, "token": token})
+		}
+
+		ok(w, map[string]interface{}{
+			"batch":        true,
+			"createdCount": createdCount,
+			"failedCount":  failedCount,
+			"items":        items,
+		})
+		return
+	}
+
+	// Single Processing
+	apiTokenFound := false
+	usernameDetected := false
+
 	// If missing ApiToken and it's a session token, try to fetch it
 	if input.ApiToken == "" && input.AccessToken != "" && input.CredentialMode != "apikey" {
 		userID := int64(0)
@@ -259,7 +354,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		if token, err := ad.GetApiToken(site.URL, input.AccessToken, userID, opt); err == nil {
 			input.ApiToken = token
+			apiTokenFound = true
 		}
+	}
+
+	if input.Username != "" {
+		usernameDetected = true
 	}
 
 	id, err := db.CreateAccount(input.CreateAccountInput)
@@ -269,26 +369,32 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update ExtraConfig with Proxy overrides if present
-	if input.ProxyURL != nil || input.UseSystemProxy != nil {
-		cfg := make(map[string]interface{})
-		if input.CredentialMode != "" {
-			cfg["credentialMode"] = input.CredentialMode
-		}
-		if input.PlatformUserID != nil {
-			cfg["platformUserId"] = *input.PlatformUserID
-		}
-		if input.ProxyURL != nil && *input.ProxyURL != "" {
-			cfg["proxyUrl"] = *input.ProxyURL
-		}
-		if input.UseSystemProxy != nil {
-			cfg["useSystemProxy"] = *input.UseSystemProxy
-		}
-		if input.CheckinCredential != nil && *input.CheckinCredential != "" {
-			cfg["checkin_credential"] = *input.CheckinCredential
-		}
-		bs, _ := json.Marshal(cfg)
-		db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
+	cfg := make(map[string]interface{})
+	if input.CredentialMode != "" {
+		cfg["credentialMode"] = input.CredentialMode
 	}
+	if input.PlatformUserID != nil {
+		cfg["platformUserId"] = *input.PlatformUserID
+	}
+	if input.ProxyURL != nil && *input.ProxyURL != "" {
+		cfg["proxyUrl"] = *input.ProxyURL
+	}
+	if input.UseSystemProxy != nil {
+		cfg["useSystemProxy"] = *input.UseSystemProxy
+	}
+	if input.CheckinCredential != nil && *input.CheckinCredential != "" {
+		cfg["checkin_credential"] = *input.CheckinCredential
+	}
+	if input.RefreshToken != nil && *input.RefreshToken != "" {
+		sub2apiAuth := make(map[string]interface{})
+		sub2apiAuth["refreshToken"] = *input.RefreshToken
+		if input.TokenExpiresAt != nil {
+			sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
+		}
+		cfg["sub2apiAuth"] = sub2apiAuth
+	}
+	bs, _ := json.Marshal(cfg)
+	db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
 
 	// Trigger async sync logic
 	go func() {
@@ -312,8 +418,15 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	account, _ := db.GetAccount(id)
-	created(w, account)
+	ok(w, map[string]interface{}{
+		"id":               id,
+		"batch":            false,
+		"queued":           true,
+		"tokenType":        input.CredentialMode,
+		"message":          "账号已添加，后台正在同步初始化信息。",
+		"usernameDetected": usernameDetected,
+		"apiTokenFound":    apiTokenFound,
+	})
 }
 
 func UpdateAccount(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +502,34 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 			cfg["platformUserId"] = int64(f)
 		}
 		delete(fields, "platformUserId")
+		cfgModified = true
+	}
+	if v, ok := fields["refreshToken"]; ok {
+		if s, isStr := v.(string); isStr {
+			if s != "" {
+				sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
+				if sub2apiAuth == nil {
+					sub2apiAuth = make(map[string]interface{})
+				}
+				sub2apiAuth["refreshToken"] = s
+				cfg["sub2apiAuth"] = sub2apiAuth
+			} else {
+				delete(cfg, "sub2apiAuth")
+			}
+		}
+		delete(fields, "refreshToken")
+		cfgModified = true
+	}
+	if v, ok := fields["tokenExpiresAt"]; ok {
+		if f, isNum := v.(float64); isNum {
+			sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
+			if sub2apiAuth == nil {
+				sub2apiAuth = make(map[string]interface{})
+			}
+			sub2apiAuth["tokenExpiresAt"] = int64(f)
+			cfg["sub2apiAuth"] = sub2apiAuth
+		}
+		delete(fields, "tokenExpiresAt")
 		cfgModified = true
 	}
 
