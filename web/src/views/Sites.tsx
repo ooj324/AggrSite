@@ -426,6 +426,18 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
         submitData.external_checkin_auth_prefix = '';
       }
 
+      if (submitData.custom_headers && submitData.custom_headers.trim() !== '') {
+        try {
+          JSON.parse(submitData.custom_headers);
+        } catch (e) {
+          alert('自定义 Header 格式错误，必须是有效的 JSON 格式');
+          setLoading(false);
+          return;
+        }
+      } else {
+        submitData.custom_headers = '{}';
+      }
+
       if (site) {
         await api.put(`/api/sites/${site.id}`, submitData);
       } else {

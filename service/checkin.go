@@ -163,21 +163,23 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		if row.SiteExternalCheckinMethod != nil && *row.SiteExternalCheckinMethod != "" {
 			useGeneric = true
 			overrideConfig.Method = *row.SiteExternalCheckinMethod
+
+			// Only respect AuthHeader/AuthPrefix if Method is also provided (Advanced Mode)
+			if row.SiteExternalCheckinAuthHeader != nil {
+				overrideConfig.AuthHeader = *row.SiteExternalCheckinAuthHeader
+			} else {
+				overrideConfig.AuthHeader = "Authorization"
+			}
+			
+			if row.SiteExternalCheckinAuthPrefix != nil {
+				overrideConfig.AuthPrefix = *row.SiteExternalCheckinAuthPrefix
+			} else {
+				overrideConfig.AuthPrefix = "Bearer "
+			}
 		} else {
+			// Simple Mode: always default to POST and Authorization Bearer
 			overrideConfig.Method = "POST"
-		}
-		
-		if row.SiteExternalCheckinAuthHeader != nil {
-			useGeneric = true
-			overrideConfig.AuthHeader = *row.SiteExternalCheckinAuthHeader
-		} else {
 			overrideConfig.AuthHeader = "Authorization"
-		}
-		
-		if row.SiteExternalCheckinAuthPrefix != nil {
-			useGeneric = true
-			overrideConfig.AuthPrefix = *row.SiteExternalCheckinAuthPrefix
-		} else {
 			overrideConfig.AuthPrefix = "Bearer "
 		}
 	}
