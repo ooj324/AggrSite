@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"metapi/aggrsite/db"
@@ -30,9 +31,9 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		CustomHeaders:  row.SiteCustomHeaders,
 	}
 
-	if row.ExtraConfig != "" {
+	if row.ExtraConfig != nil && *row.ExtraConfig != "" {
 		var cfg map[string]interface{}
-		if err := json.Unmarshal([]byte(row.ExtraConfig), &cfg); err == nil {
+		if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err == nil {
 			if proxyUrl, ok := cfg["proxyUrl"].(string); ok && proxyUrl != "" {
 				opt.ProxyURL = &proxyUrl
 			}

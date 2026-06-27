@@ -48,10 +48,10 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 
 	opt := getRequestOption(site)
 	if input.ProxyURL != nil {
-		opt.ProxyURL = *input.ProxyURL
+		opt.ProxyURL = input.ProxyURL
 	}
 	if input.UseSystemProxy != nil {
-		opt.UseSystemProxy = *input.UseSystemProxy
+		opt.UseSystemProxy = input.UseSystemProxy
 	}
 
 	// Mode handling
@@ -242,35 +242,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cfg map[string]interface{}
-	if input.ExtraConfig != "" {
-		json.Unmarshal([]byte(input.ExtraConfig), &cfg)
-	}
-	if cfg == nil {
-		cfg = make(map[string]interface{})
-	}
-	if input.PlatformUserID != nil {
-		cfg["platformUserId"] = *input.PlatformUserID
-	}
-	if input.ProxyURL != nil {
-		if *input.ProxyURL == "" {
-			delete(cfg, "proxyUrl")
-		} else {
-			cfg["proxyUrl"] = *input.ProxyURL
-		}
-	}
-	if input.UseSystemProxy != nil {
-		cfg["useSystemProxy"] = *input.UseSystemProxy
-	}
-	cfgBytes, _ := json.Marshal(cfg)
-	input.ExtraConfig = string(cfgBytes)
-
 	opt := getRequestOption(site)
 	if input.ProxyURL != nil {
-		opt.ProxyURL = *input.ProxyURL
+		opt.ProxyURL = input.ProxyURL
 	}
 	if input.UseSystemProxy != nil {
-		opt.UseSystemProxy = *input.UseSystemProxy
+		opt.UseSystemProxy = input.UseSystemProxy
 	}
 
 	// If missing ApiToken and it's a session token, try to fetch it
@@ -288,6 +265,25 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Update ExtraConfig with Proxy overrides if present
+	if input.ProxyURL != nil || input.UseSystemProxy != nil {
+		cfg := make(map[string]interface{})
+		if input.CredentialMode != "" {
+			cfg["credentialMode"] = input.CredentialMode
+		}
+		if input.PlatformUserID != nil {
+			cfg["platformUserId"] = *input.PlatformUserID
+		}
+		if input.ProxyURL != nil && *input.ProxyURL != "" {
+			cfg["proxyUrl"] = *input.ProxyURL
+		}
+		if input.UseSystemProxy != nil {
+			cfg["useSystemProxy"] = *input.UseSystemProxy
+		}
+		bs, _ := json.Marshal(cfg)
+		db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
 	}
 
 	// Trigger async sync logic
@@ -332,12 +328,66 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	delete(fields, "id")
 	delete(fields, "created_at")
 
+	// Merge extra config fields
+	account, err := db.GetAccount(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "account not found")
+		return
+	}
+
+	var cfg map[string]interface{}
+	if account.ExtraConfig != nil && *account.ExtraConfig != "" {
+		json.Unmarshal([]byte(*account.ExtraConfig), &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+
+	cfgModified := false
+	if v, ok := fields["proxyUrl"]; ok {
+		if s, isStr := v.(string); isStr && s != "" {
+			cfg["proxyUrl"] = s
+		} else {
+			delete(cfg, "proxyUrl")
+		}
+		delete(fields, "proxyUrl")
+		cfgModified = true
+	}
+	if v, ok := fields["useSystemProxy"]; ok {
+		if b, isBool := v.(bool); isBool {
+			cfg["useSystemProxy"] = b
+		} else {
+			delete(cfg, "useSystemProxy")
+		}
+		delete(fields, "useSystemProxy")
+		cfgModified = true
+	}
+	if v, ok := fields["credentialMode"]; ok {
+		if s, isStr := v.(string); isStr && s != "" {
+			cfg["credentialMode"] = s
+		}
+		delete(fields, "credentialMode")
+		cfgModified = true
+	}
+	if v, ok := fields["platformUserId"]; ok {
+		if f, isNum := v.(float64); isNum {
+			cfg["platformUserId"] = int64(f)
+		}
+		delete(fields, "platformUserId")
+		cfgModified = true
+	}
+
+	if cfgModified {
+		bs, _ := json.Marshal(cfg)
+		fields["extra_config"] = string(bs)
+	}
+
 	if err := db.UpdateAccount(id, fields); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	account, _ := db.GetAccount(id)
+	account, _ = db.GetAccount(id)
 	ok(w, account)
 }
 
