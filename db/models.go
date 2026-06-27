@@ -90,16 +90,22 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 		}
 	}
 	
+	customHeaders := in.CustomHeaders
+	if driverName == "postgres" && customHeaders != nil && *customHeaders == "" {
+		emptyJson := "{}"
+		customHeaders = &emptyJson
+	}
+	
 	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, custom_headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	
 	if driverName == "postgres" {
 		var id int64
 		err := DB.QueryRowx(DB.Rebind(query+` RETURNING id`),
-			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.CustomHeaders, now, now).Scan(&id)
+			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, customHeaders, now, now).Scan(&id)
 		return id, err
 	}
 	
-	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.CustomHeaders, now, now)
+	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, customHeaders, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -108,6 +114,17 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 
 func UpdateSite(id int64, in map[string]interface{}) error {
 	in["updated_at"] = TimeNow()
+	
+	// Handle custom_headers for Postgres jsonb compatibility
+	if ch, ok := in["custom_headers"].(string); ok && ch == "" {
+		// Replace empty string with valid JSON empty object or nil
+		if driverName == "postgres" {
+			in["custom_headers"] = "{}"
+		} else {
+			in["custom_headers"] = nil
+		}
+	}
+
 	query := "UPDATE sites SET "
 	args := []interface{}{}
 	i := 0
