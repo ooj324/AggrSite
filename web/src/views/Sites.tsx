@@ -114,46 +114,62 @@ export default function Sites() {
     setShowModal(true);
   };
 
+  const btnPrimaryClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-primary rounded-sm transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnSecondaryClass = "relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-textPrimary bg-surface border border-border rounded-sm transition-all duration-200 hover:bg-surfaceHover hover:-translate-y-px hover:shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnDangerClass = "relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-danger rounded-sm transition-all duration-200 hover:bg-danger/90 hover:-translate-y-px hover:shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <h2 className="page-title">站点</h2>
-          <div className="pill-tabs" style={{ background: 'var(--color-bg)' }}>
-            <div className={`pill-tab ${sortBy === 'custom' ? 'active' : ''}`} onClick={() => setSortBy('custom')}>自定义排序</div>
-            <div className={`pill-tab ${sortBy === 'balance' ? 'active' : ''}`} onClick={() => setSortBy('balance')}>按余额排序</div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-4">
+          <h2 className="text-[22px] font-bold tracking-tight text-textPrimary m-0">站点</h2>
+          <div className="inline-flex gap-0.5 bg-black/5 dark:bg-white/5 rounded-xl p-1">
+            <button
+              onClick={() => setSortBy('custom')}
+              className={`px-3 py-1 text-[12px] font-medium rounded-lg transition-all whitespace-nowrap ${sortBy === 'custom' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+            >
+              自定义排序
+            </button>
+            <button
+              onClick={() => setSortBy('balance')}
+              className={`px-3 py-1 text-[12px] font-medium rounded-lg transition-all whitespace-nowrap ${sortBy === 'balance' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+            >
+              按余额排序
+            </button>
           </div>
         </div>
-        <button onClick={() => openEdit()} className="btn btn-primary">
-          <Plus size={16} style={{ marginRight: 6 }} /> 添加站点
+        <button onClick={() => openEdit()} className={btnPrimaryClass}>
+          <Plus size={16} /> 添加站点
         </button>
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="batch-action-bar animate-fade-in">
-          <div className="batch-action-count">已选择 {selectedIds.length} 个站点</div>
-          <div className="batch-action-buttons">
-            <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className="btn btn-secondary btn-sm">启用</button>
-            <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className="btn btn-secondary btn-sm">禁用</button>
-            <div className="batch-action-divider" />
-            <button disabled={batchLoading} onClick={() => handleBatchAction('enableSystemProxy')} className="btn btn-secondary btn-sm">开系统代理</button>
-            <button disabled={batchLoading} onClick={() => handleBatchAction('disableSystemProxy')} className="btn btn-secondary btn-sm">关系统代理</button>
-            <div className="batch-action-divider" />
-            <button disabled={batchLoading} onClick={() => handleBatchAction('delete')} className="btn btn-danger btn-sm">删除</button>
+        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 p-3 rounded-xl mb-4 shadow-sm animate-fade-in">
+          <div className="text-[13.5px] font-semibold text-primary flex items-center gap-2">
+            已选择 {selectedIds.length} 个站点
+          </div>
+          <div className="flex items-center gap-2">
+            <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className={btnSecondaryClass}>启用</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className={btnSecondaryClass}>禁用</button>
+            <div className="w-[1px] h-4 bg-primary/20 mx-1" />
+            <button disabled={batchLoading} onClick={() => handleBatchAction('enableSystemProxy')} className={btnSecondaryClass}>开系统代理</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('disableSystemProxy')} className={btnSecondaryClass}>关系统代理</button>
+            <div className="w-[1px] h-4 bg-primary/20 mx-1" />
+            <button disabled={batchLoading} onClick={() => handleBatchAction('delete')} className={btnDangerClass}>删除</button>
           </div>
         </div>
       )}
 
-      <div className="card" style={{ padding: 0, overflowX: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+      <div className="bg-surface rounded-xl border border-border shadow-sm overflow-x-auto">
         {loading ? (
-          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="p-6 flex flex-col gap-3">
             {[...Array(5)].map((_, i) => (
-              <div key={i} style={{ display: "flex", gap: 16 }}>
-                <div className="skeleton" style={{ width: 120, height: 16 }} />
-                <div className="skeleton" style={{ width: 80, height: 16 }} />
-                <div className="skeleton" style={{ width: 120, height: 16 }} />
-                <div className="skeleton" style={{ width: 70, height: 16 }} />
-                <div className="skeleton" style={{ flex: 1, height: 16 }} />
+              <div key={i} className="flex gap-4">
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[120px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[80px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[120px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[70px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded flex-1 h-4 animate-pulse" />
               </div>
             ))}
           </div>
@@ -163,7 +179,7 @@ export default function Sites() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 40, textAlign: 'center' }}>
+                    <th className="w-10 text-center">
                       <input 
                         type="checkbox" 
                         checked={sites.length > 0 && selectedIds.length === sites.length}
@@ -177,40 +193,40 @@ export default function Sites() {
                     <th>代理配置</th>
                     <th>权重</th>
                     <th>平台</th>
-                    <th className="sites-actions-col" style={{ width: 100, textAlign: 'right' }}>操作</th>
+                    <th>创建时间</th>
+                    <th className="text-right w-[100px]">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedSites.map(site => (
-                    <tr key={site.id} className={selectedIds.includes(site.id) ? 'selected-row' : ''}>
-                      <td style={{ textAlign: 'center' }}>
+                    <tr key={site.id} className={selectedIds.includes(site.id) ? '!bg-primary/5' : ''}>
+                      <td className="text-center">
                         <input 
                           type="checkbox" 
                           checked={selectedIds.includes(site.id)}
                           onChange={(e) => toggleSelect(site.id, e.target.checked)}
                         />
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                      <td className="font-semibold text-textPrimary">
                         {site.name}
                       </td>
                       <td>
                         {site.external_checkin_url || site.url ? (
-                          <a href={site.external_checkin_url || site.url} target="_blank" rel="noopener noreferrer" className="badge-link">
-                            <span className="badge badge-muted" style={{ fontSize: 11 }}>
+                          <a href={site.external_checkin_url || site.url} target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-[11px] font-medium bg-black/5 text-textSecondary dark:bg-white/5">
                               {site.external_checkin_url || site.url}
                             </span>
                           </a>
                         ) : (
-                          <span className="badge badge-muted" style={{ fontSize: 11 }}>-</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-[11px] font-medium bg-black/5 text-textSecondary dark:bg-white/5">-</span>
                         )}
                       </td>
-                      <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                      <td className="font-mono font-semibold">
                         ${(site.total_balance || 0).toFixed(2)}
                       </td>
                       <td>
                         <span 
-                          className={`badge ${site.status === 'active' ? 'badge-success' : 'badge-error'}`} 
-                          style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-all hover:opacity-80 ${site.status === 'active' ? 'bg-successSoft text-success' : 'bg-dangerSoft text-danger'}`}
                           onClick={() => handleToggleStatus(site)}
                           title="点击切换状态"
                         >
@@ -218,23 +234,23 @@ export default function Sites() {
                         </span>
                       </td>
                       <td>
-                        <span className={`badge ${site.use_system_proxy ? 'badge-info' : 'badge-muted'}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${site.use_system_proxy ? 'bg-infoSoft text-info' : 'bg-black/5 text-textSecondary dark:bg-white/5'}`}>
                           {site.use_system_proxy ? 'ON' : 'OFF'}
                         </span>
                       </td>
                       <td>{site.sort_order || 0}</td>
                       <td>
-                        <span className="badge badge-info">{site.platform}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium bg-infoSoft text-info">{site.platform}</span>
                       </td>
-                      <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                      <td className="text-[12px] text-textSecondary whitespace-nowrap">
                         {site.created_at ? new Date(site.created_at).toLocaleDateString() : '-'}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                          <button onClick={() => openEdit(site)} className="btn btn-ghost btn-icon">
+                      <td className="text-right">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => openEdit(site)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors">
                             <Edit2 size={16} />
                           </button>
-                          <button onClick={() => handleDelete(site.id)} className="btn btn-ghost btn-icon" style={{ color: 'var(--color-danger)' }}>
+                          <button onClick={() => handleDelete(site.id)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -245,12 +261,12 @@ export default function Sites() {
               </table>
             )}
             {sites.length === 0 && (
-              <div className="empty-state">
-                <svg className="empty-state-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex flex-col items-center justify-center p-16 text-center">
+                <svg className="w-16 h-16 text-textMuted mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
-                <div className="empty-state-title">暂无站点</div>
-                <div className="empty-state-desc">点击右上角“添加站点”按钮创建</div>
+                <div className="text-[16px] font-semibold text-textPrimary mb-1">暂无站点</div>
+                <div className="text-[13px] text-textSecondary">点击右上角“添加站点”按钮创建</div>
               </div>
             )}
           </>
@@ -299,15 +315,15 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     }
   };
 
-  // removed inputStyle since we use form-control class
+  const inputClass = "w-full px-3.5 py-2.5 bg-background border border-border rounded-lg text-[13px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-mono";
 
   return (
     <Modal title={site ? '编辑站点' : '添加站点'} onClose={onClose}>
-      <div className="modal-body">
-          <form id="site-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="responsive-form-grid responsive-form-grid-2">
-              <input required type="text" className="form-control" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
-              <input required type="url" className="form-control" value={formData.url} onChange={e => {
+      <div className="p-6">
+          <form id="site-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <input required type="text" className={inputClass} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
+              <input required type="url" className={inputClass} value={formData.url} onChange={e => {
                 const url = e.target.value;
                 let nextPlatform = formData.platform;
                 if (!nextPlatform || nextPlatform === 'anyrouter') {
@@ -323,38 +339,39 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 }
                 setFormData({...formData, url, platform: nextPlatform});
               }} placeholder="URL (例如: https://api.example.com)" />
-              <select className="form-control" value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
+              <select className={inputClass} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
                 <option value="" disabled>选择平台</option>
                 {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select className="form-control" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+              <select className={inputClass} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
                 <option value="active">启用状态: 启用</option>
                 <option value="disabled">启用状态: 禁用</option>
               </select>
-              <input type="url" className="form-control" value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="代理 URL (可选, http://127.0.0.1:7890)" />
-              <input type="url" className="form-control" value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
+              <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="代理 URL (可选, http://127.0.0.1:7890)" />
+              <input type="url" className={inputClass} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
             </div>
             <textarea 
-              className="form-control"
-              style={{ minHeight: 60, fontFamily: 'monospace', resize: 'vertical' }} 
+              className={inputClass}
+              style={{ minHeight: 60, resize: 'vertical' }} 
               value={formData.custom_headers} 
               onChange={e => setFormData({...formData, custom_headers: e.target.value})} 
               placeholder='自定义 Header (JSON 格式, 可选)&#10;{"X-My-Header": "value"}' 
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <div className="flex items-center gap-2 mt-1">
               <input 
                 type="checkbox" 
                 id="use_system_proxy"
+                className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
                 checked={formData.use_system_proxy} 
                 onChange={e => setFormData({...formData, use_system_proxy: e.target.checked})}
               />
-              <label htmlFor="use_system_proxy" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>使用系统代理</label>
+              <label htmlFor="use_system_proxy" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">使用系统代理</label>
             </div>
           </form>
         </div>
-        <div className="modal-footer">
-          <button type="button" onClick={onClose} className="btn btn-ghost">取消</button>
-          <button type="submit" form="site-form" disabled={loading} className="btn btn-primary">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-black/5 dark:bg-white/5 rounded-b-2xl">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
+          <button type="submit" form="site-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
             {loading ? '保存中...' : '保存'}
           </button>
         </div>

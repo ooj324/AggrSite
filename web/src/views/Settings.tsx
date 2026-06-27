@@ -60,35 +60,38 @@ export default function Settings() {
 
   if (loading) return (
     <div className="flex justify-center p-12">
-      <span className="spinner spinner-lg text-primary" />
+      <span className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin-slow" />
     </div>
   );
 
+  const inputClass = "w-full px-3.5 py-2.5 bg-background border border-border rounded-lg text-[13px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-mono";
+  const btnClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-primary rounded-sm transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnSecondaryClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-textPrimary bg-surface border border-border rounded-sm transition-all duration-200 hover:bg-surfaceHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ flexWrap: 'wrap', gap: 12 }}>
-        <h2 className="page-title">系统设置</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-[22px] font-bold tracking-tight text-textPrimary m-0">系统设置</h2>
       </div>
 
-      <div className="card" style={{ maxWidth: 600, padding: 24, marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-primary-light)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="bg-surface rounded-xl p-6 border border-border shadow-sm max-w-[600px] mb-6">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-border">
+          <div className="w-10 h-10 rounded-xl bg-primaryLight text-primary flex items-center justify-center shrink-0">
             <SettingsIcon size={20} />
           </div>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>系统与调度器配置</h2>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>配置全局系统设置和 Cron 定时任务。</p>
+            <h2 className="text-[18px] font-semibold m-0 text-textPrimary">系统与调度器配置</h2>
+            <p className="text-[13px] text-textSecondary m-0">配置全局系统设置和 Cron 定时任务。</p>
           </div>
         </div>
 
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <form onSubmit={handleSave} className="flex flex-col gap-5">
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>系统代理 URL</label>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>全局 HTTP 代理（例如 http://127.0.0.1:7890）。留空则使用环境变量或禁用。</p>
+            <label className="block text-[13px] font-medium text-textSecondary mb-1.5">系统代理 URL</label>
+            <p className="text-[12px] text-textMuted mb-2">全局 HTTP 代理（例如 http://127.0.0.1:7890）。留空则使用环境变量或禁用。</p>
             <input 
               type="text" 
-              className="form-control"
-              style={{ fontFamily: 'monospace' }} 
+              className={inputClass}
               placeholder="http://127.0.0.1:7890" 
               value={formData.SYSTEM_PROXY_URL} 
               onChange={e => setFormData({...formData, SYSTEM_PROXY_URL: e.target.value})} 
@@ -96,39 +99,37 @@ export default function Settings() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>签到 Cron 表达式</label>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>控制自动签到的运行频率。留空表示禁用。</p>
+            <label className="block text-[13px] font-medium text-textSecondary mb-1.5">签到 Cron 表达式</label>
+            <p className="text-[12px] text-textMuted mb-2">控制自动签到的运行频率。留空表示禁用。</p>
             <input 
               type="text" 
-              className="form-control"
-              style={{ fontFamily: 'monospace' }} 
+              className={inputClass}
               placeholder="例如 0 8 * * *" 
               value={formData.CHECKIN_CRON} 
               onChange={e => setFormData({...formData, CHECKIN_CRON: e.target.value})} 
             />
             {status?.next_checkin && (
-              <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 8 }}>下一次运行: {new Date(status.next_checkin).toLocaleString()}</p>
+              <p className="text-[12px] text-success mt-2">下一次运行: {new Date(status.next_checkin).toLocaleString()}</p>
             )}
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>余额刷新 Cron 表达式</label>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>控制同步账户余额的频率。留空表示禁用。</p>
+            <label className="block text-[13px] font-medium text-textSecondary mb-1.5">余额刷新 Cron 表达式</label>
+            <p className="text-[12px] text-textMuted mb-2">控制同步账户余额的频率。留空表示禁用。</p>
             <input 
               type="text" 
-              className="form-control"
-              style={{ fontFamily: 'monospace' }} 
+              className={inputClass}
               placeholder="例如 0 * * * *" 
               value={formData.BALANCE_REFRESH_CRON} 
               onChange={e => setFormData({...formData, BALANCE_REFRESH_CRON: e.target.value})} 
             />
             {status?.next_balance_refresh && (
-              <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 8 }}>下一次运行: {new Date(status.next_balance_refresh).toLocaleString()}</p>
+              <p className="text-[12px] text-success mt-2">下一次运行: {new Date(status.next_balance_refresh).toLocaleString()}</p>
             )}
           </div>
 
-          <div style={{ paddingTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="submit" disabled={saving} className="btn btn-primary" style={{ gap: 8 }}>
+          <div className="pt-4 flex justify-end">
+            <button type="submit" disabled={saving} className={btnClass}>
               {saving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
               {saving ? '保存中...' : '保存并重载'}
             </button>
@@ -137,21 +138,21 @@ export default function Settings() {
       </div>
 
 
-      <div className="card" style={{ maxWidth: 600, padding: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--color-border)' }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--color-info-light)', color: 'var(--color-info)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="bg-surface rounded-xl p-6 border border-border shadow-sm max-w-[600px]">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-border">
+          <div className="w-10 h-10 rounded-xl bg-infoSoft text-info flex items-center justify-center shrink-0">
             <SettingsIcon size={20} />
           </div>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>数据管理</h2>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>从备份中导出或导入。</p>
+            <h2 className="text-[18px] font-semibold m-0 text-textPrimary">数据管理</h2>
+            <p className="text-[13px] text-textSecondary m-0">从备份中导出或导入。</p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div className="flex flex-col gap-6">
           <div>
-            <h3 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>导出数据库</h3>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>下载包含所有站点和账户信息的 JSON 文件。</p>
+            <h3 className="text-[14px] font-medium text-textPrimary m-0">导出数据库</h3>
+            <p className="text-[12px] text-textMuted mb-3 mt-1">下载包含所有站点和账户信息的 JSON 文件。</p>
             <button 
               onClick={() => {
                 const url = api.defaults.baseURL ? api.defaults.baseURL + '/api/backup/export' : '/api/backup/export';
@@ -160,20 +161,20 @@ export default function Settings() {
                 a.download = 'aggrsite-backup.json';
                 a.click();
               }}
-              className="btn btn-secondary"
+              className={btnSecondaryClass}
             >
               导出为 JSON
             </button>
           </div>
 
-          <div style={{ paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
-            <h3 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}>导入数据库</h3>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>上传 JSON 备份文件以恢复或迁移数据。</p>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="pt-4 border-t border-border">
+            <h3 className="text-[14px] font-medium text-textPrimary m-0">导入数据库</h3>
+            <p className="text-[12px] text-textMuted mb-3 mt-1">上传 JSON 备份文件以恢复或迁移数据。</p>
+            <div className="flex gap-2 items-center">
               <input 
                 type="file" 
                 id="backup-upload"
-                style={{ display: 'none' }}
+                className="hidden"
                 accept=".json"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
@@ -198,7 +199,7 @@ export default function Settings() {
               <button 
                 onClick={() => document.getElementById('backup-upload')?.click()}
                 disabled={saving}
-                className="btn btn-primary"
+                className={btnClass}
               >
                 选择备份文件
               </button>

@@ -149,37 +149,43 @@ export default function Accounts() {
     setShowModal(true);
   };
 
+  const btnPrimaryClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-primary rounded-sm transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnSecondaryClass = "relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-textPrimary bg-surface border border-border rounded-sm transition-all duration-200 hover:bg-surfaceHover hover:-translate-y-px hover:shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnDangerClass = "relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-danger rounded-sm transition-all duration-200 hover:bg-danger/90 hover:-translate-y-px hover:shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
     <div className="animate-fade-in">
-      <div className="page-header">
-        <h2 className="page-title">账户</h2>
-        <button onClick={() => openEdit()} className="btn btn-primary">
-          <Plus size={16} style={{ marginRight: 6 }} /> 添加账户
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-[22px] font-bold tracking-tight text-textPrimary m-0">账户</h2>
+        <button onClick={() => openEdit()} className={btnPrimaryClass}>
+          <Plus size={16} /> 添加账户
         </button>
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="batch-action-bar animate-fade-in">
-          <div className="batch-action-count">已选择 {selectedIds.length} 个账号</div>
-          <div className="batch-action-buttons">
-            <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className="btn btn-secondary btn-sm">启用</button>
-            <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className="btn btn-secondary btn-sm">禁用</button>
-            <div className="batch-action-divider" />
-            <button disabled={batchLoading} onClick={() => handleBatchAction('delete')} className="btn btn-danger btn-sm">删除</button>
+        <div className="flex items-center justify-between bg-primary/10 border border-primary/20 p-3 rounded-xl mb-4 shadow-sm animate-fade-in">
+          <div className="text-[13.5px] font-semibold text-primary flex items-center gap-2">
+            已选择 {selectedIds.length} 个账号
+          </div>
+          <div className="flex items-center gap-2">
+            <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className={btnSecondaryClass}>启用</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className={btnSecondaryClass}>禁用</button>
+            <div className="w-[1px] h-4 bg-primary/20 mx-1" />
+            <button disabled={batchLoading} onClick={() => handleBatchAction('delete')} className={btnDangerClass}>删除</button>
           </div>
         </div>
       )}
 
-      <div className="card" style={{ padding: 0, overflowX: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+      <div className="bg-surface rounded-xl border border-border shadow-sm overflow-x-auto">
         {loading ? (
-          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="p-6 flex flex-col gap-3">
             {[...Array(5)].map((_, i) => (
-              <div key={i} style={{ display: "flex", gap: 16 }}>
-                <div className="skeleton" style={{ width: 120, height: 16 }} />
-                <div className="skeleton" style={{ width: 80, height: 16 }} />
-                <div className="skeleton" style={{ width: 120, height: 16 }} />
-                <div className="skeleton" style={{ width: 70, height: 16 }} />
-                <div className="skeleton" style={{ flex: 1, height: 16 }} />
+              <div key={i} className="flex gap-4">
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[120px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[80px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[120px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[70px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded flex-1 h-4 animate-pulse" />
               </div>
             ))}
           </div>
@@ -189,7 +195,7 @@ export default function Accounts() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 44 }}>
+                    <th className="w-11 text-center">
                       <input type="checkbox" checked={selectedIds.length === accounts.length && accounts.length > 0} onChange={(e) => toggleSelectAll(e.target.checked)} />
                     </th>
                     <th>连接名称</th>
@@ -198,110 +204,102 @@ export default function Accounts() {
                     <th>余额</th>
                     <th>已用</th>
                     <th>签到</th>
-                    <th>操作</th>
+                    <th className="text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accounts.map(acc => (
-                    <tr key={acc.id} className={`animate-slide-up ${selectedIds.includes(acc.id) ? 'selected-row' : ''}`}>
-                      <td style={{ textAlign: 'center' }}>
+                    <tr key={acc.id} className={`group animate-slide-up ${selectedIds.includes(acc.id) ? '!bg-primary/5' : ''}`}>
+                      <td className="text-center">
                         <input 
                           type="checkbox" 
                           checked={selectedIds.includes(acc.id)}
                           onChange={(e) => toggleSelect(acc.id, e.target.checked)}
                         />
                       </td>
-                      <td style={{ color: "var(--color-text-primary)" }}>
-                        <div style={{ fontWeight: 600 }}>
+                      <td className="text-textPrimary">
+                        <div className="font-semibold">
                           {acc.username || `Account #${acc.id}`}
                         </div>
-                        <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                          <span
-                            className={`badge ${resolveAccountCredentialMode(acc) === "apikey" ? "badge-warning" : "badge-info"}`}
-                            style={{ fontSize: 10 }}
-                          >
-                            {resolveAccountCredentialMode(acc) === "apikey"
-                              ? "API Key"
-                              : "Session"}
+                        <div className="flex gap-1 mt-1">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium ${resolveAccountCredentialMode(acc) === "apikey" ? "bg-warningSoft text-warning" : "bg-infoSoft text-info"}`}>
+                            {resolveAccountCredentialMode(acc) === "apikey" ? "API Key" : "Session"}
                           </span>
                           {parseAccountExtraConfig(acc)?.proxyUrl && (
-                            <span
-                              className="badge badge-purple"
-                              style={{ fontSize: 10 }}
-                            >
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400">
                               代理
                             </span>
                           )}
                         </div>
                       </td>
                       <td>
-                        <span className="badge badge-muted">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-[11px] font-medium bg-black/5 text-textSecondary dark:bg-white/5">
                           {acc.site_name || sites.find(s => s.id === acc.site_id)?.name || `Site #${acc.site_id}`}
                         </span>
                         {acc.site_platform && (
-                          <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-muted)' }}>
+                          <div className="mt-1 text-[10px] text-textMuted">
                             {acc.site_platform}
                           </div>
                         )}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                          <span className={`badge ${acc.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+                        <div className="flex flex-col gap-1.5 items-start">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${acc.status === 'active' ? 'bg-successSoft text-success' : 'bg-dangerSoft text-danger'}`}>
                             {acc.status === 'active' ? '正常' : '禁用'}
                           </span>
-                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary" style={{ padding: 0, fontSize: 12 }}>
-                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '刷新余额'}
+                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="text-[12px] text-primary hover:text-primaryHover hover:underline disabled:opacity-50 disabled:no-underline transition-colors p-0">
+                            {actionLoading === acc.id ? <span className="w-3 h-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin inline-block align-middle" /> : '刷新余额'}
                           </button>
                         </div>
                       </td>
-                      <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                        <div style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+                      <td className="font-mono">
+                        <div className="font-semibold text-textPrimary">
                           ${(acc.balance || 0).toFixed(2)}
                         </div>
                       </td>
-                      <td style={{ fontVariantNumeric: "tabular-nums", fontSize: 12 }}>
+                      <td className="font-mono text-[12px]">
                         <div>${(acc.balance_used || 0).toFixed(2)}</div>
                       </td>
                       <td>
-                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                        <div className="text-[12px] text-textSecondary leading-relaxed">
                           {acc.last_checkin_at ? (
                             <>
-                              <div style={{ color: 'var(--color-success)', fontWeight: 500 }}>签到成功</div>
+                              <div className="text-success font-medium">签到成功</div>
                               <div>{format(new Date(acc.last_checkin_at), 'yyyy-MM-dd HH:mm')}</div>
                             </>
                           ) : (
-                            <div style={{ color: 'var(--color-text-muted)' }}>暂无签到记录</div>
+                            <div className="text-textMuted">暂无签到记录</div>
                           )}
                         </div>
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+                      <td className="text-right">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
-                            className={`checkin-toggle-badge ${acc.checkin_enabled ? "is-on" : "is-off"}`}
+                            className={`inline-flex items-center justify-center gap-1.5 px-3 py-1 text-[12px] font-bold rounded-full transition-all duration-150 min-w-[70px] ${acc.checkin_enabled ? "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200 hover:-translate-y-px shadow-sm" : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200 hover:-translate-y-px shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"} disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none`}
                             onClick={() => handleAction(acc.id, 'toggle-checkin')}
                             disabled={actionLoading === acc.id}
                             style={{ transform: 'scale(0.85)', transformOrigin: 'right center' }}
                             title={acc.checkin_enabled ? '已开启自动签到' : '已关闭自动签到'}
                           >
                             {actionLoading === acc.id ? (
-                              <span className="spinner spinner-sm" />
+                              <span className="w-3 h-3 border-2 border-current/20 border-t-current rounded-full animate-spin" />
                             ) : acc.checkin_enabled ? (
-                              <span className="status-label">自动签到ON</span>
+                              <span>自动签到ON</span>
                             ) : (
-                              <span className="status-label">自动签到OFF</span>
+                              <span>自动签到OFF</span>
                             )}
                           </button>
-                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-warning" style={{ padding: '0 4px' }}>
-                            {actionLoading === acc.id ? <span className="spinner spinner-sm" /> : '手动签到'}
+                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="text-[12px] font-medium text-warning hover:text-warning/80 hover:underline px-1 disabled:opacity-50 disabled:no-underline">
+                            {actionLoading === acc.id ? <span className="w-3 h-3 border-2 border-warning/20 border-t-warning rounded-full animate-spin inline-block align-middle" /> : '手动签到'}
                           </button>
-                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="btn btn-link btn-link-primary" style={{ padding: '0 4px' }}>
+                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 disabled:opacity-50 disabled:no-underline">
                             换绑
                           </button>
-                          <button onClick={() => openEdit(acc)} className="btn btn-ghost btn-icon">
+                          <button onClick={() => openEdit(acc)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
                             <Edit2 size={16} />
                           </button>
-                          <button onClick={() => handleDelete(acc.id)} className="btn btn-ghost btn-icon" style={{ color: 'var(--color-danger)' }}>
+                          <button onClick={() => handleDelete(acc.id)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -312,12 +310,12 @@ export default function Accounts() {
               </table>
             )}
             {accounts.length === 0 && (
-              <div className="empty-state">
-                <svg className="empty-state-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex flex-col items-center justify-center p-16 text-center">
+                <svg className="w-16 h-16 text-textMuted mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
-                <div className="empty-state-title">暂无账户</div>
-                <div className="empty-state-desc">点击右上角“添加账户”按钮创建</div>
+                <div className="text-[16px] font-semibold text-textPrimary mb-1">暂无账户</div>
+                <div className="text-[13px] text-textSecondary">点击右上角“添加账户”按钮创建</div>
               </div>
             )}
           </>
@@ -440,49 +438,47 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
     }
   };
 
-  // removed inputStyle since we use form-control class
+  const inputClass = "w-full px-3.5 py-2.5 bg-background border border-border rounded-lg text-[13px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-mono";
 
   return (
     <Modal title={account ? '编辑账户' : '添加账户'} onClose={onClose}>
-      <div className="modal-body">
+      <div className="p-6">
           {!account && (
-            <div className="pill-tabs" style={{ marginBottom: 24, justifyContent: 'center' }}>
+            <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
               <button 
                 type="button"
                 onClick={() => setMode('login')} 
-                className={`pill-tab ${mode === 'login' ? 'active' : ''}`}
-                style={{ flex: 1 }}
+                className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
               >
                 登录模式
               </button>
               <button 
                 type="button"
                 onClick={() => setMode('token')} 
-                className={`pill-tab ${mode === 'token' ? 'active' : ''}`}
-                style={{ flex: 1 }}
+                className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'token' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
               >
                 令牌模式
               </button>
             </div>
           )}
 
-          <form id="account-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="responsive-form-grid responsive-form-grid-2">
-              <select className="form-control" value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
+          <form id="account-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <select className={inputClass} value={formData.site_id} onChange={e => setFormData({...formData, site_id: Number(e.target.value)})}>
                 {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               
-              <input required={mode === 'login'} type="text" className="form-control" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
+              <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder={`用户名 ${mode === 'token' ? '(可选)' : ''}`} />
 
               {mode === 'login' && !account ? (
-                <input required type="password" className="form-control" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="密码" />
+                <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder="密码" />
               ) : (
                 <>
-                  <input required type="text" className="form-control" value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
-                  <input type="text" className="form-control" value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
-                  <input type="number" className="form-control" value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
-                  <input type="url" className="form-control" value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="账号代理 URL (可选，覆盖站点)" />
-                  <select className="form-control" value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
+                  <input required type="text" className={inputClass} value={formData.access_token} onChange={e => setFormData({...formData, access_token: e.target.value})} placeholder="Access Token 或 API Key" />
+                  <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({...formData, api_token: e.target.value})} placeholder="API Token (可选，验证可自动获取)" />
+                  <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => setFormData({...formData, platform_user_id: e.target.value})} placeholder="Platform User ID (部分站点需要)" />
+                  <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="账号代理 URL (可选，覆盖站点)" />
+                  <select className={inputClass} value={formData.credential_mode} onChange={e => setFormData({...formData, credential_mode: e.target.value})}>
                     <option value="session">模式: Session (支持签到)</option>
                     <option value="apikey">模式: API Key (仅代理)</option>
                   </select>
@@ -490,7 +486,7 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
               )}
 
               {mode === 'token' && (
-                <select className="form-control" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                <select className={inputClass} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
                   <option value="active">启用状态: 启用</option>
                   <option value="disabled">启用状态: 禁用</option>
                 </select>
@@ -498,41 +494,45 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
             </div>
 
             {mode === 'login' && !account && (
-              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -8 }}>密码用于自动刷新令牌。它将被加密存储。</p>
+              <p className="text-[12px] text-textMuted mt-[-8px]">密码用于自动刷新令牌。它将被加密存储。</p>
             )}
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <input 
-                type="checkbox" 
-                id="checkin_enabled"
-                checked={formData.checkin_enabled} 
-                onChange={e => setFormData({...formData, checkin_enabled: e.target.checked})}
-              />
-              <label htmlFor="checkin_enabled" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginRight: 16 }}>开启自动签到</label>
+            <div className="flex items-center gap-6 mt-2">
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id="checkin_enabled"
+                  className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                  checked={formData.checkin_enabled} 
+                  onChange={e => setFormData({...formData, checkin_enabled: e.target.checked})}
+                />
+                <label htmlFor="checkin_enabled" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">开启自动签到</label>
+              </div>
 
               {mode === 'token' && (
-                <>
+                <div className="flex items-center gap-2">
                   <input 
                     type="checkbox" 
                     id="use_system_proxy"
+                    className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
                     checked={formData.use_system_proxy} 
                     onChange={e => setFormData({...formData, use_system_proxy: e.target.checked})}
                   />
-                  <label htmlFor="use_system_proxy" style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>使用系统代理 (覆盖站点)</label>
-                </>
+                  <label htmlFor="use_system_proxy" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">使用系统代理 (覆盖站点)</label>
+                </div>
               )}
             </div>
           </form>
         </div>
         
-        <div className="modal-footer">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-black/5 dark:bg-white/5 rounded-b-2xl">
           {mode === 'token' && !account && (
-            <button type="button" onClick={handleVerify} disabled={verifyLoading} className="btn btn-ghost" style={{ marginRight: 'auto', color: 'var(--color-primary)' }}>
+            <button type="button" onClick={handleVerify} disabled={verifyLoading} className="mr-auto px-4 py-2 text-[13px] font-medium text-primary hover:text-primaryHover transition-colors disabled:opacity-50">
               {verifyLoading ? '验证中...' : '验证 Token'}
             </button>
           )}
-          <button type="button" onClick={onClose} className="btn btn-ghost">取消</button>
-          <button type="submit" form="account-form" disabled={loading} className="btn btn-primary">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-medium text-textSecondary hover:text-textPrimary transition-colors">取消</button>
+          <button type="submit" form="account-form" disabled={loading} className="relative inline-flex items-center justify-center gap-1.5 px-5 py-2 text-[13px] font-medium text-white bg-primary rounded-md transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
             {loading ? '保存中...' : '保存'}
           </button>
         </div>

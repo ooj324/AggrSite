@@ -9,13 +9,22 @@ interface ModalProps {
   maxWidth?: number;
 }
 
-export function Modal({ title, onClose, children, maxWidth = 440 }: ModalProps) {
+export function Modal({ title, onClose, children, maxWidth = 480 }: ModalProps) {
   return createPortal(
-    <div className="modal-backdrop">
-      <div className="modal-content animate-scale-in" style={{ width: '100%', maxWidth }}>
-        <div className="modal-header">
-          <h2 className="modal-title">{title}</h2>
-          <button type="button" onClick={onClose} className="modal-close-button"><X size={20} /></button>
+    <div className="fixed inset-0 z-[320] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[4px] animate-fade-in">
+      <div 
+        className="relative flex flex-col w-full bg-surface border border-border shadow-2xl rounded-2xl animate-scale-in" 
+        style={{ maxWidth }}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-black/5 dark:bg-white/5 rounded-t-2xl">
+          <h2 className="text-[17px] font-bold text-textPrimary m-0 tracking-tight">{title}</h2>
+          <button 
+            type="button" 
+            onClick={onClose} 
+            className="flex items-center justify-center w-8 h-8 rounded-full text-textSecondary hover:text-textPrimary hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+          >
+            <X size={18} />
+          </button>
         </div>
         {children}
       </div>

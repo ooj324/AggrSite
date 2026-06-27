@@ -62,58 +62,59 @@ function Login() {
   };
 
   return (
-    <div className="login-shell">
-      <div className="login-surface animate-scale-in">
-        <section className="login-brand-panel login-brand-panel-light">
-          <div className="login-brand-header">
-            <div className="brand-mark-frame brand-mark-frame-hero">
-              <div className="brand-mark-canvas">
-                <LogoIcon size={32} />
-              </div>
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-background">
+      <div className="flex flex-col md:flex-row w-full max-w-[880px] bg-surface rounded-2xl shadow-xl overflow-hidden animate-scale-in border border-border">
+        {/* Brand Panel */}
+        <section className="hidden md:flex flex-col justify-between w-1/2 p-12 bg-gradient-to-br from-primary/10 to-info/10 border-r border-border">
+          <div>
+            <div className="flex items-center justify-center w-16 h-16 bg-surface rounded-2xl shadow-sm border border-white/20 mb-8">
+              <LogoIcon size={40} />
             </div>
-            <div className="login-brand-summary">
-              <div className="login-brand-name">AggrSite</div>
-              <div className="login-brand-kicker">统一 API 聚合器</div>
-            </div>
-          </div>
-          <div className="login-brand-copy-block">
-            <p className="login-brand-copy">
+            <div className="text-[32px] font-bold text-textPrimary tracking-tight mb-2">AggrSite</div>
+            <div className="text-[13px] font-bold text-primary tracking-[0.2em] uppercase mb-6">统一 API 聚合器</div>
+            <p className="text-[15px] text-textSecondary leading-relaxed max-w-[280px]">
               无缝管理您的账户、API 密钥并追踪多个平台的使用情况。
             </p>
           </div>
+          <div className="text-[12px] text-textMuted font-medium">
+            &copy; {new Date().getFullYear()} Metapi. All rights reserved.
+          </div>
         </section>
 
-        <section className="login-auth-stage">
-          <div className="login-auth-panel">
-            <div className="login-auth-eyebrow">管理员门户</div>
-            <h2 className="login-auth-title">登录</h2>
-            <p className="login-auth-copy">请输入您的管理员 Token 以继续。</p>
-            
-            <form onSubmit={handleLogin} className="space-y-4">
-              <label className="login-auth-label" htmlFor="admin-token-input">管理员 Token</label>
+        {/* Auth Panel */}
+        <section className="flex flex-col justify-center w-full md:w-1/2 p-8 sm:p-12 lg:p-16">
+          <div className="text-[12px] font-bold text-primary tracking-[0.15em] uppercase mb-4">管理员门户</div>
+          <h2 className="text-[28px] font-bold text-textPrimary tracking-tight mb-2">登录</h2>
+          <p className="text-[14px] text-textSecondary mb-8">请输入您的管理员 Token 以继续。</p>
+          
+          <form onSubmit={handleLogin} className="flex flex-col gap-5">
+            <div>
+              <label className="block text-[13px] font-semibold text-textPrimary mb-2" htmlFor="admin-token-input">
+                管理员 Token
+              </label>
               <input
                 id="admin-token-input"
                 type="password"
-                placeholder="管理员 Token"
-                className="login-auth-input"
+                placeholder="••••••••••••••••"
+                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-[14px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all font-mono"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 autoFocus
               />
-              {error && (
-                <div className="alert alert-error animate-shake" style={{ marginBottom: 12 }}>
-                  {error}
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={loading || !token}
-                className="btn btn-primary login-auth-submit w-full"
-              >
-                {loading ? <><span className="spinner spinner-sm" style={{ borderTopColor: 'white', borderColor: 'rgba(255,255,255,0.3)' }} /> 验证中...</> : '登录'}
-              </button>
-            </form>
-          </div>
+            </div>
+            {error && (
+              <div className="px-4 py-3 bg-dangerSoft text-danger rounded-xl text-[13px] font-medium animate-shake border border-danger/20">
+                {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading || !token}
+              className="relative flex items-center justify-center w-full px-4 py-3 mt-2 text-[14px] font-medium text-white bg-primary rounded-xl transition-all duration-200 hover:bg-primaryHover hover:-translate-y-px hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+            >
+              {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : '进入系统'}
+            </button>
+          </form>
         </section>
       </div>
     </div>
@@ -148,62 +149,75 @@ function Layout({ children }: { children: React.ReactNode }) {
     setThemeMode(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  const iconBtnClass = "w-8 h-8 flex items-center justify-center rounded-lg text-textSecondary hover:text-textPrimary hover:bg-black/5 dark:hover:bg-white/10 transition-colors";
+
   return (
-    <>
-      <header className="topbar">
-        <div className="topbar-logo">
-          <LogoIcon size={28} />
-          <span className="topbar-logo-text">AggrSite</span>
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="fixed top-0 left-0 right-0 h-14 bg-surface/80 backdrop-blur-lg border-b border-border z-40 flex items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-3">
+          <LogoIcon size={26} />
+          <span className="font-bold text-[16px] tracking-tight text-textPrimary hidden sm:block">AggrSite</span>
         </div>
         
-        <div className="topbar-right">
-          <button className="topbar-search-trigger" aria-label="搜索">
-            <Search size={16} />
-            <span className="topbar-search-label">搜索</span>
-            <kbd className="topbar-search-kbd">Ctrl K</kbd>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-lg text-textMuted hover:text-textPrimary hover:border-borderLight transition-colors w-48 lg:w-64">
+            <Search size={14} />
+            <span className="text-[13px] flex-1 text-left">搜索...</span>
+            <kbd className="hidden lg:inline-flex items-center px-1.5 h-5 bg-surface border border-border rounded text-[10px] font-mono font-medium text-textMuted">Ctrl K</kbd>
           </button>
           
+          <div className="w-[1px] h-5 bg-border mx-1 hidden sm:block" />
+          
           <button
-            className="topbar-icon-btn"
+            className={iconBtnClass}
             onClick={toggleTheme}
             aria-label="切换主题"
           >
             {themeMode === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
 
-          <button onClick={handleLogout} className="topbar-icon-btn" style={{ color: 'var(--color-danger)' }} title="退出登录">
+          <button onClick={handleLogout} className="w-8 h-8 flex items-center justify-center rounded-lg text-danger/80 hover:text-danger hover:bg-dangerSoft transition-colors" title="退出登录">
             <LogOut size={18} />
           </button>
         </div>
       </header>
 
-      <div className="app-layout">
-        <aside className="sidebar">
-          <div className="sidebar-group">
-            <div className="sidebar-group-label">控制台</div>
+      <div className="flex flex-1 pt-14">
+        <aside className="fixed left-0 top-14 bottom-0 w-[64px] lg:w-[240px] bg-surface border-r border-border overflow-y-auto z-30 transition-all duration-300">
+          <div className="p-3 lg:p-4 flex flex-col gap-1.5">
+            <div className="hidden lg:block px-3 py-2 text-[11px] font-bold text-textMuted uppercase tracking-wider mb-1">
+              控制台
+            </div>
             {navItems.map(item => {
               const Icon = item.icon;
               return (
                 <NavLink 
                   key={item.path} 
                   to={item.path} 
-                  className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+                  className={({ isActive }) => 
+                    `flex items-center justify-center lg:justify-start gap-3 p-3 lg:px-3 lg:py-2.5 rounded-xl transition-all ${
+                      isActive 
+                        ? 'bg-primary/10 text-primary font-semibold' 
+                        : 'text-textSecondary hover:text-textPrimary hover:bg-black/5 dark:hover:bg-white/5 font-medium'
+                    }`
+                  }
+                  title={item.label}
                 >
-                  <Icon className="sidebar-item-icon" />
-                  <span>{item.label}</span>
+                  <Icon size={20} />
+                  <span className="hidden lg:block text-[13.5px]">{item.label}</span>
                 </NavLink>
               );
             })}
           </div>
         </aside>
 
-        <main className="main-content">
-          <div className="animate-fade-in" style={{ width: '100%', height: '100%' }}>
+        <main className="flex-1 ml-[64px] lg:ml-[240px] p-4 sm:p-6 lg:p-8 transition-all duration-300">
+          <div className="max-w-[1200px] mx-auto w-full">
             {children}
           </div>
         </main>
       </div>
-    </>
+    </div>
   );
 }
 

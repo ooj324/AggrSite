@@ -65,45 +65,48 @@ export default function Logs() {
     return true;
   });
 
+  const selectClass = "px-3 py-1.5 bg-surface border border-border rounded-lg text-[13px] text-textPrimary focus:outline-none focus:border-primary transition-all pr-8";
+  const btnWarningClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-warning rounded-sm transition-all duration-200 hover:bg-warning/90 hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnSecondaryClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-textPrimary bg-surface border border-border rounded-sm transition-all duration-200 hover:bg-surfaceHover hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ flexWrap: 'wrap', gap: 12 }}>
-        <h2 className="page-title">日志与事件</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h2 className="text-[22px] font-bold tracking-tight text-textPrimary m-0">日志与事件</h2>
+        <div className="flex items-center gap-2">
           {activeTab === 'checkin' && (
-            <button onClick={handleCheckinAll} disabled={runningAll} className="btn btn-warning">
-              {runningAll ? <span className="spinner spinner-sm" style={{ marginRight: 6 }} /> : <RefreshCw size={16} style={{ marginRight: 6 }} />}
+            <button onClick={handleCheckinAll} disabled={runningAll} className={btnWarningClass}>
+              {runningAll ? <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <RefreshCw size={16} />}
               运行所有签到
             </button>
           )}
-          <button onClick={loadData} className="btn btn-soft-primary">
-            {loading && !runningAll ? <span className="spinner spinner-sm" style={{ marginRight: 6 }} /> : <RefreshCw size={16} style={{ marginRight: 6 }} />}
+          <button onClick={loadData} disabled={loading || runningAll} className={btnSecondaryClass}>
+            {(loading && !runningAll) ? <span className="w-4 h-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin" /> : <RefreshCw size={16} />}
             刷新
           </button>
         </div>
       </div>
 
-      <div className="pill-tabs" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 8, flex: 1 }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <div className="inline-flex gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-xl self-start">
           <button
             onClick={() => setActiveTab('checkin')}
-            className={`pill-tab ${activeTab === 'checkin' ? 'active' : ''}`}
+            className={`px-4 py-1.5 text-[13px] font-medium rounded-lg transition-all whitespace-nowrap ${activeTab === 'checkin' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
           >
-            签到日志 <span style={{ fontVariantNumeric: "tabular-nums", opacity: 0.7 }}>{logs.length}</span>
+            签到日志 <span className="font-mono opacity-70 ml-1">{logs.length}</span>
           </button>
           <button
             onClick={() => setActiveTab('events')}
-            className={`pill-tab ${activeTab === 'events' ? 'active' : ''}`}
+            className={`px-4 py-1.5 text-[13px] font-medium rounded-lg transition-all whitespace-nowrap ${activeTab === 'events' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
           >
-            系统事件 <span style={{ fontVariantNumeric: "tabular-nums", opacity: 0.7 }}>{events.length}</span>
+            系统事件 <span className="font-mono opacity-70 ml-1">{events.length}</span>
           </button>
         </div>
         
         {activeTab === 'checkin' && (
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex items-center gap-2">
             <select 
-              className="form-control form-control-sm form-select-sm"
-              style={{ width: 'auto' }}
+              className={selectClass}
               value={timeFilter} 
               onChange={e => setTimeFilter(e.target.value as any)}
             >
@@ -112,8 +115,7 @@ export default function Logs() {
               <option value="week">最近7天</option>
             </select>
             <select 
-              className="form-control form-control-sm form-select-sm"
-              style={{ width: 'auto' }}
+              className={selectClass}
               value={statusFilter} 
               onChange={e => setStatusFilter(e.target.value as any)}
             >
@@ -126,16 +128,16 @@ export default function Logs() {
         )}
       </div>
 
-      <div className="card" style={{ padding: 0, overflowX: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+      <div className="bg-surface rounded-xl border border-border shadow-sm overflow-x-auto">
         {loading ? (
-          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="p-6 flex flex-col gap-3">
             {[...Array(5)].map((_, i) => (
-              <div key={i} style={{ display: "flex", gap: 16 }}>
-                <div className="skeleton" style={{ width: 120, height: 16 }} />
-                <div className="skeleton" style={{ width: 80, height: 16 }} />
-                <div className="skeleton" style={{ width: 120, height: 16 }} />
-                <div className="skeleton" style={{ width: 70, height: 16 }} />
-                <div className="skeleton" style={{ flex: 1, height: 16 }} />
+              <div key={i} className="flex gap-4">
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[120px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[80px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[120px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded w-[70px] h-4 animate-pulse" />
+                <div className="bg-black/5 dark:bg-white/5 rounded flex-1 h-4 animate-pulse" />
               </div>
             ))}
           </div>
@@ -156,39 +158,39 @@ export default function Logs() {
                 <tbody>
                   {filteredLogs.map((log, i) => (
                     <tr key={i}>
-                      <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                      <td className="text-[12px] text-textSecondary whitespace-nowrap">
                         {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                      <td className="font-semibold text-textPrimary">
                         {log.account_username || `Account #${log.account_id}`}
                       </td>
                       <td>
-                        <span className="badge badge-muted" style={{ fontSize: 11 }}>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-black/5 text-textSecondary dark:bg-white/5">
                           {log.site_name || '-'}
                         </span>
                       </td>
                       <td>
-                        <span className={`badge ${log.status === 'success' ? 'badge-success' : log.status === 'failed' ? 'badge-error' : 'badge-muted'}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${log.status === 'success' ? 'bg-successSoft text-success' : log.status === 'failed' ? 'bg-dangerSoft text-danger' : 'bg-black/5 text-textSecondary dark:bg-white/5'}`}>
                           {log.status === 'success' ? '成功' : log.status === 'failed' ? '失败' : '跳过'}
                         </span>
                       </td>
                       <td>
                         {log.failureReason ? (
-                          <span className="badge badge-info" title={log.failureReason.actionHint}>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium bg-infoSoft text-info" title={log.failureReason.actionHint}>
                             {log.failureReason.title}
                           </span>
                         ) : (
-                          <span className="badge badge-muted">-</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium bg-black/5 text-textSecondary dark:bg-white/5">-</span>
                         )}
                       </td>
-                      <td style={{ maxWidth: 360 }}>
-                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={log.message}>
+                      <td className="max-w-[360px]">
+                        <span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={log.message}>
                           {log.status === 'failed' ? (
-                            <span className="badge badge-error" style={{ marginRight: 6 }}>Error</span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[11px] font-medium bg-danger text-white mr-1.5">Error</span>
                           ) : log.status === 'success' && log.reward ? (
-                            <span className="badge badge-success" style={{ marginRight: 6 }}>奖励: {log.reward}</span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[11px] font-medium bg-success text-white mr-1.5">奖励: {log.reward}</span>
                           ) : null}
-                          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{log.message}</span>
+                          <span className="text-[12px] font-mono">{log.message}</span>
                         </span>
                       </td>
                     </tr>
@@ -197,11 +199,11 @@ export default function Logs() {
               </table>
             )}
             {filteredLogs.length === 0 && (
-              <div className="empty-state">
-                <svg className="empty-state-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex flex-col items-center justify-center p-12 text-center">
+                <svg className="w-12 h-12 text-textMuted mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <div className="empty-state-title">暂无匹配的签到日志</div>
+                <div className="text-[15px] font-medium text-textPrimary">暂无匹配的签到日志</div>
               </div>
             )}
           </>
@@ -221,22 +223,22 @@ export default function Logs() {
                 <tbody>
                   {events.map((ev, i) => (
                     <tr key={i}>
-                      <td style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                      <td className="text-[12px] text-textSecondary whitespace-nowrap">
                         {format(new Date(ev.created_at), 'MM/dd HH:mm:ss')}
                       </td>
                       <td>
-                        <span className="badge badge-info">{ev.type}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium bg-infoSoft text-info">{ev.type}</span>
                       </td>
                       <td>
-                        <span className={`badge ${ev.level === 'error' ? 'badge-error' : ev.level === 'warning' ? 'badge-warning' : 'badge-success'}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${ev.level === 'error' ? 'bg-dangerSoft text-danger' : ev.level === 'warning' ? 'bg-warningSoft text-warning' : 'bg-successSoft text-success'}`}>
                           {ev.level}
                         </span>
                       </td>
-                      <td style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                      <td className="font-medium text-textPrimary">
                         {ev.title}
                       </td>
-                      <td style={{ maxWidth: 400 }}>
-                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: 'var(--color-text-secondary)' }} title={ev.message}>
+                      <td className="max-w-[400px]">
+                        <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-textSecondary" title={ev.message}>
                           {ev.message}
                         </span>
                       </td>
@@ -246,11 +248,11 @@ export default function Logs() {
               </table>
             )}
             {events.length === 0 && (
-              <div className="empty-state">
-                <svg className="empty-state-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="flex flex-col items-center justify-center p-12 text-center">
+                <svg className="w-12 h-12 text-textMuted mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <div className="empty-state-title">暂无系统事件</div>
+                <div className="text-[15px] font-medium text-textPrimary">暂无系统事件</div>
               </div>
             )}
           </>
