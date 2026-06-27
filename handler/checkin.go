@@ -10,12 +10,11 @@ import (
 )
 
 func CheckinAll(w http.ResponseWriter, r *http.Request) {
-	results, err := service.CheckinAll()
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ok(w, results)
+	// Run checkin asynchronously to prevent timeout
+	go func() {
+		_, _ = service.CheckinAll()
+	}()
+	ok(w, map[string]interface{}{"message": "签到任务已在后台启动"})
 }
 
 func CheckinAccount(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
 
 const parseAccountExtraConfig = (account: any): Record<string, any> => {
@@ -185,15 +186,11 @@ export default function Accounts() {
         ) : (
           <>
             {accounts.length > 0 && (
-              <table className="data-table accounts-table">
+              <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 40, textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={accounts.length > 0 && selectedIds.length === accounts.length}
-                        onChange={(e) => toggleSelectAll(e.target.checked)}
-                      />
+                    <th style={{ width: 44 }}>
+                      <input type="checkbox" checked={selectedIds.length === accounts.length && accounts.length > 0} onChange={(e) => toggleSelectAll(e.target.checked)} />
                     </th>
                     <th>连接名称</th>
                     <th>站点</th>
@@ -201,7 +198,7 @@ export default function Accounts() {
                     <th>余额</th>
                     <th>已用</th>
                     <th>签到</th>
-                    <th style={{ textAlign: 'right' }}>操作</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -446,14 +443,8 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
   const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none' };
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content animate-scale-in" style={{ width: '100%', maxWidth: 440 }}>
-        <div className="modal-header">
-          <h2 className="modal-title">{account ? '编辑账户' : '添加账户'}</h2>
-          <button type="button" onClick={onClose} className="modal-close-button"><X size={20} /></button>
-        </div>
-        
-        <div className="modal-body">
+    <Modal title={account ? '编辑账户' : '添加账户'} onClose={onClose}>
+      <div className="modal-body">
           {!account && (
             <div className="pill-tabs" style={{ marginBottom: 24, justifyContent: 'center' }}>
               <button 
@@ -545,7 +536,6 @@ function AccountModal({ account, sites, onClose, onSaved }: any) {
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Site } from '../api';
-import { Plus, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Modal } from '../components/Modal';
 
 export default function Sites() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -170,13 +171,12 @@ export default function Sites() {
                       />
                     </th>
                     <th>名称</th>
-                    <th>外部签到站URL</th>
-                    <th>总余额</th>
+                    <th>签到页面</th>
+                    <th>余额</th>
                     <th>状态</th>
-                    <th>系统代理</th>
+                    <th>代理配置</th>
                     <th>权重</th>
                     <th>平台</th>
-                    <th>创建时间</th>
                     <th className="sites-actions-col" style={{ width: 100, textAlign: 'right' }}>操作</th>
                   </tr>
                 </thead>
@@ -302,17 +302,27 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
   const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none' };
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content animate-scale-in" style={{ width: '100%', maxWidth: 440 }}>
-        <div className="modal-header">
-          <h2 className="modal-title">{site ? '编辑站点' : '添加站点'}</h2>
-          <button type="button" onClick={onClose} className="modal-close-button"><X size={20} /></button>
-        </div>
-        <div className="modal-body">
+    <Modal title={site ? '编辑站点' : '添加站点'} onClose={onClose}>
+      <div className="modal-body">
           <form id="site-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="responsive-form-grid responsive-form-grid-2">
               <input required type="text" style={inputStyle} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
-              <input required type="url" style={inputStyle} value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} placeholder="URL (例如: https://api.example.com)" />
+              <input required type="url" style={inputStyle} value={formData.url} onChange={e => {
+                const url = e.target.value;
+                let nextPlatform = formData.platform;
+                if (!nextPlatform || nextPlatform === 'anyrouter') {
+                  if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
+                    nextPlatform = 'newapi';
+                  } else if (url.includes('sub2api') || url.includes('aiproxy')) {
+                    nextPlatform = 'sub2api';
+                  } else if (url.includes('donehub') || url.includes('oaifree')) {
+                    nextPlatform = 'donehub';
+                  } else if (url.includes('veloera')) {
+                    nextPlatform = 'veloera';
+                  }
+                }
+                setFormData({...formData, url, platform: nextPlatform});
+              }} placeholder="URL (例如: https://api.example.com)" />
               <select style={inputStyle} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
                 <option value="" disabled>选择平台</option>
                 {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
@@ -347,7 +357,6 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
