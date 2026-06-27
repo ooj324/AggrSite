@@ -115,7 +115,16 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 	if msg == "" {
 		msg = "check-in override executed"
 	}
-	result.Success = true
+	
+	// Check for a logical success flag in the response JSON
+	isSuccess := true
+	if successVal, exists := res["success"]; exists {
+		if b, ok := successVal.(bool); ok {
+			isSuccess = b
+		}
+	}
+	
+	result.Success = isSuccess
 	result.Message = msg
 	return result, nil
 }
