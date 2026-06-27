@@ -116,11 +116,12 @@ export default function Sites() {
 
   const handleListPing = async (url: string) => {
     try {
-      const res: any = await pingSite(url);
+      const response: any = await pingSite(url);
+      const res = response?.data;
       if (res && res.success) {
         alert(`连通成功! 延迟: ${res.latency_ms}ms (HTTP ${res.status_code})`);
       } else {
-        alert(`连通失败: ${res?.error} (延迟: ${res?.latency_ms}ms)`);
+        alert(`连通失败: ${res?.error || response?.message} (延迟: ${res?.latency_ms}ms)`);
       }
     } catch (err: any) {
       alert(`请求失败: ${err}`);
@@ -366,12 +367,13 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     }
     setDetecting(true);
     try {
-      const res: any = await detectSite(formData.url);
+      const response: any = await detectSite(formData.url);
+      const res = response?.data;
       if (res && res.platform) {
         setFormData(prev => ({ ...prev, platform: res.platform, url: res.url || prev.url }));
         alert(`已识别为平台: ${res.platform}`);
       } else {
-        alert(res?.error || '未能识别平台');
+        alert(res?.error || response?.message || '未能识别平台');
       }
     } catch (err: any) {
       alert(`检测失败: ${err}`);
@@ -387,11 +389,12 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     }
     setPinging(true);
     try {
-      const res: any = await pingSite(formData.url);
+      const response: any = await pingSite(formData.url);
+      const res = response?.data;
       if (res && res.success) {
         alert(`连通成功! 延迟: ${res.latency_ms}ms (HTTP ${res.status_code})`);
       } else {
-        alert(`连通失败: ${res?.error} (延迟: ${res?.latency_ms}ms)`);
+        alert(`连通失败: ${res?.error || response?.message} (延迟: ${res?.latency_ms}ms)`);
       }
     } catch (err: any) {
       alert(`请求失败: ${err}`);
