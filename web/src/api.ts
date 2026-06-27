@@ -41,6 +41,10 @@ export interface Site {
   proxy_url?: string;
   use_system_proxy?: boolean;
   external_checkin_url?: string;
+  external_checkin_method?: string;
+  external_checkin_auth_header?: string;
+  external_checkin_auth_prefix?: string;
+  external_checkin_body?: string;
   custom_headers?: string;
   created_at: string;
   total_balance?: number;

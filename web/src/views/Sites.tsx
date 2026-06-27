@@ -325,7 +325,8 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     method: site?.external_checkin_method || 'POST',
     url: site?.external_checkin_url || '',
     auth_header: site?.external_checkin_auth_header ?? 'Authorization',
-    auth_prefix: site?.external_checkin_auth_prefix ?? 'Bearer '
+    auth_prefix: site?.external_checkin_auth_prefix ?? 'Bearer ',
+    body: site?.external_checkin_body ?? ''
   });
 
   useEffect(() => {
@@ -339,7 +340,8 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
             method: parsed.method || 'POST',
             url: parsed.url || '',
             auth_header: parsed.auth_header ?? 'Authorization',
-            auth_prefix: parsed.auth_prefix ?? 'Bearer '
+            auth_prefix: parsed.auth_prefix ?? 'Bearer ',
+            body: parsed.body ?? ''
           });
           setUseAdvancedCheckin(true);
         } catch (e) {}
@@ -349,7 +351,8 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
           method: val.substring(0, idx).toUpperCase(),
           url: val.substring(idx + 1),
           auth_header: 'Authorization',
-          auth_prefix: 'Bearer '
+          auth_prefix: 'Bearer ',
+          body: ''
         });
         setUseAdvancedCheckin(true);
       }
@@ -414,16 +417,28 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
           submitData.external_checkin_method = advCheckin.method;
           submitData.external_checkin_auth_header = advCheckin.auth_header;
           submitData.external_checkin_auth_prefix = advCheckin.auth_prefix;
+          if (advCheckin.body && advCheckin.body.trim() !== '') {
+            try {
+              JSON.parse(advCheckin.body);
+            } catch (e) {
+              alert('签到请求体格式错误，必须是有效的 JSON 格式');
+              setLoading(false);
+              return;
+            }
+          }
+          submitData.external_checkin_body = advCheckin.body;
         } else {
           submitData.external_checkin_url = '';
           submitData.external_checkin_method = '';
           submitData.external_checkin_auth_header = '';
           submitData.external_checkin_auth_prefix = '';
+          submitData.external_checkin_body = '';
         }
       } else {
         submitData.external_checkin_method = '';
         submitData.external_checkin_auth_header = '';
         submitData.external_checkin_auth_prefix = '';
+        submitData.external_checkin_body = '';
       }
 
       if (submitData.custom_headers && submitData.custom_headers.trim() !== '') {
@@ -525,6 +540,16 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 </div>
                 <div className="text-[11px] text-textMuted leading-relaxed">
                   提示：认证信息将通过设置 <code>{advCheckin.auth_header || '[无Header]'}: {advCheckin.auth_prefix || ''}[账号签到凭据]</code> 发送。若无需发送认证，请将 Header 名称清空即可。独立签到凭据请在账号设置中配置。
+                </div>
+                <textarea
+                  className={inputClass}
+                  style={{ minHeight: 60, resize: 'vertical' }}
+                  value={advCheckin.body}
+                  onChange={e => setAdvCheckin({...advCheckin, body: e.target.value})}
+                  placeholder='请求体 Body (JSON 格式, 可选)&#10;默认发送 {} (POST/PUT/PATCH)'
+                />
+                <div className="text-[11px] text-textMuted leading-relaxed">
+                  提示：POST/PUT/PATCH 请求若留空，将默认发送 <code>{'{}'}</code>。部分签到接口要求带请求体，否则会一直等待导致超时。
                 </div>
               </div>
             )}

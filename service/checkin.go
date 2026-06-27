@@ -82,6 +82,7 @@ type ExternalCheckinConfig struct {
 	URL        string `json:"url"`
 	AuthHeader string `json:"auth_header"`
 	AuthPrefix string `json:"auth_prefix"`
+	Body       string `json:"body"`
 }
 
 func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *platform.RequestOption, customHeaders *string) (*platform.CheckinResult, error) {
@@ -103,8 +104,27 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 		}
 	}
 
+	// Build the request body. Many check-in endpoints sit behind gateways/CDNs that
+	// expect a body when Content-Type is application/json; sending none makes them
+	// hang waiting for a body until the client times out. Default to an empty JSON
+	// object unless the site specifies a custom body.
+	var body interface{}
+	method := strings.ToUpper(strings.TrimSpace(config.Method))
+	if method == "POST" || method == "PUT" || method == "PATCH" {
+		raw := strings.TrimSpace(config.Body)
+		if raw == "" {
+			raw = "{}"
+		}
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+			body = parsed
+		} else {
+			body = json.RawMessage(raw)
+		}
+	}
+
 	var res map[string]interface{}
-	err := base.FetchJSON(config.URL, config.Method, headers, nil, &res, opt)
+	err := base.FetchJSON(config.URL, config.Method, headers, body, &res, opt)
 	result := &platform.CheckinResult{}
 	if err != nil {
 		result.Success = false
@@ -159,7 +179,11 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		checkinURL = strings.TrimSpace(*row.SiteExternalCheckinURL)
 		
 		overrideConfig.URL = checkinURL
-		
+
+		if row.SiteExternalCheckinBody != nil {
+			overrideConfig.Body = *row.SiteExternalCheckinBody
+		}
+
 		if row.SiteExternalCheckinMethod != nil && *row.SiteExternalCheckinMethod != "" {
 			useGeneric = true
 			overrideConfig.Method = *row.SiteExternalCheckinMethod

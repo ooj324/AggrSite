@@ -20,7 +20,7 @@ func nilIfEmpty(s string) interface{} {
 
 // ---- Site ----
 
-const siteColumns = `id, name, url, platform, status, created_at, updated_at, is_pinned, sort_order, proxy_url, use_system_proxy, custom_headers, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix`
+const siteColumns = `id, name, url, platform, status, created_at, updated_at, is_pinned, sort_order, proxy_url, use_system_proxy, custom_headers, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body`
 
 type Site struct {
 	ID                 int64          `db:"id" json:"id"`
@@ -39,6 +39,7 @@ type Site struct {
 	ExternalCheckinMethod     *string `db:"external_checkin_method" json:"external_checkin_method"`
 	ExternalCheckinAuthHeader *string `db:"external_checkin_auth_header" json:"external_checkin_auth_header"`
 	ExternalCheckinAuthPrefix *string `db:"external_checkin_auth_prefix" json:"external_checkin_auth_prefix"`
+	ExternalCheckinBody       *string `db:"external_checkin_body" json:"external_checkin_body"`
 }
 
 func ListSites() ([]Site, error) {
@@ -67,6 +68,7 @@ type CreateSiteInput struct {
 	ExternalCheckinMethod     *string `json:"external_checkin_method"`
 	ExternalCheckinAuthHeader *string `json:"external_checkin_auth_header"`
 	ExternalCheckinAuthPrefix *string `json:"external_checkin_auth_prefix"`
+	ExternalCheckinBody       *string `json:"external_checkin_body"`
 	CustomHeaders      *string `json:"custom_headers"`
 }
 
@@ -96,16 +98,16 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 		customHeaders = &emptyJson
 	}
 	
-	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, custom_headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body, custom_headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	
 	if driverName == "postgres" {
 		var id int64
 		err := DB.QueryRowx(DB.Rebind(query+` RETURNING id`),
-			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, customHeaders, now, now).Scan(&id)
+			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, now, now).Scan(&id)
 		return id, err
 	}
 	
-	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, customHeaders, now, now)
+	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -450,6 +452,7 @@ func EnsureSiteExternalCheckinColumns() {
 	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_method TEXT`)
 	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_header TEXT`)
 	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_prefix TEXT`)
+	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_body TEXT`)
 }
 
 func ListAccountTokens(accountID int64) ([]AccountToken, error) {
@@ -626,6 +629,7 @@ type AccountWithSite struct {
 	SiteExternalCheckinMethod     *string `db:"site_external_checkin_method"`
 	SiteExternalCheckinAuthHeader *string `db:"site_external_checkin_auth_header"`
 	SiteExternalCheckinAuthPrefix *string `db:"site_external_checkin_auth_prefix"`
+	SiteExternalCheckinBody       *string `db:"site_external_checkin_body"`
 }
 
 const accountWithSiteQuery = `
@@ -635,7 +639,8 @@ const accountWithSiteQuery = `
 	       s.name AS site_name, s.url AS site_url, s.platform AS site_platform, s.status AS site_status, s.sort_order AS site_sort_order,
 	       s.proxy_url AS site_proxy_url, s.use_system_proxy AS site_use_system_proxy, s.custom_headers AS site_custom_headers,
 	       s.external_checkin_url AS site_external_checkin_url, s.external_checkin_method AS site_external_checkin_method,
-	       s.external_checkin_auth_header AS site_external_checkin_auth_header, s.external_checkin_auth_prefix AS site_external_checkin_auth_prefix
+	       s.external_checkin_auth_header AS site_external_checkin_auth_header, s.external_checkin_auth_prefix AS site_external_checkin_auth_prefix,
+	       s.external_checkin_body AS site_external_checkin_body
 	FROM accounts a
 	INNER JOIN sites s ON a.site_id = s.id
 `
