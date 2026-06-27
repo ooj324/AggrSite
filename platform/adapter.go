@@ -60,6 +60,13 @@ type ApiTokenInfo struct {
 	TokenGroup string `json:"tokenGroup,omitempty"`
 }
 
+type RefreshResult struct {
+	Success     bool
+	AccessToken string
+	ExtraConfig string // Merged or updated extraConfig
+	Message     string
+}
+
 type RequestOption struct {
 	ProxyURL       *string
 	UseSystemProxy *bool
@@ -76,6 +83,7 @@ type Adapter interface {
 	GetApiTokens(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error)
 	GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error)
 	VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error)
+	RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error)
 }
 
 // BaseAdapter provides shared HTTP helpers.
@@ -85,6 +93,11 @@ type BaseAdapter struct {
 
 func (b *BaseAdapter) PlatformName() string {
 	return b.Name
+}
+
+// RefreshAuth default implementation: returns not supported.
+func (b *BaseAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
+	return &RefreshResult{Success: false, Message: "RefreshAuth is not supported by " + b.Name}, nil
 }
 
 // buildTransport creates an http.Transport with proxy settings from opt.

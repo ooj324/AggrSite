@@ -356,7 +356,19 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 	if row.ExtraConfig == nil || *row.ExtraConfig == "" {
 		return ""
 	}
-	
+
+	// 1. Try RefreshAuth first (e.g. sub2api with refreshToken)
+	refreshRes, err := adapter.RefreshAuth(row.SiteURL, row.AccessToken, *row.ExtraConfig, opt)
+	if err == nil && refreshRes != nil && refreshRes.Success && refreshRes.AccessToken != "" {
+		slog.Info("Auto RefreshAuth successful, updating access token and config", "account_id", row.ID)
+		_ = db.UpdateAccount(row.ID, map[string]interface{}{
+			"access_token": refreshRes.AccessToken,
+			"extra_config": refreshRes.ExtraConfig,
+		})
+		return refreshRes.AccessToken
+	}
+
+	// 2. Fallback to classic username/password Login
 	var cfg map[string]interface{}
 	if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err != nil {
 		return ""
@@ -379,14 +391,14 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 		return ""
 	}
 	
-	slog.Info("Attempting auto-relogin", "account_id", row.ID)
+	slog.Info("Attempting auto-relogin via username/password", "account_id", row.ID)
 	loginResult, err := adapter.Login(row.SiteURL, username, password, opt)
 	if err != nil || loginResult == nil || !loginResult.Success || loginResult.AccessToken == "" {
 		slog.Warn("Auto-relogin failed", "account_id", row.ID, "err", err, "message", loginResult.Message)
 		return ""
 	}
 	
-	slog.Info("Auto-relogin successful, updating access token", "account_id", row.ID)
+	slog.Info("Auto-relogin via Login successful, updating access token", "account_id", row.ID)
 	_ = db.UpdateAccount(row.ID, map[string]interface{}{
 		"access_token": loginResult.AccessToken,
 	})
