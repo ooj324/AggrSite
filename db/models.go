@@ -191,7 +191,7 @@ func GetSiteBalances() (map[int64]float64, error) {
 
 // ---- Account ----
 
-const accountColumns = `id, site_id, username, access_token, api_token, balance, balance_used, quota, status, checkin_enabled, last_checkin_at, last_balance_refresh, extra_config, created_at, updated_at, is_pinned, sort_order`
+const accountColumns = `id, site_id, username, access_token, api_token, balance, balance_used, quota, unit_cost, value_score, status, checkin_enabled, last_checkin_at, last_balance_refresh, extra_config, created_at, updated_at, is_pinned, sort_order`
 
 type Account struct {
 	ID                 int64           `db:"id" json:"id"`
@@ -202,6 +202,8 @@ type Account struct {
 	Balance            *float64 `db:"balance" json:"balance"`
 	BalanceUsed        *float64 `db:"balance_used" json:"balance_used"`
 	Quota              *float64 `db:"quota" json:"quota"`
+	UnitCost           *float64 `db:"unit_cost" json:"unit_cost"`
+	ValueScore         *float64 `db:"value_score" json:"value_score"`
 	Status             *string  `db:"status" json:"status"`
 	CheckinEnabled     *bool    `db:"checkin_enabled" json:"checkin_enabled"`
 	LastCheckinAt      *string  `db:"last_checkin_at" json:"last_checkin_at"`
@@ -339,7 +341,7 @@ func ListAccountsWithSites(siteID *int64) ([]AccountWithSiteName, error) {
 	var accounts []AccountWithSiteName
 	baseQuery := `SELECT ` + accountColumns + `, s.name AS site_name, s.platform AS site_platform, s.url AS site_url FROM accounts a INNER JOIN sites s ON a.site_id = s.id`
 	// Prefix account columns with table alias
-	aliasedColumns := `a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota, a.status, a.checkin_enabled, a.last_checkin_at, a.last_balance_refresh, a.extra_config, a.created_at, a.updated_at, a.is_pinned, a.sort_order`
+	aliasedColumns := `a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota, a.unit_cost, a.value_score, a.status, a.checkin_enabled, a.last_checkin_at, a.last_balance_refresh, a.extra_config, a.created_at, a.updated_at, a.is_pinned, a.sort_order`
 	baseQuery = `SELECT ` + aliasedColumns + `, s.name AS site_name, s.platform AS site_platform, s.url AS site_url FROM accounts a INNER JOIN sites s ON a.site_id = s.id`
 	if siteID != nil {
 		err := Select(&accounts, baseQuery+` WHERE a.site_id = ? ORDER BY a.sort_order ASC, a.id ASC`, *siteID)
@@ -585,7 +587,7 @@ type AccountWithSite struct {
 }
 
 const accountWithSiteQuery = `
-	SELECT a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota,
+	SELECT a.id, a.site_id, a.username, a.access_token, a.api_token, a.balance, a.balance_used, a.quota, a.unit_cost, a.value_score,
 	       a.status, a.checkin_enabled, a.last_checkin_at, a.last_balance_refresh, a.extra_config,
 	       a.created_at, a.updated_at, a.is_pinned, a.sort_order,
 	       s.name AS site_name, s.url AS site_url, s.platform AS site_platform, s.status AS site_status, s.proxy_url AS site_proxy_url, s.use_system_proxy AS site_use_system_proxy, s.external_checkin_url AS site_external_checkin_url, s.custom_headers AS site_custom_headers
