@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
 
@@ -204,7 +204,7 @@ export default function Accounts() {
                     <th>余额</th>
                     <th>已用</th>
                     <th>签到</th>
-                    <th className="text-right">操作</th>
+                    <th className="text-center w-[200px]">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -272,35 +272,38 @@ export default function Accounts() {
                           )}
                         </div>
                       </td>
-                      <td className="text-right">
-                        <div className="flex items-center justify-end gap-1">
+                      <td className="text-center">
+                        <div className="flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             type="button"
-                            className={`inline-flex items-center justify-center gap-1.5 px-3 py-1 text-[12px] font-bold rounded-full transition-all duration-150 min-w-[70px] ${acc.checkin_enabled ? "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200 hover:-translate-y-px shadow-sm" : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200 hover:-translate-y-px shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"} disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none`}
+                            className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded transition-all duration-150 ${acc.checkin_enabled ? "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"} disabled:opacity-60 disabled:cursor-not-allowed`}
                             onClick={() => handleAction(acc.id, 'toggle-checkin')}
                             disabled={actionLoading === acc.id}
-                            style={{ transform: 'scale(0.85)', transformOrigin: 'right center' }}
                             title={acc.checkin_enabled ? '已开启自动签到' : '已关闭自动签到'}
                           >
                             {actionLoading === acc.id ? (
-                              <span className="w-3 h-3 border-2 border-current/20 border-t-current rounded-full animate-spin" />
+                              <span className="w-2.5 h-2.5 border-2 border-current/20 border-t-current rounded-full animate-spin" />
                             ) : acc.checkin_enabled ? (
                               <span>自动签到ON</span>
                             ) : (
                               <span>自动签到OFF</span>
                             )}
                           </button>
+                          <div className="w-[1px] h-3 bg-border" />
                           <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="text-[12px] font-medium text-warning hover:text-warning/80 hover:underline px-1 disabled:opacity-50 disabled:no-underline">
                             {actionLoading === acc.id ? <span className="w-3 h-3 border-2 border-warning/20 border-t-warning rounded-full animate-spin inline-block align-middle" /> : '手动签到'}
                           </button>
+                          <div className="w-[1px] h-3 bg-border" />
                           <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 disabled:opacity-50 disabled:no-underline">
                             换绑
                           </button>
-                          <button onClick={() => openEdit(acc)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                            <Edit2 size={16} />
+                          <div className="w-[1px] h-3 bg-border" />
+                          <button onClick={() => openEdit(acc)} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 transition-colors">
+                            编辑
                           </button>
-                          <button onClick={() => handleDelete(acc.id)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                            <Trash2 size={16} />
+                          <div className="w-[1px] h-3 bg-border" />
+                          <button onClick={() => handleDelete(acc.id)} className="text-[12px] font-medium text-danger hover:text-danger/80 hover:underline px-1 transition-colors">
+                            删除
                           </button>
                         </div>
                       </td>

@@ -212,7 +212,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </aside>
 
         <main className="flex-1 ml-[64px] lg:ml-[240px] p-4 sm:p-6 lg:p-8 transition-all duration-300">
-          <div className="max-w-[1200px] mx-auto w-full">
+          <div className="w-full">
             {children}
           </div>
         </main>

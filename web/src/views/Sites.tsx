@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Site } from '../api';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Modal } from '../components/Modal';
 
 export default function Sites() {
@@ -194,7 +194,7 @@ export default function Sites() {
                     <th>权重</th>
                     <th>平台</th>
                     <th>创建时间</th>
-                    <th className="text-right w-[100px]">操作</th>
+                    <th className="text-center w-[120px]">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -207,8 +207,9 @@ export default function Sites() {
                           onChange={(e) => toggleSelect(site.id, e.target.checked)}
                         />
                       </td>
-                      <td className="font-semibold text-textPrimary">
-                        {site.name}
+                      <td className="text-textPrimary">
+                        <div className="font-semibold">{site.name}</div>
+                        <div className="text-[11px] text-textMuted mt-0.5">{site.url}</div>
                       </td>
                       <td>
                         {site.external_checkin_url || site.url ? (
@@ -245,13 +246,14 @@ export default function Sites() {
                       <td className="text-[12px] text-textSecondary whitespace-nowrap">
                         {site.created_at ? new Date(site.created_at).toLocaleDateString() : '-'}
                       </td>
-                      <td className="text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openEdit(site)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors">
-                            <Edit2 size={16} />
+                      <td className="text-center">
+                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => openEdit(site)} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 transition-colors">
+                            编辑
                           </button>
-                          <button onClick={() => handleDelete(site.id)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
-                            <Trash2 size={16} />
+                          <div className="w-[1px] h-3 bg-border" />
+                          <button onClick={() => handleDelete(site.id)} className="text-[12px] font-medium text-danger hover:text-danger/80 hover:underline px-1 transition-colors">
+                            删除
                           </button>
                         </div>
                       </td>
