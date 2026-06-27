@@ -426,21 +426,13 @@ func EnsureSettingsTable() {
 // if they don't exist in the sites table. This allows AggrSite to be fully backward-compatible 
 // and run independent of the main app's migrations.
 func EnsureSiteExternalCheckinColumns() {
-	columns := []string{
-		"external_checkin_method",
-		"external_checkin_auth_header",
-		"external_checkin_auth_prefix",
+	if driverName == "postgres" {
+		DB.Exec(`ALTER TABLE sites ALTER COLUMN external_checkin_url TYPE TEXT`)
 	}
-
-	for _, col := range columns {
-		if driverName == "postgres" {
-			// Ignore error as it might already exist
-			_, _ = DB.Exec(`ALTER TABLE sites ADD COLUMN ` + col + ` TEXT`)
-		} else {
-			// SQLite: Ignore error if column already exists
-			_, _ = DB.Exec(`ALTER TABLE sites ADD COLUMN ` + col + ` TEXT`)
-		}
-	}
+	// ensure the new columns exist (we ignore errors because they might already exist)
+	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_method TEXT`)
+	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_header TEXT`)
+	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_prefix TEXT`)
 }
 
 func ListAccountTokens(accountID int64) ([]AccountToken, error) {
