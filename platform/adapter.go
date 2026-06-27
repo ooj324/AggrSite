@@ -156,7 +156,7 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	applyCustomHeaders(req, opt)
 
 	client := &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   60 * time.Second,
 		Transport: buildTransport(opt),
 	}
 
