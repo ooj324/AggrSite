@@ -91,11 +91,19 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 		"Content-Type": "application/json",
 	}
 	
-	if config.AuthHeader != "none" && config.AuthHeader != "None" && config.AuthHeader != "" {
+	if config.AuthHeader != "none" && config.AuthHeader != "None" {
 		cleanToken := strings.TrimSpace(credential)
 		cleanToken = strings.TrimPrefix(cleanToken, "Bearer ")
 		cleanToken = strings.TrimSpace(cleanToken)
-		headers[config.AuthHeader] = config.AuthPrefix + cleanToken
+
+		authHeader := config.AuthHeader
+		authPrefix := config.AuthPrefix
+		if authHeader == "" {
+			// No header name specified — fall back to the default Authorization: Bearer
+			authHeader = "Authorization"
+			authPrefix = "Bearer "
+		}
+		headers[authHeader] = authPrefix + cleanToken
 	}
 
 	if customHeaders != nil && *customHeaders != "" {

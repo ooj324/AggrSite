@@ -535,11 +535,11 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                   <input type="url" className={`${inputClass} flex-1`} value={advCheckin.url} onChange={e => setAdvCheckin({...advCheckin, url: e.target.value})} placeholder="签到目标 URL" />
                 </div>
                 <div className="flex gap-3">
-                  <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_header} onChange={e => setAdvCheckin({...advCheckin, auth_header: e.target.value})} placeholder='认证Header名称 (例如: Cookie, X-Api-Key, Authorization)' />
+                  <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_header} onChange={e => setAdvCheckin({...advCheckin, auth_header: e.target.value})} placeholder='认证Header名称 (留空默认 Authorization, 输入 none 禁用)' />
                   <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_prefix} onChange={e => setAdvCheckin({...advCheckin, auth_prefix: e.target.value})} placeholder='认证前缀 (例如: "Bearer ", 注留空即可)' />
                 </div>
                 <div className="text-[11px] text-textMuted leading-relaxed">
-                  提示：认证信息将通过设置 <code>{advCheckin.auth_header || '[无Header]'}: {advCheckin.auth_prefix || ''}[账号签到凭据]</code> 发送。若无需发送认证，请将 Header 名称清空即可。独立签到凭据请在账号设置中配置。
+                  提示：认证信息将通过设置 <code>{advCheckin.auth_header || 'Authorization'}: {advCheckin.auth_header ? (advCheckin.auth_prefix || '') : 'Bearer '}[账号签到凭据]</code> 发送。留空将默认使用 <code>Authorization: Bearer</code> 认证。若无需发送认证，请将 Header 名称设为 <code>none</code>。独立签到凭据请在账号设置中配置。
                 </div>
                 <textarea
                   className={inputClass}
