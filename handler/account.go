@@ -444,6 +444,8 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 
 	delete(fields, "id")
 	delete(fields, "created_at")
+	delete(fields, "skipModelFetch")
+	delete(fields, "skip_model_fetch")
 
 	// Merge extra config fields
 	account, err := db.GetAccount(id)
@@ -532,6 +534,9 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		delete(fields, "tokenExpiresAt")
 		cfgModified = true
 	}
+
+	delete(fields, "skipModelFetch")
+	delete(fields, "accessTokens")
 
 	if cfgModified {
 		bs, _ := json.Marshal(cfg)
