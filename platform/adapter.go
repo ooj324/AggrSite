@@ -172,6 +172,13 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Attempt to extract a cleaner message from JSON error body
+		var errData map[string]interface{}
+		if jsonErr := json.Unmarshal(respBody, &errData); jsonErr == nil {
+			if msg := ExtractMessage(errData); msg != "" {
+				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
+			}
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
