@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Site } from '../api';
-import { Plus } from 'lucide-react';
+import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 
 export default function Sites() {
@@ -247,13 +247,12 @@ export default function Sites() {
                         {site.created_at ? new Date(site.created_at).toLocaleDateString() : '-'}
                       </td>
                       <td className="text-center">
-                        <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openEdit(site)} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 transition-colors">
-                            编辑
+                        <div className="flex items-center justify-center gap-1 transition-opacity">
+                          <button onClick={() => openEdit(site)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors" title="编辑">
+                            <Edit2 size={16} />
                           </button>
-                          <div className="w-[1px] h-3 bg-border" />
-                          <button onClick={() => handleDelete(site.id)} className="text-[12px] font-medium text-danger hover:text-danger/80 hover:underline px-1 transition-colors">
-                            删除
+                          <button onClick={() => handleDelete(site.id)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors" title="删除">
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </td>

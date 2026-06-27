@@ -4,7 +4,7 @@ import { getAuthToken, setAuthToken } from './utils';
 import { api } from './api';
 
 // Icons
-import { LayoutDashboard, Globe, Users, History, Settings as SettingsIcon, LogOut, Search, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, Globe, Users, History, Settings as SettingsIcon, LogOut, Moon, Sun } from 'lucide-react';
 
 // Views
 import Dashboard from './views/Dashboard';
@@ -160,13 +160,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </div>
         
         <div className="flex items-center gap-2 sm:gap-3">
-          <button className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-lg text-textMuted hover:text-textPrimary hover:border-borderLight transition-colors w-48 lg:w-64">
-            <Search size={14} />
-            <span className="text-[13px] flex-1 text-left">搜索...</span>
-            <kbd className="hidden lg:inline-flex items-center px-1.5 h-5 bg-surface border border-border rounded text-[10px] font-mono font-medium text-textMuted">Ctrl K</kbd>
-          </button>
-          
-          <div className="w-[1px] h-5 bg-border mx-1 hidden sm:block" />
+
           
           <button
             className={iconBtnClass}

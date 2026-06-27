@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus } from 'lucide-react';
+import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
 
@@ -273,7 +273,7 @@ export default function Accounts() {
                         </div>
                       </td>
                       <td className="text-center">
-                        <div className="flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center justify-center gap-1.5 transition-opacity">
                           <button
                             type="button"
                             className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded transition-all duration-150 ${acc.checkin_enabled ? "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"} disabled:opacity-60 disabled:cursor-not-allowed`}
@@ -290,20 +290,18 @@ export default function Accounts() {
                             )}
                           </button>
                           <div className="w-[1px] h-3 bg-border" />
-                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="text-[12px] font-medium text-warning hover:text-warning/80 hover:underline px-1 disabled:opacity-50 disabled:no-underline">
-                            {actionLoading === acc.id ? <span className="w-3 h-3 border-2 border-warning/20 border-t-warning rounded-full animate-spin inline-block align-middle" /> : '手动签到'}
+                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="p-1.5 text-warning hover:text-warning/80 hover:bg-warning/10 rounded-md transition-colors disabled:opacity-50" title="手动签到">
+                            {actionLoading === acc.id ? <span className="w-4 h-4 border-2 border-warning/20 border-t-warning rounded-full animate-spin inline-block align-middle" /> : <CalendarCheck size={16} />}
                           </button>
-                          <div className="w-[1px] h-3 bg-border" />
-                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 disabled:opacity-50 disabled:no-underline">
-                            换绑
+                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="p-1.5 text-primary hover:text-primaryHover hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50" title="换绑">
+                            <LinkIcon size={16} />
                           </button>
-                          <div className="w-[1px] h-3 bg-border" />
-                          <button onClick={() => openEdit(acc)} className="text-[12px] font-medium text-primary hover:text-primaryHover hover:underline px-1 transition-colors">
-                            编辑
+                          <div className="w-[1px] h-3 bg-border mx-0.5" />
+                          <button onClick={() => openEdit(acc)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors" title="编辑">
+                            <Edit2 size={16} />
                           </button>
-                          <div className="w-[1px] h-3 bg-border" />
-                          <button onClick={() => handleDelete(acc.id)} className="text-[12px] font-medium text-danger hover:text-danger/80 hover:underline px-1 transition-colors">
-                            删除
+                          <button onClick={() => handleDelete(acc.id)} className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors" title="删除">
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </td>
