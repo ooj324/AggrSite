@@ -150,9 +150,19 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	
+	// Add a default User-Agent to bypass Cloudflare tarpitting of Go-http-client
+	hasUA := false
 	for k, v := range headers {
+		if strings.ToLower(k) == "user-agent" {
+			hasUA = true
+		}
 		req.Header.Set(k, v)
 	}
+	if !hasUA {
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	}
+	
 	applyCustomHeaders(req, opt)
 
 	client := &http.Client{
