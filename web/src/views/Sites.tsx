@@ -406,11 +406,12 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
           submitData.external_checkin_method = advCheckin.method;
           submitData.external_checkin_auth_header = advCheckin.auth_header;
           submitData.external_checkin_auth_prefix = advCheckin.auth_prefix;
-          if (advCheckin.body && advCheckin.body.trim() !== '') {
+          const bodyText = advCheckin.body.trim();
+          if (bodyText !== '' && bodyText.toLowerCase() !== 'none') {
             try {
-              JSON.parse(advCheckin.body);
+              JSON.parse(bodyText);
             } catch (e) {
-              showAlert('签到请求体格式错误，必须是有效的 JSON 格式');
+              showAlert('签到请求体格式错误，必须是有效的 JSON 格式；如需不发送请求体请填 none');
               setLoading(false);
               return;
             }
@@ -454,49 +455,69 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
   };
 
   const inputClass = "w-full px-3.5 py-2.5 bg-background border border-border rounded-lg text-[13px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all font-mono";
+  const fieldClass = "flex flex-col gap-1.5";
+  const labelClass = "text-[12px] font-medium text-textSecondary";
 
   return (
     <Modal title={site ? '编辑站点' : '添加站点'} onClose={onClose}>
       <div className="p-6">
           <form id="site-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <input required type="text" className={inputClass} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
-              <div className="flex gap-2">
-                <input required type="url" className={`${inputClass} flex-1`} value={formData.url} onChange={e => {
-                  const url = e.target.value;
-                  let nextPlatform = formData.platform;
-                  if (!nextPlatform || nextPlatform === 'anyrouter') {
-                    if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
-                      nextPlatform = 'newapi';
-                    } else if (url.includes('sub2api') || url.includes('aiproxy')) {
-                      nextPlatform = 'sub2api';
-                    } else if (url.includes('donehub') || url.includes('oaifree')) {
-                      nextPlatform = 'donehub';
-                    } else if (url.includes('veloera')) {
-                      nextPlatform = 'veloera';
+              <label className={fieldClass}>
+                <span className={labelClass}>站点名称</span>
+                <input required type="text" className={inputClass} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="名称" />
+              </label>
+              <div className={fieldClass}>
+                <span className={labelClass}>站点 URL</span>
+                <div className="flex gap-2">
+                  <input required type="url" className={`${inputClass} flex-1`} value={formData.url} onChange={e => {
+                    const url = e.target.value;
+                    let nextPlatform = formData.platform;
+                    if (!nextPlatform || nextPlatform === 'anyrouter') {
+                      if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
+                        nextPlatform = 'newapi';
+                      } else if (url.includes('sub2api') || url.includes('aiproxy')) {
+                        nextPlatform = 'sub2api';
+                      } else if (url.includes('donehub') || url.includes('oaifree')) {
+                        nextPlatform = 'donehub';
+                      } else if (url.includes('veloera')) {
+                        nextPlatform = 'veloera';
+                      }
                     }
-                  }
-                  setFormData({...formData, url, platform: nextPlatform});
-                }} placeholder="URL (例如: https://api.example.com)" />
-                <button type="button" onClick={handleDetect} disabled={detecting || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
-                  {detecting ? '检测中' : '自动识别'}
-                </button>
-                <button type="button" onClick={handlePing} disabled={pinging || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
-                  {pinging ? 'Ping...' : 'Ping'}
-                </button>
+                    setFormData({...formData, url, platform: nextPlatform});
+                  }} placeholder="例如: https://api.example.com" />
+                  <button type="button" onClick={handleDetect} disabled={detecting || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
+                    {detecting ? '检测中' : '自动识别'}
+                  </button>
+                  <button type="button" onClick={handlePing} disabled={pinging || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
+                    {pinging ? 'Ping...' : 'Ping'}
+                  </button>
+                </div>
               </div>
-              <select className={inputClass} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
-                <option value="" disabled>选择平台</option>
-                {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <select className={inputClass} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                <option value="active">启用状态: 启用</option>
-                <option value="disabled">启用状态: 禁用</option>
-              </select>
-              <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="代理 URL (可选, http://127.0.0.1:7890)" />
+              <label className={fieldClass}>
+                <span className={labelClass}>平台</span>
+                <select className={inputClass} value={formData.platform} onChange={e => setFormData({...formData, platform: e.target.value})}>
+                  <option value="" disabled>选择平台</option>
+                  {platforms.map((p: string) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </label>
+              <label className={fieldClass}>
+                <span className={labelClass}>状态</span>
+                <select className={inputClass} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                  <option value="active">启用状态: 启用</option>
+                  <option value="disabled">启用状态: 禁用</option>
+                </select>
+              </label>
+              <label className={fieldClass}>
+                <span className={labelClass}>代理 URL</span>
+                <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="仅填 HTTP 代理，例如 http://127.0.0.1:7890；不是签到接口" />
+              </label>
               
               {!useAdvancedCheckin && (
-                <input type="url" className={inputClass} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="外部签到 URL (可选)" />
+                <label className={fieldClass}>
+                  <span className={labelClass}>外部签到 URL</span>
+                  <input type="url" className={inputClass} value={formData.external_checkin_url} onChange={e => setFormData({...formData, external_checkin_url: e.target.value})} placeholder="普通模式签到接口，可选" />
+                </label>
               )}
             </div>
 
@@ -519,17 +540,29 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
             {useAdvancedCheckin && (
               <div className="bg-black/5 dark:bg-white/5 p-4 rounded-xl flex flex-col gap-3 border border-border/50">
                 <div className="flex gap-3">
-                  <select className={`${inputClass} w-[100px] flex-shrink-0`} value={advCheckin.method} onChange={e => setAdvCheckin({...advCheckin, method: e.target.value})}>
-                    <option value="POST">POST</option>
-                    <option value="GET">GET</option>
-                    <option value="PUT">PUT</option>
-                    <option value="PATCH">PATCH</option>
-                  </select>
-                  <input required={useAdvancedCheckin} type="url" className={`${inputClass} flex-1`} value={advCheckin.url} onChange={e => setAdvCheckin({...advCheckin, url: e.target.value})} placeholder="签到目标 URL (必填)" />
+                  <label className={`${fieldClass} w-[100px] flex-shrink-0`}>
+                    <span className={labelClass}>方法</span>
+                    <select className={inputClass} value={advCheckin.method} onChange={e => setAdvCheckin({...advCheckin, method: e.target.value})}>
+                      <option value="POST">POST</option>
+                      <option value="GET">GET</option>
+                      <option value="PUT">PUT</option>
+                      <option value="PATCH">PATCH</option>
+                    </select>
+                  </label>
+                  <label className={`${fieldClass} flex-1`}>
+                    <span className={labelClass}>签到目标 URL</span>
+                    <input required={useAdvancedCheckin} type="url" className={inputClass} value={advCheckin.url} onChange={e => setAdvCheckin({...advCheckin, url: e.target.value})} placeholder="实际请求的签到接口，必填" />
+                  </label>
                 </div>
                 <div className="flex gap-3">
-                  <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_header} onChange={e => setAdvCheckin({...advCheckin, auth_header: e.target.value})} placeholder='认证Header名称 (留空默认 Authorization, 输入 none 禁用)' />
-                  <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_prefix} onChange={e => setAdvCheckin({...advCheckin, auth_prefix: e.target.value})} placeholder='认证前缀 (例如: "Bearer ", 注留空即可)' />
+                  <label className={`${fieldClass} flex-1`}>
+                    <span className={labelClass}>认证 Header 名称</span>
+                    <input type="text" className={inputClass} value={advCheckin.auth_header} onChange={e => setAdvCheckin({...advCheckin, auth_header: e.target.value})} placeholder='留空默认 Authorization，输入 none 禁用' />
+                  </label>
+                  <label className={`${fieldClass} flex-1`}>
+                    <span className={labelClass}>认证前缀</span>
+                    <input type="text" className={inputClass} value={advCheckin.auth_prefix} onChange={e => setAdvCheckin({...advCheckin, auth_prefix: e.target.value})} placeholder='例如: "Bearer "，Cookie 可填 auth_token=' />
+                  </label>
                 </div>
                 <div className="text-[11px] text-textMuted leading-relaxed">
                   提示：认证信息将通过设置 <code>{advCheckin.auth_header || 'Authorization'}: {advCheckin.auth_header ? (advCheckin.auth_prefix || '') : 'Bearer '}[账号签到凭据]</code> 发送。留空将默认使用 <code>Authorization: Bearer</code> 认证。若无需发送认证，请将 Header 名称设为 <code>none</code>。独立签到凭据请在账号设置中配置。
@@ -539,10 +572,10 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                   style={{ minHeight: 60, resize: 'vertical' }}
                   value={advCheckin.body}
                   onChange={e => setAdvCheckin({...advCheckin, body: e.target.value})}
-                  placeholder='请求体 Body (JSON 格式, 可选)&#10;默认发送 {} (POST/PUT/PATCH)'
+                  placeholder='请求体 Body (JSON 格式, 可选)&#10;留空默认发送 {}，填 none 则不发送请求体'
                 />
                 <div className="text-[11px] text-textMuted leading-relaxed">
-                  提示：POST/PUT/PATCH 请求若留空，将默认发送 <code>{'{}'}</code>。部分签到接口要求带请求体，否则会一直等待导致超时。
+                  提示：POST/PUT/PATCH 请求若留空，将默认发送 <code>{'{}'}</code>。如果接口要求空请求体，请填 <code>none</code>。
                 </div>
               </div>
             )}

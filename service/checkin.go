@@ -123,14 +123,18 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 	method := strings.ToUpper(strings.TrimSpace(config.Method))
 	if method == "POST" || method == "PUT" || method == "PATCH" {
 		raw := strings.TrimSpace(config.Body)
-		if raw == "" {
+		if strings.EqualFold(raw, "none") {
+			raw = ""
+		} else if raw == "" {
 			raw = "{}"
 		}
-		var parsed interface{}
-		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
-			body = parsed
-		} else {
-			body = json.RawMessage(raw)
+		if raw != "" {
+			var parsed interface{}
+			if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+				body = parsed
+			} else {
+				body = json.RawMessage(raw)
+			}
 		}
 	}
 
