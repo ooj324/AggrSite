@@ -381,8 +381,27 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
       
       const result = res as any;
       setVerifyResult(result);
+
+      if (result.success) {
+        if (result.userInfo?.username || result.apiToken) {
+          setFormData(prev => ({
+            ...prev,
+            username: result.userInfo?.username || prev.username,
+            api_token: result.apiToken || prev.api_token
+          }));
+        }
+        if (result.tokenType === 'apikey') {
+          showAlert(`API Key 验证成功! 共识别到 ${result.modelCount} 个可用模型`);
+        } else {
+          showAlert(`Session 验证成功! ${result.userInfo?.username ? '用户名: ' + result.userInfo.username : ''}`);
+        }
+      } else if (result.message) {
+        showAlert(`验证失败: ${result.message}`);
+      }
     } catch (err: any) {
-      setVerifyResult({ success: false, message: err.toString() });
+      const errMsg = err.toString();
+      setVerifyResult({ success: false, message: errMsg });
+      showAlert(`验证报错: ${errMsg}`);
     } finally {
       setVerifyLoading(false);
     }

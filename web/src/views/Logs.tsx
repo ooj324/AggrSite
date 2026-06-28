@@ -19,13 +19,12 @@ export default function Logs() {
   const loadData = async () => {
     setLoading(true);
     try {
-      if (activeTab === 'checkin') {
-        const res = await api.get('/api/checkin/logs?limit=50');
-        setLogs(res as any || []);
-      } else {
-        const res = await api.get('/api/events?limit=50');
-        setEvents(res as any || []);
-      }
+      const [logsRes, eventsRes] = await Promise.all([
+        api.get('/api/checkin/logs?limit=50'),
+        api.get('/api/events?limit=50')
+      ]);
+      setLogs(logsRes as any || []);
+      setEvents(eventsRes as any || []);
     } catch (err: any) {
       console.error(err);
       showAlert(`加载失败: ${err}`);
@@ -36,7 +35,7 @@ export default function Logs() {
 
   useEffect(() => {
     loadData();
-  }, [activeTab]);
+  }, []);
 
   const handleCheckinAll = async () => {
     if (!confirm('确定要运行所有账号的签到任务吗？')) return;
