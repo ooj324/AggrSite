@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"metapi/aggrsite/db"
 	"metapi/aggrsite/platform"
+	"net/url"
 	"strings"
 )
 
@@ -85,10 +86,24 @@ type ExternalCheckinConfig struct {
 	Body       string `json:"body"`
 }
 
+func originFromURL(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
+
 func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *platform.RequestOption, customHeaders *string) (*platform.CheckinResult, error) {
 	base := platform.BaseAdapter{}
 	headers := map[string]string{
-		"Content-Type": "application/json",
+		"Content-Type":     "application/json",
+		"Accept":           "application/json, text/plain, */*",
+		"X-Requested-With": "XMLHttpRequest",
+	}
+	if origin := originFromURL(config.URL); origin != "" {
+		headers["Origin"] = origin
+		headers["Referer"] = origin + "/"
 	}
 
 	if config.AuthHeader != "none" && config.AuthHeader != "None" {
