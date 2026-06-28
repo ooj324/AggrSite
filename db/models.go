@@ -656,7 +656,7 @@ func ListEvents(limit, offset int) ([]Event, int, error) {
 	var events []Event
 	var total int
 	_ = Get(&total, `SELECT COUNT(*) FROM events`)
-	err := Select(&events, `SELECT * FROM events ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	err := Select(&events, `SELECT id, COALESCE(type, 'system') AS type, COALESCE(title, 'Event') AS title, message, COALESCE(level, 'info') AS level, read, related_id, related_type, created_at FROM events ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	return events, total, err
 }
 
