@@ -3,8 +3,10 @@ import { api } from '../api';
 import type { CheckinLog, Event } from '../api';
 import { RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAlert } from '../components/AlertProvider';
 
 export default function Logs() {
+  const { showAlert } = useAlert();
   const [logs, setLogs] = useState<CheckinLog[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,13 +21,14 @@ export default function Logs() {
     try {
       if (activeTab === 'checkin') {
         const res = await api.get('/api/checkin/logs?limit=50');
-        setLogs(res.data || []);
+        setLogs(res as any || []);
       } else {
         const res = await api.get('/api/events?limit=50');
-        setEvents(res.data || []);
+        setEvents(res as any || []);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      showAlert(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -40,10 +43,10 @@ export default function Logs() {
     setRunningAll(true);
     try {
       await api.post('/api/checkin/all');
-      alert('批量签到执行完成');
+      showAlert('批量签到执行完成');
       loadData();
     } catch (err: any) {
-      alert(`签到执行失败: ${err}`);
+      showAlert(`签到执行失败: ${err}`);
     } finally {
       setRunningAll(false);
     }

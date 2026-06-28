@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { SchedulerStatus } from '../api';
 import { format } from 'date-fns';
+import { useAlert } from '../components/AlertProvider';
 
 export default function Dashboard() {
+  const { showAlert } = useAlert();
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
   const [stats, setStats] = useState({ 
     sites: 0, 
@@ -23,12 +25,13 @@ export default function Dashboard() {
         api.get('/api/scheduler/status'),
         api.get('/api/stats/dashboard')
       ]);
-      setStatus(schedRes.data);
-      setStats(statsRes.data || {
+      setStatus(schedRes as any);
+      setStats((statsRes as any) || {
         sites: 0, accounts: 0, total_balance: 0, total_used: 0, checkins_today: 0, checkins_success: 0, checkin_rate: 0
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      showAlert(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -43,9 +46,9 @@ export default function Dashboard() {
     setActionLoading(true);
     try {
       await api.post('/api/checkin/all');
-      alert('所有签到已成功触发。');
+      showAlert('所有签到已成功触发。');
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     } finally {
       setActionLoading(false);
     }
@@ -56,9 +59,9 @@ export default function Dashboard() {
     setActionLoading(true);
     try {
       await api.post('/api/balance/refresh/all');
-      alert('所有余额已成功刷新。');
+      showAlert('所有余额已成功刷新。');
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     } finally {
       setActionLoading(false);
     }

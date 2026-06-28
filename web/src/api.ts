@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getAuthToken } from './utils';
+import { getAuthToken, extractErrorMessage } from './utils';
 
 // When running in development, Vite proxy can be used, or we just point to localhost:4000
 // When embedded, API is on the same host under /api
@@ -18,7 +18,17 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    const res = response.data;
+    if (res && typeof res === 'object' && 'success' in res) {
+      if (res.success) {
+        return res.data;
+      } else {
+        return Promise.reject(res.message || 'API Error');
+      }
+    }
+    return res;
+  },
   (error) => {
     if (error.response?.status === 401) {
       // Clear token and reload if unauthorized
@@ -27,7 +37,7 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
-    return Promise.reject(error.response?.data?.message || error.message);
+    return Promise.reject(extractErrorMessage(error));
   }
 );
 

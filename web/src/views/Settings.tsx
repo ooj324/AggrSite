@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { SchedulerStatus } from '../api';
 import { RefreshCw, Save, Settings as SettingsIcon } from 'lucide-react';
+import { useAlert } from '../components/AlertProvider';
 
 export default function Settings() {
+  const { showAlert } = useAlert();
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,21 +20,22 @@ export default function Settings() {
     try {
       const [schedRes, checkinSet, balanceSet, proxySet] = await Promise.all([
         api.get('/api/scheduler/status'),
-        api.get('/api/settings/CHECKIN_CRON').catch(() => ({ data: { value: '' } })),
-        api.get('/api/settings/BALANCE_REFRESH_CRON').catch(() => ({ data: { value: '' } })),
-        api.get('/api/settings/system_proxy_url').catch(() => ({ data: { value: '' } }))
+        api.get('/api/settings/CHECKIN_CRON').catch(() => ({ value: '' })),
+        api.get('/api/settings/BALANCE_REFRESH_CRON').catch(() => ({ value: '' })),
+        api.get('/api/settings/system_proxy_url').catch(() => ({ value: '' }))
       ]);
       
-      setStatus(schedRes.data);
+      setStatus(schedRes as any);
+      const statusData = schedRes as any;
       
-      const statusData = schedRes.data;
       setFormData({
-        CHECKIN_CRON: checkinSet.data?.value || statusData.checkin_cron || '',
-        BALANCE_REFRESH_CRON: balanceSet.data?.value || statusData.balance_refresh_cron || '',
-        SYSTEM_PROXY_URL: proxySet.data?.value || '',
+        CHECKIN_CRON: (checkinSet as any)?.value || statusData.checkin_cron || '',
+        BALANCE_REFRESH_CRON: (balanceSet as any)?.value || statusData.balance_refresh_cron || '',
+        SYSTEM_PROXY_URL: (proxySet as any)?.value || '',
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      showAlert(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -49,10 +52,10 @@ export default function Settings() {
       await api.put('/api/settings/CHECKIN_CRON', { value: formData.CHECKIN_CRON });
       await api.put('/api/settings/BALANCE_REFRESH_CRON', { value: formData.BALANCE_REFRESH_CRON });
       await api.put('/api/settings/system_proxy_url', { value: formData.SYSTEM_PROXY_URL });
-      alert('设置已成功保存，且调度器重载成功！');
+      showAlert('设置已成功保存，且调度器重载成功！');
       loadData();
     } catch (err: any) {
-      alert(`保存设置时出错: ${err}`);
+      showAlert(`保存设置时出错: ${err}`);
     } finally {
       setSaving(false);
     }
@@ -188,10 +191,11 @@ export default function Settings() {
                       const res = await api.post('/api/backup/import', formData, {
                         headers: { 'Content-Type': 'multipart/form-data' }
                       });
-                      alert(`导入成功！\n已导入站点数: ${res.data.imported_sites}\n已导入账户数: ${res.data.imported_accounts}`);
+                      const data = res as any;
+                      showAlert(`导入成功！\n已导入站点数: ${data.imported_sites}\n已导入账户数: ${data.imported_accounts}`);
                       loadData();
                     } catch (err: any) {
-                      alert('导入失败: ' + err);
+                      showAlert('导入失败: ' + err);
                     } finally {
                       setSaving(false);
                       e.target.value = '';

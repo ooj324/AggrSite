@@ -59,6 +59,7 @@ func CreateSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return
 	}
+	slog.Info("CreateSite input", "input", input)
 
 	if input.Name == "" || input.URL == "" || input.Platform == "" {
 		fail(w, http.StatusBadRequest, "name, url, platform are required")
@@ -87,6 +88,7 @@ func UpdateSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return
 	}
+	slog.Info("UpdateSite fields", "id", id, "fields", fields)
 
 	// Prevent updating the id
 	delete(fields, "id")
@@ -265,7 +267,7 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(req)
 	if err != nil {
 		// Cannot connect, return empty or error
-		ok(w, map[string]interface{}{"platform": nil, "error": err.Error()})
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -284,7 +286,7 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	ok(w, map[string]interface{}{"platform": nil, "error": "Could not detect platform"})
+	fail(w, http.StatusBadRequest, "Could not detect platform")
 }
 
 func PingSite(w http.ResponseWriter, r *http.Request) {
@@ -310,11 +312,7 @@ func PingSite(w http.ResponseWriter, r *http.Request) {
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
-		ok(w, map[string]interface{}{
-			"success":    false,
-			"latency_ms": latency,
-			"error":      err.Error(),
-		})
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	defer resp.Body.Close()

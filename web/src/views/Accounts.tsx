@@ -4,6 +4,7 @@ import type { Account, Site } from '../api';
 import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
+import { useAlert } from '../components/AlertProvider';
 
 const parseAccountExtraConfig = (account: any): Record<string, any> => {
   try {
@@ -20,6 +21,7 @@ const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
 };
 
 export default function Accounts() {
+  const { showAlert } = useAlert();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,10 +40,11 @@ export default function Accounts() {
         api.get('/api/accounts'),
         api.get('/api/sites')
       ]);
-      setAccounts(accRes.data || []);
-      setSites(sitesRes.data || []);
-    } catch (err) {
+      setAccounts((accRes as any) || []);
+      setSites((sitesRes as any) || []);
+    } catch (err: any) {
       console.error(err);
+      showAlert(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -58,7 +61,7 @@ export default function Accounts() {
       setSelectedIds(selectedIds.filter(x => x !== id));
       loadData();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     }
   };
 
@@ -71,14 +74,14 @@ export default function Accounts() {
     setBatchLoading(true);
     try {
       const res = await api.post('/api/accounts/batch', { ids: selectedIds, action });
-      const data = (res as any).data || res;
+      const data = res as any;
       if (data.failedItems && data.failedItems.length > 0) {
-        alert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+        showAlert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
       }
       setSelectedIds([]);
       loadData();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     } finally {
       setBatchLoading(false);
     }
@@ -123,7 +126,7 @@ export default function Accounts() {
       }
       loadData();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     } finally {
       setActionLoading(null);
     }
@@ -330,6 +333,7 @@ export default function Accounts() {
 }
 
 function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
+  const { showAlert } = useAlert();
   const [mode, setMode] = useState<'login' | 'session' | 'apikey'>(account ? (account.extra_config?.credentialMode === 'apikey' ? 'apikey' : 'session') : 'session');
   const [formData, setFormData] = useState({
     site_id: account?.site_id || (sites[0]?.id ?? 0),
@@ -358,11 +362,11 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
 
   const handleVerify = async () => {
     if (!formData.access_token) {
-      alert('请先输入 Token');
+      showAlert('请先输入 Token');
       return;
     }
     if (isBatchApiKeyInput) {
-      alert(`检测到 ${parsedApiKeys.length} 个 API Key，批量模式会在添加时逐条校验`);
+      showAlert(`检测到 ${parsedApiKeys.length} 个 API Key，批量模式会在添加时逐条校验`);
       return;
     }
     setVerifyLoading(true);
@@ -375,7 +379,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
         credentialMode: mode,
       });
       
-      const result = res.data;
+      const result = res as any;
       setVerifyResult(result);
     } catch (err: any) {
       setVerifyResult({ success: false, message: err.toString() });
@@ -390,12 +394,12 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     const isTokenChanged = account && formData.access_token !== account.access_token;
     
     if (mode !== 'login' && !account && !isBatchApiKeyInput && !verifyResult?.success && !formData.skip_model_fetch) {
-      alert('请先验证 Token 成功后再添加账号');
+      showAlert('请先验证 Token 成功后再添加账号');
       return;
     }
 
     if (account && isTokenChanged && !verifyResult?.success && mode !== 'login') {
-      alert('检测到 Token 修改，请先点击验证 Token 成功后再保存');
+      showAlert('检测到 Token 修改，请先点击验证 Token 成功后再保存');
       return;
     }
 
@@ -408,10 +412,10 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           username: formData.username,
           password: formData.password,
         });
-        if (res.data.api_token_found) {
-          alert('成功登录并获取 API 令牌！');
+        if ((res as any).api_token_found) {
+          showAlert('成功登录并获取 API 令牌！');
         } else {
-          alert('成功登录，但未找到活跃的 API 令牌。');
+          showAlert('成功登录，但未找到活跃的 API 令牌。');
         }
       } else {
         // Token mode
@@ -445,14 +449,14 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           await api.put(`/api/accounts/${account.id}`, payload);
         } else {
           const res = await api.post('/api/accounts', payload);
-          if (res.data?.batch) {
-             alert(`批量添加完成：成功 ${res.data.createdCount}，失败 ${res.data.failedCount}`);
+          if ((res as any)?.batch) {
+             showAlert(`批量添加完成：成功 ${(res as any).createdCount}，失败 ${(res as any).failedCount}`);
           }
         }
       }
       onSaved();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
       setLoading(false);
     }
   };

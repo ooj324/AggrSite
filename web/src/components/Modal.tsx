@@ -9,7 +9,7 @@ interface ModalProps {
   maxWidth?: number;
 }
 
-export function Modal({ title, onClose, children, maxWidth = 480 }: ModalProps) {
+export function Modal({ title, onClose, children, maxWidth = 640 }: ModalProps) {
   return createPortal(
     <div className="fixed inset-0 z-[320] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[4px] animate-fade-in">
       <div 

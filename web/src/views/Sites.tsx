@@ -3,8 +3,10 @@ import { api, detectSite, pingSite } from '../api';
 import type { Site } from '../api';
 import { Plus, Edit2, Trash2, Activity } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useAlert } from '../components/AlertProvider';
 
 export default function Sites() {
+  const { showAlert } = useAlert();
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -24,10 +26,11 @@ export default function Sites() {
         api.get('/api/sites'),
         api.get('/api/platforms')
       ]);
-      setSites(sitesRes.data || []);
-      setPlatforms(platRes.data || []);
-    } catch (err) {
+      setSites((sitesRes as any) || []);
+      setPlatforms((platRes as any) || []);
+    } catch (err: any) {
       console.error(err);
+      showAlert(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -44,7 +47,7 @@ export default function Sites() {
       setSelectedIds(selectedIds.filter(x => x !== id));
       loadData();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     }
   };
 
@@ -57,7 +60,7 @@ export default function Sites() {
       await api.put(`/api/sites/${site.id}`, { status: newStatus });
       loadData();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     }
   };
 
@@ -72,14 +75,14 @@ export default function Sites() {
     setBatchLoading(true);
     try {
       const res = await api.post('/api/sites/batch', { ids: selectedIds, action });
-      const data = (res as any).data || res;
+      const data = res as any;
       if (data.failedItems && data.failedItems.length > 0) {
-        alert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+        showAlert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
       }
       setSelectedIds([]);
       loadData();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
     } finally {
       setBatchLoading(false);
     }
@@ -117,14 +120,9 @@ export default function Sites() {
   const handleListPing = async (url: string) => {
     try {
       const response: any = await pingSite(url);
-      const res = response?.data;
-      if (res && res.success) {
-        alert(`连通成功! 延迟: ${res.latency_ms}ms (HTTP ${res.status_code})`);
-      } else {
-        alert(`连通失败: ${res?.error || response?.message} (延迟: ${res?.latency_ms}ms)`);
-      }
+      showAlert(`连通成功! 延迟: ${response.latency_ms}ms (HTTP ${response.status_code})`);
     } catch (err: any) {
-      alert(`请求失败: ${err}`);
+      showAlert(`请求失败: ${err}`);
     }
   };
 
@@ -304,6 +302,7 @@ export default function Sites() {
 }
 
 function SiteModal({ site, platforms, onClose, onSaved }: any) {
+  const { showAlert } = useAlert();
   const [formData, setFormData] = useState({
     name: site?.name || '',
     url: site?.url || '',
@@ -365,21 +364,16 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
 
   const handleDetect = async () => {
     if (!formData.url.trim()) {
-      alert('请先输入 URL');
+      showAlert('请先输入 URL');
       return;
     }
     setDetecting(true);
     try {
       const response: any = await detectSite(formData.url);
-      const res = response?.data;
-      if (res && res.platform) {
-        setFormData(prev => ({ ...prev, platform: res.platform, url: res.url || prev.url }));
-        alert(`已识别为平台: ${res.platform}`);
-      } else {
-        alert(res?.error || response?.message || '未能识别平台');
-      }
+      setFormData(prev => ({ ...prev, platform: response.platform, url: response.url || prev.url }));
+      showAlert(`已识别为平台: ${response.platform}`);
     } catch (err: any) {
-      alert(`检测失败: ${err}`);
+      showAlert(`检测失败: ${err}`);
     } finally {
       setDetecting(false);
     }
@@ -387,20 +381,15 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
 
   const handlePing = async () => {
     if (!formData.url.trim()) {
-      alert('请先输入 URL');
+      showAlert('请先输入 URL');
       return;
     }
     setPinging(true);
     try {
       const response: any = await pingSite(formData.url);
-      const res = response?.data;
-      if (res && res.success) {
-        alert(`连通成功! 延迟: ${res.latency_ms}ms (HTTP ${res.status_code})`);
-      } else {
-        alert(`连通失败: ${res?.error || response?.message} (延迟: ${res?.latency_ms}ms)`);
-      }
+      showAlert(`连通成功! 延迟: ${response.latency_ms}ms (HTTP ${response.status_code})`);
     } catch (err: any) {
-      alert(`请求失败: ${err}`);
+      showAlert(`请求失败: ${err}`);
     } finally {
       setPinging(false);
     }
@@ -412,8 +401,8 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     try {
       const submitData: any = { ...formData };
       if (useAdvancedCheckin) {
-        if (advCheckin.url) {
-          submitData.external_checkin_url = advCheckin.url;
+        if (advCheckin.url && advCheckin.url.trim() !== '') {
+          submitData.external_checkin_url = advCheckin.url.trim();
           submitData.external_checkin_method = advCheckin.method;
           submitData.external_checkin_auth_header = advCheckin.auth_header;
           submitData.external_checkin_auth_prefix = advCheckin.auth_prefix;
@@ -421,18 +410,16 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
             try {
               JSON.parse(advCheckin.body);
             } catch (e) {
-              alert('签到请求体格式错误，必须是有效的 JSON 格式');
+              showAlert('签到请求体格式错误，必须是有效的 JSON 格式');
               setLoading(false);
               return;
             }
           }
           submitData.external_checkin_body = advCheckin.body;
         } else {
-          submitData.external_checkin_url = '';
-          submitData.external_checkin_method = '';
-          submitData.external_checkin_auth_header = '';
-          submitData.external_checkin_auth_prefix = '';
-          submitData.external_checkin_body = '';
+          showAlert('请填写签到目标 URL，否则无法保存高级签到配置。如果想使用原站点默认URL，请将原URL复制到此处。');
+          setLoading(false);
+          return;
         }
       } else {
         submitData.external_checkin_method = '';
@@ -445,7 +432,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
         try {
           JSON.parse(submitData.custom_headers);
         } catch (e) {
-          alert('自定义 Header 格式错误，必须是有效的 JSON 格式');
+          showAlert('自定义 Header 格式错误，必须是有效的 JSON 格式');
           setLoading(false);
           return;
         }
@@ -453,6 +440,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
         submitData.custom_headers = '{}';
       }
 
+      console.log('Submitting data to backend:', submitData);
       if (site) {
         await api.put(`/api/sites/${site.id}`, submitData);
       } else {
@@ -460,7 +448,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
       }
       onSaved();
     } catch (err: any) {
-      alert(`错误: ${err}`);
+      showAlert(`错误: ${err}`);
       setLoading(false);
     }
   };
@@ -518,7 +506,12 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 id="use_advanced_checkin"
                 className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
                 checked={useAdvancedCheckin} 
-                onChange={e => setUseAdvancedCheckin(e.target.checked)}
+                onChange={e => {
+                  setUseAdvancedCheckin(e.target.checked);
+                  if (e.target.checked && !advCheckin.url) {
+                    setAdvCheckin(prev => ({ ...prev, url: formData.external_checkin_url || formData.url }));
+                  }
+                }}
               />
               <label htmlFor="use_advanced_checkin" className="text-[13px] font-medium text-textPrimary cursor-pointer select-none">高级签到配置 (自定义请求方法与认证头)</label>
             </div>
@@ -532,7 +525,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                     <option value="PUT">PUT</option>
                     <option value="PATCH">PATCH</option>
                   </select>
-                  <input type="url" className={`${inputClass} flex-1`} value={advCheckin.url} onChange={e => setAdvCheckin({...advCheckin, url: e.target.value})} placeholder="签到目标 URL" />
+                  <input required={useAdvancedCheckin} type="url" className={`${inputClass} flex-1`} value={advCheckin.url} onChange={e => setAdvCheckin({...advCheckin, url: e.target.value})} placeholder="签到目标 URL (必填)" />
                 </div>
                 <div className="flex gap-3">
                   <input type="text" className={`${inputClass} flex-1`} value={advCheckin.auth_header} onChange={e => setAdvCheckin({...advCheckin, auth_header: e.target.value})} placeholder='认证Header名称 (留空默认 Authorization, 输入 none 禁用)' />
