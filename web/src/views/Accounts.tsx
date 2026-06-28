@@ -15,10 +15,15 @@ const parseAccountExtraConfig = (account: any): Record<string, any> => {
 };
 
 const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
+  const cfg = parseAccountExtraConfig(account);
+  if (cfg.credentialMode === 'apikey') return 'apikey';
+  if (cfg.credentialMode === 'session') return 'session';
   if (account?.api_token) return 'apikey';
   if (typeof account?.access_token === 'string' && account.access_token.trim()) return 'session';
   return 'apikey';
 };
+
+const resolveRuntimeHealth = (account: any) => parseAccountExtraConfig(account)?.runtimeHealth || null;
 
 export default function Accounts() {
   const { showAlert } = useAlert();
@@ -196,7 +201,11 @@ export default function Accounts() {
                   </tr>
                 </thead>
                 <tbody>
-                  {accounts.map(acc => (
+                  {accounts.map(acc => {
+                    const runtimeHealth = resolveRuntimeHealth(acc);
+                    const runtimeState = runtimeHealth?.state || (acc.status === 'active' ? 'healthy' : 'disabled');
+                    const runtimeReason = runtimeHealth?.reason || (acc.status === 'active' ? '正常' : '账号已禁用');
+                    return (
                     <tr key={acc.id} className={`group animate-slide-up ${selectedIds.includes(acc.id) ? '!bg-primary/5' : ''}`}>
                       <td className="text-center">
                         <input
@@ -232,9 +241,21 @@ export default function Accounts() {
                       </td>
                       <td>
                         <div className="flex flex-col gap-1.5 items-start">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${acc.status === 'active' ? 'bg-successSoft text-success' : 'bg-dangerSoft text-danger'}`}>
-                            {acc.status === 'active' ? '正常' : '禁用'}
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${
+                              runtimeState === 'healthy'
+                                ? 'bg-successSoft text-success'
+                                : runtimeState === 'degraded'
+                                  ? 'bg-warningSoft text-warning'
+                                  : runtimeState === 'disabled'
+                                    ? 'bg-black/5 text-textSecondary dark:bg-white/5'
+                                    : 'bg-dangerSoft text-danger'
+                            }`}
+                            title={runtimeReason}
+                          >
+                            {acc.status === 'expired' ? '令牌失效' : runtimeState === 'healthy' ? '正常' : runtimeState === 'degraded' ? '需关注' : runtimeState === 'disabled' ? '禁用' : '异常'}
                           </span>
+                          <span className="max-w-[140px] truncate text-[11px] text-textMuted" title={runtimeReason}>{runtimeReason}</span>
                           <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="text-[12px] text-primary hover:text-primaryHover hover:underline disabled:opacity-50 disabled:no-underline transition-colors p-0">
                             {actionLoading === acc.id ? <span className="w-3 h-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin inline-block align-middle" /> : '刷新余额'}
                           </button>
@@ -294,7 +315,7 @@ export default function Accounts() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             )}
@@ -334,22 +355,23 @@ export default function Accounts() {
 
 function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   const { showAlert } = useAlert();
-  const [mode, setMode] = useState<'login' | 'session' | 'apikey'>(account ? (account.extra_config?.credentialMode === 'apikey' ? 'apikey' : 'session') : 'session');
+  const accountConfig = parseAccountExtraConfig(account);
+  const [mode, setMode] = useState<'login' | 'session' | 'apikey'>(account ? (accountConfig.credentialMode === 'apikey' ? 'apikey' : 'session') : 'session');
   const [formData, setFormData] = useState({
     site_id: account?.site_id || (sites[0]?.id ?? 0),
     username: account?.username || '',
     password: '',
-    access_token: account?.access_token || '',
+    access_token: accountConfig.credentialMode === 'apikey' ? (account?.api_token || account?.access_token || '') : (account?.access_token || ''),
     api_token: account?.api_token || '',
-    platform_user_id: account?.extra_config?.platformUserId || '',
+    platform_user_id: accountConfig.platformUserId || '',
     status: account?.status || 'active',
     checkin_enabled: account?.checkin_enabled ?? true,
-    proxy_url: account?.extra_config?.proxyUrl || '',
-    use_system_proxy: account?.extra_config?.useSystemProxy || false,
-    checkin_credential: account?.extra_config?.checkin_credential || '',
+    proxy_url: accountConfig.proxyUrl || '',
+    use_system_proxy: accountConfig.useSystemProxy || false,
+    checkin_credential: accountConfig.checkin_credential || '',
     skip_model_fetch: false,
-    refresh_token: account?.extra_config?.sub2apiAuth?.refreshToken || '',
-    token_expires_at: account?.extra_config?.sub2apiAuth?.tokenExpiresAt?.toString() || '',
+    refresh_token: accountConfig.sub2apiAuth?.refreshToken || '',
+    token_expires_at: accountConfig.sub2apiAuth?.tokenExpiresAt?.toString() || '',
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -551,6 +573,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
             {mode !== 'login' && (
               <select className={inputClass} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}>
                 <option value="active">启用状态: 启用</option>
+                <option value="expired">启用状态: 令牌失效</option>
                 <option value="disabled">启用状态: 禁用</option>
               </select>
             )}
@@ -642,5 +665,3 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     </Modal>
   );
 }
-
-

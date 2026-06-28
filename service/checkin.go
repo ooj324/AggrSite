@@ -90,7 +90,7 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
-	
+
 	if config.AuthHeader != "none" && config.AuthHeader != "None" {
 		cleanToken := strings.TrimSpace(credential)
 		cleanToken = strings.TrimPrefix(cleanToken, "Bearer ")
@@ -150,7 +150,7 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 	if msg == "" {
 		msg = "check-in override executed"
 	}
-	
+
 	// Check for a logical success flag in the response JSON
 	isSuccess := true
 	if successVal, exists := res["success"]; exists {
@@ -158,7 +158,7 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 			isSuccess = b
 		}
 	}
-	
+
 	result.Success = isSuccess
 	result.Message = msg
 	return result, nil
@@ -172,6 +172,9 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 
 	// Skip disabled sites
 	if row.SiteStatus == "disabled" {
+		_ = db.UpdateAccount(accountID, map[string]interface{}{
+			"extra_config": mergeRuntimeHealth(row.ExtraConfig, "disabled", "站点已禁用", "checkin"),
+		})
 		_ = db.InsertCheckinLog(accountID, "skipped", "site disabled", "")
 		slog.Info("Checkin skipped: site disabled", "account_id", accountID)
 		return &CheckinAccountResult{Success: true, Status: "skipped", Message: "site disabled"}, nil
@@ -180,6 +183,9 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	adapter := platform.GetAdapter(row.SitePlatform)
 	if adapter == nil {
 		msg := "unsupported platform: " + row.SitePlatform
+		_ = db.UpdateAccount(accountID, map[string]interface{}{
+			"extra_config": mergeRuntimeHealth(row.ExtraConfig, "unhealthy", msg, "checkin"),
+		})
 		_ = db.InsertCheckinLog(accountID, "skipped", msg, "")
 		return &CheckinAccountResult{Success: false, Status: "skipped", Message: msg}, nil
 	}
@@ -193,7 +199,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		hasOverrideURL = true
 		useGeneric = true
 		checkinURL = strings.TrimSpace(*row.SiteExternalCheckinURL)
-		
+
 		overrideConfig.URL = checkinURL
 
 		if row.SiteExternalCheckinBody != nil {
@@ -209,7 +215,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 			} else {
 				overrideConfig.AuthHeader = "Authorization"
 			}
-			
+
 			if row.SiteExternalCheckinAuthPrefix != nil {
 				overrideConfig.AuthPrefix = *row.SiteExternalCheckinAuthPrefix
 			} else {
@@ -228,7 +234,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		UseSystemProxy: row.SiteUseSystemProxy,
 		CustomHeaders:  row.SiteCustomHeaders,
 	}
-	
+
 	checkinCredential := row.AccessToken
 	if row.ExtraConfig != nil && *row.ExtraConfig != "" {
 		var cfg map[string]interface{}
@@ -246,24 +252,25 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	}
 
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
-	
+
 	executeCheckin := func(token string, overrideCred string) (*platform.CheckinResult, error) {
 		if useGeneric {
 			return doGenericCheckin(overrideConfig, overrideCred, opt, row.SiteCustomHeaders)
 		}
-		
+
 		// Try adapter first (reuses main site auth method)
-		res, err := adapter.Checkin(checkinURL, overrideCred, platformUserID, opt)
-		
+		res, err := adapter.Checkin(checkinURL, token, platformUserID, opt)
+
 		// If adapter returns unsupported, AND we have an override URL, fallback to generic checkin
 		if err == nil && res != nil && hasOverrideURL && isUnsupportedCheckin(res.Message) {
 			slog.Info("Adapter checkin unsupported, falling back to generic checkin", "url", overrideConfig.URL)
 			return doGenericCheckin(overrideConfig, overrideCred, opt, row.SiteCustomHeaders)
 		}
-		
+
 		return res, err
 	}
 
+	previousBalance := valueOrZero(row.Balance)
 	result, err := executeCheckin(row.AccessToken, checkinCredential)
 	if err != nil {
 		result = &platform.CheckinResult{Success: false, Message: err.Error()}
@@ -271,7 +278,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 
 	alreadyCheckedIn := isAlreadyCheckedIn(result.Message)
 	unsupported := isUnsupportedCheckin(result.Message)
-	
+
 	failureReason := AnalyzeCheckinFailure(result.Message)
 	turnstileRequired := failureReason.Code == "TURNSTILE_REQUIRED"
 
@@ -293,12 +300,12 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 				if err != nil {
 					result = &platform.CheckinResult{Success: false, Message: err.Error()}
 				}
-				
+
 				alreadyCheckedIn = isAlreadyCheckedIn(result.Message)
 				unsupported = isUnsupportedCheckin(result.Message)
 				newFailure := AnalyzeCheckinFailure(result.Message)
 				turnstileRequired = newFailure.Code == "TURNSTILE_REQUIRED"
-				
+
 				effectiveSuccess = result.Success || alreadyCheckedIn || unsupported || turnstileRequired
 				if unsupported || turnstileRequired {
 					status = "skipped"
@@ -315,16 +322,19 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		}
 	}
 
-	// Reward inference if success but no explicit reward
-	if result.Success && !alreadyCheckedIn && !unsupported && !turnstileRequired && result.Reward == "" {
-		if preBalance, err := adapter.GetBalance(checkinURL, row.AccessToken, platformUserID, opt); err == nil {
-			postBalance, err2 := RefreshBalance(accountID)
-			if err2 == nil && postBalance != nil && postBalance.Balance != nil {
-				delta := postBalance.Balance.Quota - preBalance.Quota
-				if delta > 0 {
-					result.Reward = fmt.Sprintf("推断奖励: %.2f", delta)
-				}
-			}
+	directSuccess := result.Success && !alreadyCheckedIn && !unsupported && !turnstileRequired
+	var refreshedBalance *BalanceResult
+	if effectiveSuccess && !unsupported && !turnstileRequired {
+		refreshedBalance, _ = RefreshBalance(accountID)
+	}
+
+	// Reward inference if success but no explicit reward. Use the persisted balance
+	// captured before check-in and refresh the main site balance afterward; do not
+	// call balance APIs against an external check-in URL.
+	if directSuccess && result.Reward == "" && refreshedBalance != nil && refreshedBalance.Balance != nil {
+		delta := refreshedBalance.Balance.Balance - previousBalance
+		if delta > 0 {
+			result.Reward = fmt.Sprintf("%.6g", delta)
 		}
 	}
 
@@ -341,18 +351,31 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		fmt.Sprintf("%s @ %s: %s", nullStr(row.Username), row.SiteName, result.Message),
 		eventLevel, &accountID, "account")
 
-	// Update last_checkin_at on success
-	if result.Success && !alreadyCheckedIn && !unsupported && !turnstileRequired {
-		_ = db.UpdateAccount(accountID, map[string]interface{}{
-			"last_checkin_at": db.TimeNow(),
-		})
+	updates := map[string]interface{}{}
+	if directSuccess {
+		updates["last_checkin_at"] = db.TimeNow()
 	}
-
-	// Try refreshing balance on success (if not already done by inference)
-	if effectiveSuccess && !unsupported && !turnstileRequired && result.Reward == "" {
-		go func() {
-			_, _ = RefreshBalance(accountID)
-		}()
+	if effectiveSuccess {
+		healthState := "healthy"
+		healthReason := result.Message
+		if unsupported || turnstileRequired {
+			healthState = "degraded"
+		}
+		if healthReason == "" {
+			healthReason = "签到成功"
+		}
+		updates["extra_config"] = mergeRuntimeHealth(row.ExtraConfig, healthState, healthReason, "checkin")
+		if row.Status != nil && *row.Status == "expired" && status == "success" {
+			updates["status"] = "active"
+		}
+	} else {
+		updates["extra_config"] = mergeRuntimeHealth(row.ExtraConfig, "unhealthy", result.Message, "checkin")
+		if AnalyzeCheckinFailure(result.Message).Code == "TOKEN_EXPIRED" {
+			updates["status"] = "expired"
+		}
+	}
+	if len(updates) > 0 {
+		_ = db.UpdateAccount(accountID, updates)
 	}
 
 	slog.Info("Checkin completed", "account_id", accountID, "status", status, "message", result.Message)
@@ -385,43 +408,43 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 	if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err != nil {
 		return ""
 	}
-	
+
 	autoRelogin, ok := cfg["autoRelogin"].(map[string]interface{})
 	if !ok {
 		return ""
 	}
-	
+
 	username, _ := autoRelogin["username"].(string)
 	passwordCipher, _ := autoRelogin["passwordCipher"].(string)
-	
+
 	if username == "" || passwordCipher == "" {
 		return ""
 	}
-	
+
 	password := DecryptPassword(passwordCipher)
 	if password == "" {
 		return ""
 	}
-	
+
 	slog.Info("Attempting auto-relogin via username/password", "account_id", row.ID)
 	loginResult, err := adapter.Login(row.SiteURL, username, password, opt)
 	if err != nil || loginResult == nil || !loginResult.Success || loginResult.AccessToken == "" {
 		slog.Warn("Auto-relogin failed", "account_id", row.ID, "err", err, "message", loginResult.Message)
 		return ""
 	}
-	
+
 	slog.Info("Auto-relogin via Login successful, updating access token", "account_id", row.ID)
 	_ = db.UpdateAccount(row.ID, map[string]interface{}{
 		"access_token": loginResult.AccessToken,
 	})
-	
+
 	return loginResult.AccessToken
 }
 
 type CheckinAllResult struct {
-	AccountID int64                `json:"account_id"`
-	Username  string               `json:"username"`
-	Site      string               `json:"site"`
+	AccountID int64                 `json:"account_id"`
+	Username  string                `json:"username"`
+	Site      string                `json:"site"`
 	Result    *CheckinAccountResult `json:"result"`
 }
 

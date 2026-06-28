@@ -53,7 +53,7 @@ func ListCheckinLogs(w http.ResponseWriter, r *http.Request) {
 	enhancedLogs := make([]logWithReason, len(logs))
 	for i, l := range logs {
 		enhanced := logWithReason{CheckinLogWithAccount: l}
-		if l.Status == "failed" && l.Message != nil {
+		if l.Status != "success" && l.Message != nil {
 			enhanced.FailureReason = service.AnalyzeCheckinFailure(*l.Message)
 		}
 		enhancedLogs[i] = enhanced

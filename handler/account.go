@@ -12,6 +12,10 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+func isMaskedTokenValue(token string) bool {
+	return strings.Contains(token, "*") || strings.Contains(token, "•")
+}
+
 func getRequestOption(site *db.Site) *platform.RequestOption {
 	return &platform.RequestOption{
 		ProxyURL:       site.ProxyURL,
@@ -123,8 +127,8 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		AccessToken    string `json:"accessToken"`
-		PlatformUserID *int64 `json:"platformUserId"`
+		AccessToken    string  `json:"accessToken"`
+		PlatformUserID *int64  `json:"platformUserId"`
 		RefreshToken   *string `json:"refreshToken"`
 		TokenExpiresAt *int64  `json:"tokenExpiresAt"`
 	}
@@ -292,7 +296,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			cloneInput := input.CreateAccountInput
-			cloneInput.AccessToken = token
+			if input.CredentialMode == "apikey" {
+				cloneInput.AccessToken = ""
+				cloneInput.ApiToken = token
+			} else {
+				cloneInput.AccessToken = token
+			}
 
 			id, err := db.CreateAccount(cloneInput)
 			if err != nil {
@@ -362,6 +371,13 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		usernameDetected = true
 	}
 
+	if input.CredentialMode == "apikey" {
+		if input.ApiToken == "" {
+			input.ApiToken = input.AccessToken
+		}
+		input.AccessToken = ""
+	}
+
 	id, err := db.CreateAccount(input.CreateAccountInput)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
@@ -402,12 +418,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		if input.PlatformUserID != nil {
 			userID = *input.PlatformUserID
 		}
-		
+
 		// sync balance
 		if input.CredentialMode != "apikey" && input.AccessToken != "" {
 			service.RefreshBalance(id)
 		}
-		
+
 		// sync tokens
 		if input.CredentialMode != "apikey" && input.AccessToken != "" {
 			if tokens, err := ad.GetApiTokens(site.URL, input.AccessToken, userID, opt); err == nil {
@@ -543,6 +559,13 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		fields["extra_config"] = string(bs)
 	}
 
+	if mode, _ := cfg["credentialMode"].(string); mode == "apikey" {
+		if token, ok := fields["access_token"].(string); ok && strings.TrimSpace(token) != "" {
+			fields["api_token"] = strings.TrimSpace(token)
+		}
+		fields["access_token"] = ""
+	}
+
 	if err := db.UpdateAccount(id, fields); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
@@ -604,6 +627,10 @@ func CreateAccountToken(w http.ResponseWriter, r *http.Request) {
 
 	if input.Name == "" || input.Token == "" {
 		fail(w, http.StatusBadRequest, "name and token are required")
+		return
+	}
+	if isMaskedTokenValue(input.Token) {
+		fail(w, http.StatusBadRequest, "masked token cannot be saved; paste the full token value")
 		return
 	}
 

@@ -9,15 +9,44 @@ import (
 )
 
 type BalanceResult struct {
-	Success bool               `json:"success"`
-	Message string             `json:"message,omitempty"`
+	Success bool                  `json:"success"`
+	Message string                `json:"message,omitempty"`
 	Balance *platform.BalanceInfo `json:"balance,omitempty"`
+	Skipped bool                  `json:"skipped,omitempty"`
+	Reason  string                `json:"reason,omitempty"`
+}
+
+func valueOrZero(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 func RefreshBalance(accountID int64) (*BalanceResult, error) {
 	row, err := db.GetAccountWithSite(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("account not found: %w", err)
+	}
+
+	if row.SiteStatus == "disabled" {
+		extraConfig := mergeRuntimeHealth(row.ExtraConfig, "disabled", "站点已禁用", "balance")
+		_ = db.UpdateAccount(accountID, map[string]interface{}{"extra_config": extraConfig})
+		info := &platform.BalanceInfo{
+			Balance: valueOrZero(row.Balance),
+			Used:    valueOrZero(row.BalanceUsed),
+			Quota:   valueOrZero(row.Quota),
+		}
+		return &BalanceResult{Success: true, Balance: info, Skipped: true, Reason: "site_disabled"}, nil
+	}
+
+	if isApiKeyAccount(row.AccessToken, row.ApiToken, row.ExtraConfig) {
+		info := &platform.BalanceInfo{
+			Balance: valueOrZero(row.Balance),
+			Used:    valueOrZero(row.BalanceUsed),
+			Quota:   valueOrZero(row.Quota),
+		}
+		return &BalanceResult{Success: true, Balance: info, Skipped: true, Reason: "proxy_only"}, nil
 	}
 
 	adapter := platform.GetAdapter(row.SitePlatform)
@@ -54,26 +83,36 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		}
 	}
 
-	
 	if err != nil {
 		slog.Warn("Balance refresh failed completely", "account_id", accountID, "err", err)
+		statusUpdate := map[string]interface{}{
+			"extra_config": mergeRuntimeHealth(row.ExtraConfig, "unhealthy", err.Error(), "balance"),
+		}
+		if AnalyzeCheckinFailure(err.Error()).Code == "TOKEN_EXPIRED" {
+			statusUpdate["status"] = "expired"
+		}
+		_ = db.UpdateAccount(accountID, statusUpdate)
 		return &BalanceResult{Success: false, Message: err.Error()}, nil
 	}
 
 	// Persist to DB
-	_ = db.UpdateAccount(accountID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"balance":              info.Balance,
 		"balance_used":         info.Used,
 		"quota":                info.Quota,
 		"last_balance_refresh": db.TimeNow(),
-	})
+		"extra_config":         mergeRuntimeHealth(row.ExtraConfig, "healthy", "余额刷新成功", "balance"),
+	}
+	if row.Status != nil && *row.Status == "expired" {
+		updates["status"] = "active"
+	}
+	_ = db.UpdateAccount(accountID, updates)
 
 	slog.Info("Balance refreshed", "account_id", accountID,
 		"balance", info.Balance, "used", info.Used, "quota", info.Quota)
 
 	return &BalanceResult{Success: true, Balance: info}, nil
 }
-
 
 type RefreshAllResult struct {
 	AccountID int64          `json:"account_id"`

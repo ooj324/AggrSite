@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -18,24 +19,34 @@ func nilIfEmpty(s string) interface{} {
 	return s
 }
 
+func boolDBValue(v bool) interface{} {
+	if driverName == "postgres" {
+		return v
+	}
+	if v {
+		return 1
+	}
+	return 0
+}
+
 // ---- Site ----
 
 const siteColumns = `id, name, url, platform, status, created_at, updated_at, is_pinned, sort_order, proxy_url, use_system_proxy, custom_headers, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body`
 
 type Site struct {
-	ID                 int64          `db:"id" json:"id"`
-	Name               string         `db:"name" json:"name"`
-	URL                string         `db:"url" json:"url"`
-	Platform           string         `db:"platform" json:"platform"`
-	Status             string         `db:"status" json:"status"`
-	CreatedAt          *string `db:"created_at" json:"created_at"`
-	UpdatedAt          *string `db:"updated_at" json:"updated_at"`
-	IsPinned           *bool   `db:"is_pinned" json:"is_pinned"`
-	SortOrder          *int64  `db:"sort_order" json:"sort_order"`
-	ProxyURL           *string `db:"proxy_url" json:"proxy_url"`
-	UseSystemProxy     *bool   `db:"use_system_proxy" json:"use_system_proxy"`
-	CustomHeaders      *string `db:"custom_headers" json:"custom_headers"`
-	ExternalCheckinURL *string `db:"external_checkin_url" json:"external_checkin_url"`
+	ID                        int64   `db:"id" json:"id"`
+	Name                      string  `db:"name" json:"name"`
+	URL                       string  `db:"url" json:"url"`
+	Platform                  string  `db:"platform" json:"platform"`
+	Status                    string  `db:"status" json:"status"`
+	CreatedAt                 *string `db:"created_at" json:"created_at"`
+	UpdatedAt                 *string `db:"updated_at" json:"updated_at"`
+	IsPinned                  *bool   `db:"is_pinned" json:"is_pinned"`
+	SortOrder                 *int64  `db:"sort_order" json:"sort_order"`
+	ProxyURL                  *string `db:"proxy_url" json:"proxy_url"`
+	UseSystemProxy            *bool   `db:"use_system_proxy" json:"use_system_proxy"`
+	CustomHeaders             *string `db:"custom_headers" json:"custom_headers"`
+	ExternalCheckinURL        *string `db:"external_checkin_url" json:"external_checkin_url"`
 	ExternalCheckinMethod     *string `db:"external_checkin_method" json:"external_checkin_method"`
 	ExternalCheckinAuthHeader *string `db:"external_checkin_auth_header" json:"external_checkin_auth_header"`
 	ExternalCheckinAuthPrefix *string `db:"external_checkin_auth_prefix" json:"external_checkin_auth_prefix"`
@@ -58,18 +69,18 @@ func GetSite(id int64) (*Site, error) {
 }
 
 type CreateSiteInput struct {
-	Name               string  `json:"name"`
-	URL                string  `json:"url"`
-	Platform           string  `json:"platform"`
-	Status             string  `json:"status"`
-	ProxyURL           *string `json:"proxy_url"`
-	UseSystemProxy     *bool   `json:"use_system_proxy"`
-	ExternalCheckinURL *string `json:"external_checkin_url"`
+	Name                      string  `json:"name"`
+	URL                       string  `json:"url"`
+	Platform                  string  `json:"platform"`
+	Status                    string  `json:"status"`
+	ProxyURL                  *string `json:"proxy_url"`
+	UseSystemProxy            *bool   `json:"use_system_proxy"`
+	ExternalCheckinURL        *string `json:"external_checkin_url"`
 	ExternalCheckinMethod     *string `json:"external_checkin_method"`
 	ExternalCheckinAuthHeader *string `json:"external_checkin_auth_header"`
 	ExternalCheckinAuthPrefix *string `json:"external_checkin_auth_prefix"`
 	ExternalCheckinBody       *string `json:"external_checkin_body"`
-	CustomHeaders      *string `json:"custom_headers"`
+	CustomHeaders             *string `json:"custom_headers"`
 }
 
 func CreateSite(in CreateSiteInput) (int64, error) {
@@ -78,7 +89,7 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 	if status == "" {
 		status = "active"
 	}
-	
+
 	// Default use_system_proxy
 	useSystemProxyVal := interface{}(0)
 	if driverName == "postgres" {
@@ -91,22 +102,22 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 			useSystemProxyVal = 1
 		}
 	}
-	
+
 	customHeaders := in.CustomHeaders
 	if driverName == "postgres" && customHeaders != nil && *customHeaders == "" {
 		emptyJson := "{}"
 		customHeaders = &emptyJson
 	}
-	
+
 	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body, custom_headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	
+
 	if driverName == "postgres" {
 		var id int64
 		err := DB.QueryRowx(DB.Rebind(query+` RETURNING id`),
 			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, now, now).Scan(&id)
 		return id, err
 	}
-	
+
 	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, now, now)
 	if err != nil {
 		return 0, err
@@ -116,7 +127,7 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 
 func UpdateSite(id int64, in map[string]interface{}) error {
 	in["updated_at"] = TimeNow()
-	
+
 	// Handle custom_headers for Postgres jsonb compatibility
 	if ch, ok := in["custom_headers"].(string); ok && ch == "" {
 		// Replace empty string with valid JSON empty object or nil
@@ -140,7 +151,7 @@ func UpdateSite(id int64, in map[string]interface{}) error {
 		if safeKey == "" {
 			continue
 		}
-		
+
 		if i > 0 {
 			query += ", "
 		}
@@ -148,11 +159,11 @@ func UpdateSite(id int64, in map[string]interface{}) error {
 		args = append(args, v)
 		i++
 	}
-	
+
 	if i == 0 {
 		return nil
 	}
-	
+
 	query += " WHERE id = ?"
 	args = append(args, id)
 	_, err := Exec(query, args...)
@@ -219,8 +230,8 @@ func GetSiteBalances() (map[int64]float64, error) {
 const accountColumns = `id, site_id, username, access_token, api_token, balance, balance_used, quota, unit_cost, value_score, status, checkin_enabled, last_checkin_at, last_balance_refresh, extra_config, created_at, updated_at, is_pinned, sort_order`
 
 type Account struct {
-	ID                 int64           `db:"id" json:"id"`
-	SiteID             int64           `db:"site_id" json:"site_id"`
+	ID                 int64    `db:"id" json:"id"`
+	SiteID             int64    `db:"site_id" json:"site_id"`
 	Username           *string  `db:"username" json:"username"`
 	AccessToken        string   `db:"access_token" json:"access_token"`
 	ApiToken           *string  `db:"api_token" json:"api_token"`
@@ -269,14 +280,14 @@ func GetAccountBySiteAndUsername(siteID int64, username string) (*Account, error
 }
 
 type CreateAccountInput struct {
-	SiteID         int64   `json:"site_id"`
-	Username       string  `json:"username"`
-	AccessToken    string  `json:"access_token"`
-	ApiToken       string  `json:"api_token"`
-	CheckinEnabled bool    `json:"checkin_enabled"`
-	PlatformUserID *int64  `json:"platformUserId"`
-	CredentialMode string  `json:"credentialMode"`
-	SkipModelFetch bool    `json:"skipModelFetch"`
+	SiteID         int64  `json:"site_id"`
+	Username       string `json:"username"`
+	AccessToken    string `json:"access_token"`
+	ApiToken       string `json:"api_token"`
+	CheckinEnabled bool   `json:"checkin_enabled"`
+	PlatformUserID *int64 `json:"platformUserId"`
+	CredentialMode string `json:"credentialMode"`
+	SkipModelFetch bool   `json:"skipModelFetch"`
 }
 
 func CreateAccount(in CreateAccountInput) (int64, error) {
@@ -285,7 +296,7 @@ func CreateAccount(in CreateAccountInput) (int64, error) {
 	if !in.CheckinEnabled {
 		enabled = 0
 	}
-	
+
 	extraConfig := map[string]interface{}{}
 	if in.CredentialMode != "" {
 		extraConfig["credentialMode"] = in.CredentialMode
@@ -330,7 +341,7 @@ func UpdateAccount(id int64, fields map[string]interface{}) error {
 		if safeKey == "" {
 			continue
 		}
-		
+
 		if i > 0 {
 			query += ", "
 		}
@@ -338,11 +349,11 @@ func UpdateAccount(id int64, fields map[string]interface{}) error {
 		args = append(args, v)
 		i++
 	}
-	
+
 	if i == 0 {
 		return nil
 	}
-	
+
 	query += " WHERE id = ?"
 	args = append(args, id)
 	_, err := Exec(query, args...)
@@ -379,10 +390,10 @@ func ListAccountsWithSites(siteID *int64) ([]AccountWithSiteName, error) {
 // ---- AccountToken ----
 
 type AccountToken struct {
-	ID          int64          `db:"id" json:"id"`
-	AccountID   int64          `db:"account_id" json:"account_id"`
-	Name        string         `db:"name" json:"name"`
-	Token       string         `db:"token" json:"token"`
+	ID          int64   `db:"id" json:"id"`
+	AccountID   int64   `db:"account_id" json:"account_id"`
+	Name        string  `db:"name" json:"name"`
+	Token       string  `db:"token" json:"token"`
 	TokenGroup  *string `db:"token_group" json:"token_group"`
 	ValueStatus string  `db:"value_status" json:"value_status"`
 	Source      *string `db:"source" json:"source"`
@@ -442,7 +453,7 @@ func EnsureSettingsTable() {
 }
 
 // EnsureSiteExternalCheckinColumns automatically adds extended configuration fields
-// if they don't exist in the sites table. This allows AggrSite to be fully backward-compatible 
+// if they don't exist in the sites table. This allows AggrSite to be fully backward-compatible
 // and run independent of the main app's migrations.
 func EnsureSiteExternalCheckinColumns() {
 	if driverName == "postgres" {
@@ -463,18 +474,88 @@ func ListAccountTokens(accountID int64) ([]AccountToken, error) {
 
 func CreateAccountToken(accountID int64, name, token string) (int64, error) {
 	now := TimeNow()
+	name = strings.TrimSpace(name)
+	token = strings.TrimSpace(token)
+	if name == "" {
+		name = "default"
+	}
+	if token == "" {
+		return 0, nil
+	}
+
+	var existing AccountToken
+	if err := Get(&existing, `SELECT * FROM account_tokens WHERE account_id = ? AND token = ? LIMIT 1`, accountID, token); err == nil {
+		_ = UpdateAccountToken(existing.ID, map[string]interface{}{
+			"name":         name,
+			"value_status": "ready",
+			"enabled":      boolDBValue(true),
+			"updated_at":   now,
+		})
+		return existing.ID, nil
+	}
+
+	var count int
+	_ = Get(&count, `SELECT COUNT(*) FROM account_tokens WHERE account_id = ?`, accountID)
+	isDefault := count == 0
+	defaultVal := boolDBValue(isDefault)
+	enabledVal := boolDBValue(true)
+
 	if driverName == "postgres" {
 		var id int64
-		err := DB.QueryRowx(DB.Rebind(`INSERT INTO account_tokens (account_id, name, token, value_status, source, enabled, is_default, created_at, updated_at) VALUES (?, ?, ?, 'ready', 'manual', true, false, ?, ?) RETURNING id`),
-			accountID, name, token, now, now).Scan(&id)
+		err := DB.QueryRowx(DB.Rebind(`INSERT INTO account_tokens (account_id, name, token, value_status, source, enabled, is_default, created_at, updated_at) VALUES (?, ?, ?, 'ready', 'manual', ?, ?, ?, ?) RETURNING id`),
+			accountID, name, token, enabledVal, defaultVal, now, now).Scan(&id)
+		if err == nil && isDefault {
+			_ = UpdateAccount(accountID, map[string]interface{}{"api_token": token})
+		}
 		return id, err
 	}
-	res, err := Exec(`INSERT INTO account_tokens (account_id, name, token, value_status, source, enabled, is_default, created_at, updated_at) VALUES (?, ?, ?, 'ready', 'manual', 1, 0, ?, ?)`,
-		accountID, name, token, now, now)
+	res, err := Exec(`INSERT INTO account_tokens (account_id, name, token, value_status, source, enabled, is_default, created_at, updated_at) VALUES (?, ?, ?, 'ready', 'manual', ?, ?, ?, ?)`,
+		accountID, name, token, enabledVal, defaultVal, now, now)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err == nil && isDefault {
+		_ = UpdateAccount(accountID, map[string]interface{}{"api_token": token})
+	}
+	return id, err
+}
+
+func UpdateAccountToken(id int64, fields map[string]interface{}) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	allowed := map[string]bool{
+		"name":         true,
+		"token":        true,
+		"token_group":  true,
+		"value_status": true,
+		"source":       true,
+		"enabled":      true,
+		"is_default":   true,
+		"updated_at":   true,
+	}
+	query := "UPDATE account_tokens SET "
+	args := []interface{}{}
+	i := 0
+	for k, v := range fields {
+		if !allowed[k] {
+			continue
+		}
+		if i > 0 {
+			query += ", "
+		}
+		query += k + " = ?"
+		args = append(args, v)
+		i++
+	}
+	if i == 0 {
+		return nil
+	}
+	query += " WHERE id = ?"
+	args = append(args, id)
+	_, err := Exec(query, args...)
+	return err
 }
 
 func DeleteAccountToken(id int64) error {
@@ -485,9 +566,9 @@ func DeleteAccountToken(id int64) error {
 // ---- CheckinLog ----
 
 type CheckinLog struct {
-	ID        int64          `db:"id" json:"id"`
-	AccountID int64          `db:"account_id" json:"account_id"`
-	Status    string         `db:"status" json:"status"`
+	ID        int64   `db:"id" json:"id"`
+	AccountID int64   `db:"account_id" json:"account_id"`
+	Status    string  `db:"status" json:"status"`
 	Message   *string `db:"message" json:"message"`
 	Reward    *string `db:"reward" json:"reward"`
 	CreatedAt *string `db:"created_at" json:"created_at"`
@@ -548,9 +629,9 @@ func ListCheckinLogsWithAccounts(accountID *int64, limit, offset int) ([]Checkin
 // ---- Event ----
 
 type Event struct {
-	ID          int64          `db:"id" json:"id"`
-	Type        string         `db:"type" json:"type"`
-	Title       string         `db:"title" json:"title"`
+	ID          int64   `db:"id" json:"id"`
+	Type        string  `db:"type" json:"type"`
+	Title       string  `db:"title" json:"title"`
 	Message     *string `db:"message" json:"message"`
 	Level       string  `db:"level" json:"level"`
 	Read        *bool   `db:"read" json:"read"`
@@ -591,7 +672,7 @@ func MarkAllEventsRead() error {
 // ---- Setting ----
 
 type Setting struct {
-	Key   string         `db:"key" json:"key"`
+	Key   string  `db:"key" json:"key"`
 	Value *string `db:"value" json:"value"`
 }
 
@@ -644,7 +725,6 @@ const accountWithSiteQuery = `
 	FROM accounts a
 	INNER JOIN sites s ON a.site_id = s.id
 `
-
 
 func ListCheckinableAccounts() ([]AccountWithSite, error) {
 	var rows []AccountWithSite
