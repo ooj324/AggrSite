@@ -174,7 +174,7 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// Add a default User-Agent to bypass Cloudflare tarpitting of Go-http-client
 	hasUA := false
 	for k, v := range headers {
@@ -186,7 +186,7 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	if !hasUA {
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	}
-	
+
 	applyCustomHeaders(req, opt)
 
 	client := &http.Client{
@@ -273,7 +273,7 @@ func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOpti
 
 	success, _ := res["success"].(bool)
 	message := ExtractMessage(res)
-	
+
 	if !success {
 		if message == "" {
 			message = "Login failed"
@@ -302,6 +302,88 @@ func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOpti
 		AccessToken: token,
 		Username:    username,
 	}, nil
+}
+
+// LoginWithCookieFallback performs a username/password login and accepts either
+// a JSON access token or a usable Set-Cookie session returned by the upstream.
+func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string, opt *RequestOption) (*LoginResult, error) {
+	url := fmt.Sprintf("%s/api/user/login", baseURL)
+	body := map[string]string{
+		"username": username,
+		"password": password,
+	}
+
+	var res map[string]interface{}
+	cookieResult, err := FetchJSONWithCookieRetry(url, "POST", "", map[string]string{
+		"X-Requested-With": "XMLHttpRequest",
+	}, body, &res, opt)
+	if err != nil {
+		return &LoginResult{Success: false, Message: err.Error()}, nil
+	}
+
+	success, _ := res["success"].(bool)
+	message := ExtractMessage(res)
+	if success {
+		data := res["data"]
+		var token string
+		if s, ok := data.(string); ok {
+			token = s
+		} else if m, ok := data.(map[string]interface{}); ok {
+			if t, ok := m["token"].(string); ok {
+				token = t
+			} else if t, ok := m["access_token"].(string); ok {
+				token = t
+			}
+		}
+		if token != "" {
+			return &LoginResult{Success: true, AccessToken: token, Username: username}, nil
+		}
+		if cookieResult != nil && hasUsableSessionCookie(cookieResult.CookieHeader) {
+			return &LoginResult{Success: true, AccessToken: cookieResult.CookieHeader, Username: username}, nil
+		}
+	}
+
+	if message == "" {
+		message = "登录失败：未获取到可用会话凭据，请改用 Cookie/Token 导入"
+	}
+	return &LoginResult{Success: false, Message: message}, nil
+}
+
+func hasUsableSessionCookie(cookieHeader string) bool {
+	if strings.TrimSpace(cookieHeader) == "" {
+		return false
+	}
+	ignored := map[string]bool{
+		"acw_tc":     true,
+		"acw_sc__v2": true,
+		"cdn_sec_tc": true,
+	}
+	for _, pair := range strings.Split(cookieHeader, ";") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		eq := strings.Index(pair, "=")
+		if eq <= 0 {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(pair[:eq]))
+		if name == "" || ignored[name] {
+			continue
+		}
+		if name == "session" ||
+			name == "token" ||
+			name == "auth_token" ||
+			name == "access_token" ||
+			name == "jwt" ||
+			name == "jwt_token" ||
+			strings.Contains(name, "session") ||
+			strings.Contains(name, "token") ||
+			strings.Contains(name, "auth") {
+			return true
+		}
+	}
+	return false
 }
 
 // GetApiToken fetches the first enabled API token.
@@ -336,47 +418,7 @@ func (b *BaseAdapter) GetApiTokens(baseURL, accessToken string, platformUserID i
 		return nil, fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
 	}
 
-	data, _ := res["data"].([]interface{})
-	var tokens []ApiTokenInfo
-	for i, item := range data {
-		if m, ok := item.(map[string]interface{}); ok {
-			enabled := false
-			if status, ok := m["status"].(float64); ok && status == 1 {
-				enabled = true
-			} else if e, ok := m["enabled"].(bool); ok && e {
-				enabled = true
-			} else if _, hasStatus := m["status"]; !hasStatus {
-				if _, hasEnabled := m["enabled"]; !hasEnabled {
-					enabled = true
-				}
-			}
-			
-			key, _ := m["key"].(string)
-			name, _ := m["name"].(string)
-			if name == "" {
-				name = fmt.Sprintf("token-%d", i+1)
-			}
-			group := ""
-			if g, ok := m["group"].(string); ok {
-				group = g
-			} else if gn, ok := m["group_name"].(string); ok {
-				group = gn
-			} else if tg, ok := m["token_group"].(string); ok {
-				group = tg
-			}
-
-			if key != "" {
-				tokens = append(tokens, ApiTokenInfo{
-					Name:       name,
-					Key:        key,
-					Enabled:    enabled,
-					TokenGroup: group,
-				})
-			}
-		}
-	}
-
-	return tokens, nil
+	return parseApiTokensArray(res), nil
 }
 
 func (b *BaseAdapter) GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error) {
@@ -408,7 +450,7 @@ func (b *BaseAdapter) VerifyToken(baseURL, accessToken string, platformUserID in
 	// 1. Try session validation: /api/user/self
 	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
 	headers := AuthHeaders(accessToken, platformUserID)
-	
+
 	var userRes map[string]interface{}
 	err := b.FetchJSON(userURL, "GET", headers, nil, &userRes, opt)
 	if err == nil {
@@ -425,7 +467,7 @@ func (b *BaseAdapter) VerifyToken(baseURL, accessToken string, platformUserID in
 				if r, ok := data["role"].(float64); ok {
 					ui.Role = int(r)
 				}
-				
+
 				divisor := 500000.0
 				quota := 0.0
 				used := 0.0

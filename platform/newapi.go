@@ -16,6 +16,10 @@ func init() {
 	Register(&NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api"}})
 }
 
+func (a *NewApiAdapter) Login(baseURL, username, password string, opt *RequestOption) (*LoginResult, error) {
+	return a.LoginWithCookieFallback(baseURL, username, password, opt)
+}
+
 func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*CheckinResult, error) {
 	if !IsCookieSessionToken(accessToken) {
 		headers := AuthHeaders(accessToken, platformUserID)
@@ -59,7 +63,7 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 		signInURL := fmt.Sprintf("%s/api/user/sign_in", baseURL)
 		var signInRes map[string]interface{}
 		signInHeaders := CookieUserIDHeaders(platformUserID)
-		
+
 		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, signInHeaders, map[string]interface{}{}, &signInRes, opt)
 		if err != nil {
 			lastErrMsg = err.Error()
@@ -107,7 +111,7 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 			}
 			return &CheckinResult{Success: true, Message: checkinMsg, Reward: reward}, nil
 		}
-		
+
 		if checkinMsg != "" {
 			lastErrMsg = checkinMsg
 		}
@@ -121,7 +125,7 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 
 func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
-	
+
 	var res map[string]interface{}
 	var lastErr error
 
@@ -141,7 +145,7 @@ func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 		} else {
 			lastErr = err
 		}
-		
+
 		if lastErr != nil && !isCookieSessionFailureMessage(lastErr.Error()) {
 			return nil, lastErr
 		}
@@ -151,7 +155,7 @@ func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 	for _, cookie := range cookieCandidates {
 		var cookieRes map[string]interface{}
 		cookieHeaders := CookieUserIDHeaders(platformUserID)
-		
+
 		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
 		if err != nil {
 			lastErr = err
@@ -186,7 +190,7 @@ func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 		if err == nil {
 			success, _ := res["success"].(bool)
 			if success {
-				return parseApiTokensArray(res["data"]), nil
+				return parseApiTokensArray(res), nil
 			}
 			lastErr = fmt.Errorf("failed: %s", ExtractMessage(res))
 		} else {
@@ -201,7 +205,7 @@ func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 	for _, cookie := range cookieCandidates {
 		var cookieRes map[string]interface{}
 		cookieHeaders := CookieUserIDHeaders(platformUserID)
-		
+
 		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
 		if err != nil {
 			lastErr = err
@@ -209,7 +213,7 @@ func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 		}
 		success, _ := cookieRes["success"].(bool)
 		if success {
-			return parseApiTokensArray(cookieRes["data"]), nil
+			return parseApiTokensArray(cookieRes), nil
 		}
 		lastErr = fmt.Errorf("cookie failed: %s", ExtractMessage(cookieRes))
 	}
@@ -245,7 +249,7 @@ func (a *NewApiAdapter) GetModels(baseURL, accessToken string, platformUserID in
 	for _, cookie := range cookieCandidates {
 		var cookieRes map[string]interface{}
 		cookieHeaders := CookieUserIDHeaders(platformUserID)
-		
+
 		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
 		if err != nil {
 			lastErr = err
@@ -334,11 +338,31 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 
 // Helpers
 
-func parseApiTokensArray(data interface{}) []ApiTokenInfo {
-	arr, ok := data.([]interface{})
+func tokenItemsFromPayload(payload interface{}) []interface{} {
+	if arr, ok := payload.([]interface{}); ok {
+		return arr
+	}
+	m, ok := payload.(map[string]interface{})
 	if !ok {
 		return nil
 	}
+	for _, key := range []string{"data", "items", "list"} {
+		if arr, ok := m[key].([]interface{}); ok {
+			return arr
+		}
+	}
+	if dataMap, ok := m["data"].(map[string]interface{}); ok {
+		for _, key := range []string{"items", "data", "list"} {
+			if arr, ok := dataMap[key].([]interface{}); ok {
+				return arr
+			}
+		}
+	}
+	return nil
+}
+
+func parseApiTokensArray(payload interface{}) []ApiTokenInfo {
+	arr := tokenItemsFromPayload(payload)
 	var tokens []ApiTokenInfo
 	for i, item := range arr {
 		if m, ok := item.(map[string]interface{}); ok {
@@ -352,11 +376,15 @@ func parseApiTokensArray(data interface{}) []ApiTokenInfo {
 					enabled = true
 				}
 			}
-			
+
 			key, _ := m["key"].(string)
 			name, _ := m["name"].(string)
 			if name == "" {
-				name = fmt.Sprintf("token-%d", i+1)
+				if i == 0 {
+					name = "default"
+				} else {
+					name = fmt.Sprintf("token-%d", i+1)
+				}
 			}
 			group := ""
 			if g, ok := m["group"].(string); ok {
@@ -405,7 +433,7 @@ func parseUserInfoAndBalance(dataObj interface{}) (*UserInfo, *BalanceInfo) {
 	if r, ok := data["role"].(float64); ok {
 		ui.Role = int(r)
 	}
-	
+
 	divisor := 500000.0
 	quota := 0.0
 	used := 0.0

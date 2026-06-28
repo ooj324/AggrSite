@@ -7,6 +7,8 @@ import (
 	"metapi/aggrsite/platform"
 	"metapi/aggrsite/service"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -15,6 +17,44 @@ type LoginAccountInput struct {
 	SiteID   int64  `json:"site_id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+func isLoginShieldBlocked(message string) bool {
+	text := strings.ToLower(message)
+	return strings.Contains(text, "acw_sc__v2") ||
+		strings.Contains(text, "var arg1") ||
+		strings.Contains(text, "cdn_sec_tc") ||
+		strings.Contains(text, "challenge") ||
+		strings.Contains(text, "cloudflare") ||
+		strings.Contains(text, "invalid character")
+}
+
+func guessPlatformUserIDFromUsername(username string) int64 {
+	text := strings.TrimSpace(username)
+	if text == "" {
+		return 0
+	}
+	matches := regexp.MustCompile(`(\d{3,8})$`).FindStringSubmatch(text)
+	if len(matches) < 2 {
+		return 0
+	}
+	id, err := strconv.ParseInt(matches[1], 10, 64)
+	if err != nil || id <= 0 {
+		return 0
+	}
+	return id
+}
+
+func preferredApiToken(apiToken string, apiTokens []platform.ApiTokenInfo) string {
+	for _, token := range apiTokens {
+		if token.Enabled && strings.TrimSpace(token.Key) != "" {
+			return strings.TrimSpace(token.Key)
+		}
+	}
+	if strings.TrimSpace(apiToken) != "" {
+		return strings.TrimSpace(apiToken)
+	}
+	return ""
 }
 
 func LoginAccount(w http.ResponseWriter, r *http.Request) {
@@ -51,8 +91,7 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 	loginResult, err := adapter.Login(site.URL, input.Username, input.Password, opt)
 	if err != nil {
 		errStr := err.Error()
-		shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
-		if shieldBlocked {
+		if isLoginShieldBlocked(errStr) {
 			fail(w, http.StatusBadRequest, "站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。")
 			return
 		}
@@ -61,8 +100,7 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !loginResult.Success {
-		shieldBlocked := strings.Contains(loginResult.Message, "acw_sc__v2") || strings.Contains(loginResult.Message, "var arg1") || strings.Contains(loginResult.Message, "challenge")
-		if shieldBlocked {
+		if isLoginShieldBlocked(loginResult.Message) {
 			fail(w, http.StatusBadRequest, "站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。")
 			return
 		}
@@ -70,14 +108,22 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try auto fetch api token
+	guessedPlatformUserID := guessPlatformUserIDFromUsername(input.Username)
+
+	// Match the main app: fetch both the preferred token and the full upstream token list,
+	// using the guessed platform user id for linuxdo_* style accounts.
 	var apiToken string
-	if fetchedApiToken, err := adapter.GetApiToken(site.URL, loginResult.AccessToken, 0, opt); err == nil && fetchedApiToken != "" {
+	if fetchedApiToken, err := adapter.GetApiToken(site.URL, loginResult.AccessToken, guessedPlatformUserID, opt); err == nil && fetchedApiToken != "" {
 		apiToken = fetchedApiToken
 	}
+	var apiTokens []platform.ApiTokenInfo
+	if fetchedTokens, err := adapter.GetApiTokens(site.URL, loginResult.AccessToken, guessedPlatformUserID, opt); err == nil {
+		apiTokens = fetchedTokens
+	}
+	preferredToken := preferredApiToken(apiToken, apiTokens)
 
 	existing, err := db.GetAccountBySiteAndUsername(site.ID, input.Username)
-	
+
 	// Create extra_config
 	var cfg map[string]interface{}
 	if existing != nil && existing.ExtraConfig != nil && *existing.ExtraConfig != "" {
@@ -92,7 +138,10 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		"passwordCipher": service.EncryptPassword(input.Password),
 		"updatedAt":      time.Now().UTC().Format(time.RFC3339),
 	}
-	
+	if guessedPlatformUserID > 0 {
+		cfg["platformUserId"] = guessedPlatformUserID
+	}
+
 	cfgBytes, _ := json.Marshal(cfg)
 	cfgString := string(cfgBytes)
 
@@ -109,8 +158,8 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		if db.DB.DriverName() == "postgres" {
 			updates["checkin_enabled"] = true
 		}
-		if apiToken != "" {
-			updates["api_token"] = apiToken
+		if preferredToken != "" {
+			updates["api_token"] = preferredToken
 		}
 		if err := db.UpdateAccount(accountID, updates); err != nil {
 			fail(w, http.StatusInternalServerError, "failed to update account: "+err.Error())
@@ -122,7 +171,7 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 			SiteID:         site.ID,
 			Username:       input.Username,
 			AccessToken:    loginResult.AccessToken,
-			ApiToken:       apiToken,
+			ApiToken:       preferredToken,
 			CheckinEnabled: true,
 		}
 		id, err := db.CreateAccount(createInput)
@@ -137,22 +186,21 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Trigger balance refresh asynchronously
-	go func() {
-		// refresh balance
-		service.RefreshBalance(accountID)
-		
-		// sync tokens
-		if tokens, err := adapter.GetApiTokens(site.URL, loginResult.AccessToken, 0, opt); err == nil {
-			for _, t := range tokens {
-				db.CreateAccountToken(accountID, t.Name, t.Key)
-			}
+	if len(apiTokens) > 0 {
+		for _, t := range apiTokens {
+			_, _ = db.CreateAccountToken(accountID, t.Name, t.Key)
 		}
-	}()
+	} else if preferredToken != "" {
+		_, _ = db.CreateAccountToken(accountID, "default", preferredToken)
+	}
+
+	_, _ = service.RefreshBalance(accountID)
 
 	account, _ := db.GetAccount(accountID)
 	ok(w, map[string]interface{}{
-		"account":        account,
-		"api_token_found": apiToken != "",
+		"account":         account,
+		"api_token_found": preferredToken != "",
+		"tokenCount":      len(apiTokens),
+		"reusedAccount":   existing != nil,
 	})
 }
