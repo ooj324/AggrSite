@@ -3,6 +3,7 @@ package platform
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,46 +21,91 @@ func (a *Sub2ApiAdapter) Checkin(_ string, _ string, _ int64, _ *RequestOption) 
 	return &CheckinResult{Success: false, Message: "Check-in is not supported by Sub2API"}, nil
 }
 
-func (a *Sub2ApiAdapter) GetBalance(baseURL, accessToken string, _ int64, opt *RequestOption) (*BalanceInfo, error) {
-	base := strings.TrimRight(baseURL, "/")
-	token := strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer ")
+func normalizeSub2BaseURL(baseURL string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
+}
 
-	url := fmt.Sprintf("%s/api/v1/auth/me", base)
-	headers := map[string]string{"Authorization": "Bearer " + token}
-
-	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch balance: %w", err)
+func stripBearerPrefix(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) >= 7 && strings.EqualFold(trimmed[:7], "Bearer ") {
+		return strings.TrimSpace(trimmed[7:])
 	}
+	return trimmed
+}
 
-	// Sub2API envelope: { code: 0, data: { balance: ... } }
-	code, _ := res["code"].(float64)
+func sub2AuthHeaders(accessToken string) map[string]string {
+	return map[string]string{"Authorization": "Bearer " + stripBearerPrefix(accessToken)}
+}
+
+func parseSub2Code(raw interface{}) (int, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return int(v), true
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func parseSub2Envelope(body map[string]interface{}, endpoint string) (interface{}, error) {
+	code, ok := parseSub2Code(body["code"])
+	if !ok {
+		return nil, fmt.Errorf("invalid response format from %s", endpoint)
+	}
 	if code != 0 {
-		msg := ExtractMessage(res)
+		msg := ExtractMessage(body)
 		if msg == "" {
-			msg = fmt.Sprintf("Error code %v", code)
+			msg = fmt.Sprintf("Error code %d from %s", code, endpoint)
 		}
-		return nil, fmt.Errorf(msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
+	data, ok := body["data"]
+	if !ok {
+		return nil, fmt.Errorf("missing data in response from %s", endpoint)
+	}
+	return data, nil
+}
 
-	data, _ := res["data"].(map[string]interface{})
-	if data == nil {
+func fetchSub2AuthMe(a *Sub2ApiAdapter, baseURL, accessToken string, opt *RequestOption) (map[string]interface{}, error) {
+	base := normalizeSub2BaseURL(baseURL)
+	endpoint := "/api/v1/auth/me"
+	var res map[string]interface{}
+	if err := a.FetchJSON(base+endpoint, "GET", sub2AuthHeaders(accessToken), nil, &res, opt); err != nil {
+		return nil, fmt.Errorf("failed to fetch auth/me: %w", err)
+	}
+	data, err := parseSub2Envelope(res, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	user, _ := data.(map[string]interface{})
+	if user == nil {
 		return nil, fmt.Errorf("no data in auth/me response")
+	}
+	return user, nil
+}
+
+func (a *Sub2ApiAdapter) GetBalance(baseURL, accessToken string, _ int64, opt *RequestOption) (*BalanceInfo, error) {
+	data, err := fetchSub2AuthMe(a, baseURL, accessToken, opt)
+	if err != nil {
+		return nil, err
 	}
 
 	balance := toFloat(data["balance"])
-	// Sub2API balance is already in USD; convert to internal quota unit and back
-	quotaValue := balance * 500000
 	return &BalanceInfo{
-		Balance: quotaValue / 500000,
+		Balance: balance,
 		Used:    0,
-		Quota:   quotaValue / 500000,
+		Quota:   balance,
 	}, nil
 }
 
 func (a *Sub2ApiAdapter) Login(_ string, _ string, _ string, _ *RequestOption) (*LoginResult, error) {
-	return &LoginResult{Success: false, Message: "Login is not supported by Sub2API"}, nil
+	return &LoginResult{Success: false, Message: "Sub2API uses JWT authentication; login is not supported"}, nil
 }
 
 func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
@@ -82,11 +128,11 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 		return &RefreshResult{Success: false, Message: "No refreshToken found in sub2apiAuth"}, nil
 	}
 
-	base := strings.TrimRight(baseURL, "/")
+	base := normalizeSub2BaseURL(baseURL)
 	url := fmt.Sprintf("%s/api/v1/auth/refresh", base)
-	
+
 	headers := map[string]string{}
-	token := strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer ")
+	token := stripBearerPrefix(accessToken)
 	if token != "" {
 		headers["Authorization"] = "Bearer " + token
 	}
@@ -101,16 +147,11 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 		return nil, fmt.Errorf("failed to fetch refresh: %w", err)
 	}
 
-	code, _ := res["code"].(float64)
-	if code != 0 {
-		msg := ExtractMessage(res)
-		if msg == "" {
-			msg = fmt.Sprintf("Refresh Error code %v", code)
-		}
-		return nil, fmt.Errorf(msg)
+	dataRaw, err := parseSub2Envelope(res, "/api/v1/auth/refresh")
+	if err != nil {
+		return nil, err
 	}
-
-	data, _ := res["data"].(map[string]interface{})
+	data, _ := dataRaw.(map[string]interface{})
 	if data == nil {
 		return nil, fmt.Errorf("no data in refresh response")
 	}
@@ -124,7 +165,7 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 	}
 
 	tokenExpiresAt := time.Now().UnixMilli() + int64(expiresIn*1000)
-	
+
 	sub2apiAuth["refreshToken"] = newRefreshToken
 	sub2apiAuth["tokenExpiresAt"] = tokenExpiresAt
 	cfg["sub2apiAuth"] = sub2apiAuth
@@ -142,6 +183,212 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 	}, nil
 }
 
-func (a *Sub2ApiAdapter) GetApiToken(_ string, _ string, _ int64, _ *RequestOption) (string, error) {
-	return "", fmt.Errorf("API Tokens are not supported by Sub2API")
+func parseSub2TokenEnabled(raw interface{}) bool {
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case float64:
+		return v == 1
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(v))
+		if normalized == "" {
+			return true
+		}
+		if normalized == "inactive" || normalized == "disabled" || normalized == "false" || normalized == "0" || normalized == "off" {
+			return false
+		}
+		return true
+	default:
+		return true
+	}
+}
+
+func parseSub2TokenItems(payload interface{}) []ApiTokenInfo {
+	arr := tokenItemsFromPayload(payload)
+	tokens := make([]ApiTokenInfo, 0, len(arr))
+	for i, item := range arr {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		key, _ := m["key"].(string)
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		name, _ := m["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			if id := strings.TrimSpace(fmt.Sprintf("%v", m["id"])); id != "" && id != "<nil>" {
+				name = "token-" + id
+			} else if i == 0 {
+				name = "default"
+			} else {
+				name = fmt.Sprintf("token-%d", i+1)
+			}
+		}
+		group := ""
+		if groupID := strings.TrimSpace(fmt.Sprintf("%v", m["group_id"])); groupID != "" && groupID != "<nil>" {
+			group = groupID
+		} else if groupID := strings.TrimSpace(fmt.Sprintf("%v", m["groupId"])); groupID != "" && groupID != "<nil>" {
+			group = groupID
+		} else if groupName, ok := m["group_name"].(string); ok {
+			group = strings.TrimSpace(groupName)
+		} else if groupName, ok := m["group"].(string); ok {
+			group = strings.TrimSpace(groupName)
+		}
+		tokens = append(tokens, ApiTokenInfo{
+			Name:       name,
+			Key:        key,
+			Enabled:    parseSub2TokenEnabled(m["status"]),
+			TokenGroup: group,
+		})
+	}
+	return tokens
+}
+
+func (a *Sub2ApiAdapter) GetApiTokens(baseURL, accessToken string, _ int64, opt *RequestOption) ([]ApiTokenInfo, error) {
+	base := normalizeSub2BaseURL(baseURL)
+	for _, endpoint := range []string{"/api/v1/keys?page=1&page_size=100", "/api/v1/api-keys?page=1&page_size=100"} {
+		var res map[string]interface{}
+		if err := a.FetchJSON(base+endpoint, "GET", sub2AuthHeaders(accessToken), nil, &res, opt); err != nil {
+			continue
+		}
+		data, err := parseSub2Envelope(res, endpoint)
+		if err != nil {
+			continue
+		}
+		tokens := parseSub2TokenItems(data)
+		if len(tokens) > 0 {
+			return tokens, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to fetch sub2api tokens")
+}
+
+func (a *Sub2ApiAdapter) GetApiToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
+	tokens, err := a.GetApiTokens(baseURL, accessToken, platformUserID, opt)
+	if err != nil {
+		return "", err
+	}
+	for _, token := range tokens {
+		if token.Enabled && strings.TrimSpace(token.Key) != "" {
+			return strings.TrimSpace(token.Key), nil
+		}
+	}
+	if len(tokens) > 0 {
+		return strings.TrimSpace(tokens[0].Key), nil
+	}
+	return "", fmt.Errorf("no valid api token found")
+}
+
+func extractSub2ModelIDs(payload interface{}) []string {
+	source := payload
+	if m, ok := payload.(map[string]interface{}); ok {
+		if data, ok := m["data"]; ok {
+			source = data
+		}
+	}
+	arr := tokenItemsFromPayload(source)
+	if len(arr) == 0 {
+		if m, ok := source.(map[string]interface{}); ok {
+			if models, ok := m["models"].([]interface{}); ok {
+				arr = models
+			}
+		}
+	}
+	models := make([]string, 0, len(arr))
+	seen := map[string]bool{}
+	for _, item := range arr {
+		model := ""
+		if s, ok := item.(string); ok {
+			model = s
+		} else if m, ok := item.(map[string]interface{}); ok {
+			if id, ok := m["id"].(string); ok {
+				model = id
+			} else if name, ok := m["name"].(string); ok {
+				model = name
+			}
+		}
+		model = strings.TrimSpace(strings.TrimPrefix(model, "models/"))
+		if model != "" && !seen[model] {
+			seen[model] = true
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+func sub2ModelEndpoints(baseURL string) []string {
+	base := normalizeSub2BaseURL(baseURL)
+	if strings.HasSuffix(strings.ToLower(base), "/models") {
+		return []string{base}
+	}
+	return []string{
+		base + "/v1/models",
+		base + "/api/v1/models",
+		base + "/v1beta/models",
+		base + "/antigravity/v1beta/models",
+	}
+}
+
+func (a *Sub2ApiAdapter) fetchModelsByToken(baseURL, token string, opt *RequestOption) []string {
+	authToken := stripBearerPrefix(token)
+	if authToken == "" {
+		return nil
+	}
+	for _, endpoint := range sub2ModelEndpoints(baseURL) {
+		var res map[string]interface{}
+		if err := a.FetchJSON(endpoint, "GET", map[string]string{"Authorization": "Bearer " + authToken}, nil, &res, opt); err != nil {
+			continue
+		}
+		if models := extractSub2ModelIDs(res); len(models) > 0 {
+			return models
+		}
+	}
+	return nil
+}
+
+func (a *Sub2ApiAdapter) GetModels(baseURL, accessToken string, _ int64, opt *RequestOption) ([]string, error) {
+	if models := a.fetchModelsByToken(baseURL, accessToken, opt); len(models) > 0 {
+		return models, nil
+	}
+	apiToken, err := a.GetApiToken(baseURL, accessToken, 0, opt)
+	if err == nil && stripBearerPrefix(apiToken) != stripBearerPrefix(accessToken) {
+		if models := a.fetchModelsByToken(baseURL, apiToken, opt); len(models) > 0 {
+			return models, nil
+		}
+	}
+	return []string{}, nil
+}
+
+func (a *Sub2ApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
+	if user, err := fetchSub2AuthMe(a, baseURL, accessToken, opt); err == nil {
+		username, _ := user["username"].(string)
+		email, _ := user["email"].(string)
+		display := strings.TrimSpace(username)
+		if display == "" {
+			display = strings.TrimSpace(email)
+			if at := strings.Index(display, "@"); at > 0 {
+				display = display[:at]
+			}
+		}
+		balance, _ := a.GetBalance(baseURL, accessToken, platformUserID, opt)
+		apiToken, _ := a.GetApiToken(baseURL, accessToken, platformUserID, opt)
+		return &VerifyTokenResult{
+			TokenType: "session",
+			UserInfo: &UserInfo{
+				Username: display,
+				Email:    email,
+			},
+			Balance:  balance,
+			ApiToken: apiToken,
+		}, nil
+	}
+
+	models, err := a.GetModels(baseURL, accessToken, platformUserID, opt)
+	if err == nil && len(models) > 0 {
+		return &VerifyTokenResult{TokenType: "apikey", Models: models}, nil
+	}
+	return &VerifyTokenResult{TokenType: "unknown"}, nil
 }

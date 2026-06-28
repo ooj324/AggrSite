@@ -3,6 +3,7 @@ package platform
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -500,6 +501,12 @@ func toFloat(v interface{}) float64 {
 		return float64(n)
 	case int:
 		return float64(n)
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return 0
+		}
+		return parsed
 	default:
 		return 0
 	}

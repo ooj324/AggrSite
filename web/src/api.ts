@@ -24,7 +24,7 @@ api.interceptors.response.use(
       if (res.success) {
         return res.data;
       } else {
-        return Promise.reject(res.message || 'API Error');
+        return Promise.reject(Object.assign(new Error(res.message || 'API Error'), { data: res }));
       }
     }
     return res;

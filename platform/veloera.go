@@ -13,13 +13,7 @@ func init() {
 
 func (a *VeloeraAdapter) Checkin(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*CheckinResult, error) {
 	url := fmt.Sprintf("%s/api/user/checkin", baseURL)
-	headers := map[string]string{"Authorization": "Bearer " + accessToken}
-	if platformUserID > 0 {
-		uid := fmt.Sprintf("%d", platformUserID)
-		headers["Veloera-User"] = uid
-		headers["New-API-User"] = uid
-		headers["User-id"] = uid
-	}
+	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
 	err := a.FetchJSON(url, "POST", headers, nil, &res, opt)
@@ -49,13 +43,7 @@ func (a *VeloeraAdapter) Checkin(baseURL, accessToken string, platformUserID int
 
 func (a *VeloeraAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
-	headers := map[string]string{"Authorization": "Bearer " + accessToken}
-	if platformUserID > 0 {
-		uid := fmt.Sprintf("%d", platformUserID)
-		headers["Veloera-User"] = uid
-		headers["New-API-User"] = uid
-		headers["User-id"] = uid
-	}
+	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
 	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
@@ -76,4 +64,30 @@ func (a *VeloeraAdapter) GetBalance(baseURL, accessToken string, platformUserID 
 		Used:    used,
 		Quota:   quota,
 	}, nil
+}
+
+func (a *VeloeraAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
+	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
+	var userRes map[string]interface{}
+	if err := a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt); err == nil {
+		success, _ := userRes["success"].(bool)
+		if success {
+			ui, _ := parseUserInfoAndBalance(userRes["data"])
+			balance, _ := a.GetBalance(baseURL, accessToken, platformUserID, opt)
+			apiToken, _ := a.GetApiToken(baseURL, accessToken, platformUserID, opt)
+			return &VerifyTokenResult{
+				TokenType: "session",
+				UserInfo:  ui,
+				Balance:   balance,
+				ApiToken:  apiToken,
+			}, nil
+		}
+	}
+
+	models, err := a.GetModels(baseURL, accessToken, platformUserID, opt)
+	if err == nil && len(models) > 0 {
+		return &VerifyTokenResult{TokenType: "apikey", Models: models}, nil
+	}
+
+	return &VerifyTokenResult{TokenType: "unknown"}, nil
 }

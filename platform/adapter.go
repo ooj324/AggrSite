@@ -281,17 +281,7 @@ func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOpti
 		return &LoginResult{Success: false, Message: message}, nil
 	}
 
-	data := res["data"]
-	var token string
-	if s, ok := data.(string); ok {
-		token = s
-	} else if m, ok := data.(map[string]interface{}); ok {
-		if t, ok := m["token"].(string); ok {
-			token = t
-		} else if t, ok := m["access_token"].(string); ok {
-			token = t
-		}
-	}
+	token := extractLoginAccessToken(res)
 
 	if token == "" {
 		return &LoginResult{Success: false, Message: "No token in response"}, nil
@@ -302,6 +292,24 @@ func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOpti
 		AccessToken: token,
 		Username:    username,
 	}, nil
+}
+
+func extractLoginAccessToken(payload map[string]interface{}) string {
+	candidates := []interface{}{
+		payload["data"],
+		payload["token"],
+		payload["accessToken"],
+		payload["access_token"],
+	}
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		candidates = append(candidates, data["token"], data["accessToken"], data["access_token"])
+	}
+	for _, candidate := range candidates {
+		if token, ok := candidate.(string); ok && strings.TrimSpace(token) != "" {
+			return strings.TrimSpace(token)
+		}
+	}
+	return ""
 }
 
 // LoginWithCookieFallback performs a username/password login and accepts either
@@ -324,17 +332,7 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 	success, _ := res["success"].(bool)
 	message := ExtractMessage(res)
 	if success {
-		data := res["data"]
-		var token string
-		if s, ok := data.(string); ok {
-			token = s
-		} else if m, ok := data.(map[string]interface{}); ok {
-			if t, ok := m["token"].(string); ok {
-				token = t
-			} else if t, ok := m["access_token"].(string); ok {
-				token = t
-			}
-		}
+		token := extractLoginAccessToken(res)
 		if token != "" {
 			return &LoginResult{Success: true, AccessToken: token, Username: username}, nil
 		}

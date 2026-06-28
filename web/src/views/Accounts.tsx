@@ -25,6 +25,27 @@ const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
 
 const resolveRuntimeHealth = (account: any) => parseAccountExtraConfig(account)?.runtimeHealth || null;
 
+const getErrorPayload = (err: any): any => err?.data || err?.response?.data || null;
+
+const getErrorMessage = (err: any): string => {
+  const payload = getErrorPayload(err);
+  if (payload?.message) return String(payload.message);
+  if (err?.message) return String(err.message);
+  return String(err || 'Unknown error');
+};
+
+const isShieldBlockedMessage = (message: string) => {
+  const text = message.toLowerCase();
+  return text.includes('shield') ||
+    text.includes('cloudflare') ||
+    text.includes('challenge') ||
+    text.includes('acw_sc__v2') ||
+    text.includes('cdn_sec_tc') ||
+    text.includes('var arg1') ||
+    text.includes('反爬') ||
+    text.includes('人机验证');
+};
+
 export default function Accounts() {
   const { showAlert } = useAlert();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -356,7 +377,7 @@ export default function Accounts() {
 function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   const { showAlert } = useAlert();
   const accountConfig = parseAccountExtraConfig(account);
-  const [mode, setMode] = useState<'login' | 'session' | 'apikey'>(account ? (accountConfig.credentialMode === 'apikey' ? 'apikey' : 'session') : 'session');
+  const [mode, setMode] = useState<'login' | 'session' | 'apikey'>(account ? (accountConfig.credentialMode === 'apikey' ? 'apikey' : 'session') : 'login');
   const [formData, setFormData] = useState({
     site_id: account?.site_id || (sites[0]?.id ?? 0),
     username: account?.username || '',
@@ -381,6 +402,14 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   const isBatchApiKeyInput = mode === 'apikey' && parsedApiKeys.length > 1;
   const currentSite = sites.find((s: Site) => s.id === formData.site_id);
   const isSub2Api = currentSite?.platform === 'sub2api';
+  const loginSupported = !isSub2Api;
+
+  useEffect(() => {
+    if (!account && !loginSupported && mode === 'login') {
+      setMode('session');
+      setVerifyResult(null);
+    }
+  }, [account, loginSupported, mode]);
 
   const handleVerify = async () => {
     if (!formData.access_token) {
@@ -421,8 +450,14 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
         showAlert(`验证失败: ${result.message}`);
       }
     } catch (err: any) {
-      const errMsg = err.toString();
-      setVerifyResult({ success: false, message: errMsg });
+      const payload = getErrorPayload(err);
+      const errMsg = getErrorMessage(err);
+      setVerifyResult({
+        success: false,
+        message: errMsg,
+        needsUserId: Boolean(payload?.needsUserId) || errMsg.includes('New-API-User') || errMsg.toLowerCase().includes('user id'),
+        shieldBlocked: Boolean(payload?.shieldBlocked) || isShieldBlockedMessage(errMsg),
+      });
       showAlert(`验证报错: ${errMsg}`);
     } finally {
       setVerifyLoading(false);
@@ -453,8 +488,9 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           username: formData.username,
           password: formData.password,
         });
+        const tokenCount = Number((res as any).tokenCount || 0);
         if ((res as any).api_token_found) {
-          showAlert('成功登录并获取 API 令牌！');
+          showAlert(tokenCount > 0 ? `成功登录并同步 ${tokenCount} 个 API 令牌！` : '成功登录并获取 API 令牌！');
         } else {
           showAlert('成功登录，但未找到活跃的 API 令牌。');
         }
@@ -497,7 +533,8 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
       }
       onSaved();
     } catch (err: any) {
-      showAlert(`错误: ${err}`);
+      const errMsg = getErrorMessage(err);
+      showAlert(`错误: ${errMsg}`);
       setLoading(false);
     }
   };
@@ -511,8 +548,9 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
             <button
               type="button"
-              onClick={() => { setMode('login'); setVerifyResult(null); }}
-              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+              disabled={!loginSupported}
+              onClick={() => { if (loginSupported) { setMode('login'); setVerifyResult(null); } }}
+              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
             >
               账号密码
             </button>
@@ -535,7 +573,15 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
 
         <form id="account-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <select className={inputClass} value={formData.site_id} onChange={e => { setFormData({ ...formData, site_id: Number(e.target.value) }); setVerifyResult(null); }}>
+            <select className={inputClass} value={formData.site_id} onChange={e => {
+              const siteId = Number(e.target.value);
+              const nextSite = sites.find((s: Site) => s.id === siteId);
+              setFormData({ ...formData, site_id: siteId });
+              if (!account && nextSite?.platform === 'sub2api' && mode === 'login') {
+                setMode('session');
+              }
+              setVerifyResult(null);
+            }}>
               {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
 
@@ -597,17 +643,21 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           {verifyResult && !verifyResult.success && verifyResult.needsUserId && (
             <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300 rounded-lg text-[13px] border border-yellow-200 dark:border-yellow-800">
               <div className="font-semibold">此站点要求用户 ID，请补充后重新验证</div>
+              {verifyResult.message && <div className="opacity-80 mt-1">{verifyResult.message}</div>}
             </div>
           )}
           {verifyResult && !verifyResult.success && !verifyResult.needsUserId && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-lg text-[13px] border border-red-200 dark:border-red-800">
-              <div className="font-semibold">Token 无效或已过期</div>
+              <div className="font-semibold">{verifyResult.shieldBlocked ? '站点存在人机验证或反爬拦截' : 'Token 无效或已过期'}</div>
               <div className="opacity-80 mt-1">{verifyResult.message}</div>
             </div>
           )}
 
           {mode === 'login' && !account && (
             <p className="text-[12px] text-textMuted mt-[-8px]">密码用于自动刷新令牌。它将被加密存储。</p>
+          )}
+          {!loginSupported && !account && (
+            <p className="text-[12px] text-textMuted mt-[-8px]">当前平台不支持账号密码登录，请使用 Session 令牌或 API Key。</p>
           )}
 
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mt-2">
