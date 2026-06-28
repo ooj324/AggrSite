@@ -35,10 +35,19 @@ func CheckinAccount(w http.ResponseWriter, r *http.Request) {
 
 func ListCheckinLogs(w http.ResponseWriter, r *http.Request) {
 	accountID := queryInt64Ptr(r, "accountId")
-	limit := queryInt(r, "limit", 50)
+	limit := clampInt(queryInt(r, "limit", 50), 10, 200)
 	offset := queryInt(r, "offset", 0)
+	if offset < 0 {
+		offset = 0
+	}
+	filter := db.CheckinLogFilter{
+		AccountID: accountID,
+		Status:    r.URL.Query().Get("status"),
+		Start:     r.URL.Query().Get("start"),
+		End:       r.URL.Query().Get("end"),
+	}
 
-	logs, total, err := db.ListCheckinLogsWithAccounts(accountID, limit, offset)
+	logs, total, err := db.ListCheckinLogsWithAccounts(filter, limit, offset)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return

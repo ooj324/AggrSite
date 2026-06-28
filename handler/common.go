@@ -70,6 +70,16 @@ func queryInt(r *http.Request, key string, fallback int) int {
 	return n
 }
 
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 func queryInt64Ptr(r *http.Request, key string) *int64 {
 	s := r.URL.Query().Get(key)
 	if s == "" {

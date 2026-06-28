@@ -22,6 +22,14 @@ api.interceptors.response.use(
     const res = response.data;
     if (res && typeof res === 'object' && 'success' in res) {
       if (res.success) {
+        if ('total' in res || 'limit' in res || 'offset' in res) {
+          return {
+            items: res.data,
+            total: res.total || 0,
+            limit: res.limit || 0,
+            offset: res.offset || 0,
+          };
+        }
         return res.data;
       } else {
         return Promise.reject(Object.assign(new Error(res.message || 'API Error'), { data: res }));

@@ -10,10 +10,19 @@ import (
 )
 
 func ListEvents(w http.ResponseWriter, r *http.Request) {
-	limit := queryInt(r, "limit", 50)
+	limit := clampInt(queryInt(r, "limit", 50), 10, 200)
 	offset := queryInt(r, "offset", 0)
+	if offset < 0 {
+		offset = 0
+	}
+	filter := db.EventFilter{
+		Level: r.URL.Query().Get("level"),
+		Type:  r.URL.Query().Get("type"),
+		Start: r.URL.Query().Get("start"),
+		End:   r.URL.Query().Get("end"),
+	}
 
-	events, total, err := db.ListEvents(limit, offset)
+	events, total, err := db.ListEvents(filter, limit, offset)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return

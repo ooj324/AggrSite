@@ -608,7 +608,14 @@ type CheckinLogWithAccount struct {
 	SiteURL         *string `db:"site_url" json:"site_url"`
 }
 
-func ListCheckinLogsWithAccounts(accountID *int64, limit, offset int) ([]CheckinLogWithAccount, int, error) {
+type CheckinLogFilter struct {
+	AccountID *int64
+	Status    string
+	Start     string
+	End       string
+}
+
+func ListCheckinLogsWithAccounts(filter CheckinLogFilter, limit, offset int) ([]CheckinLogWithAccount, int, error) {
 	var logs []CheckinLogWithAccount
 	var total int
 	baseQuery := `SELECT cl.id, cl.account_id, cl.status, cl.message, cl.reward, cl.created_at,
@@ -616,13 +623,32 @@ func ListCheckinLogsWithAccounts(accountID *int64, limit, offset int) ([]Checkin
 		FROM checkin_logs cl
 		LEFT JOIN accounts a ON cl.account_id = a.id
 		LEFT JOIN sites s ON a.site_id = s.id`
-	if accountID != nil {
-		_ = Get(&total, `SELECT COUNT(*) FROM checkin_logs WHERE account_id = ?`, *accountID)
-		err := Select(&logs, baseQuery+` WHERE cl.account_id = ? ORDER BY cl.created_at DESC LIMIT ? OFFSET ?`, *accountID, limit, offset)
-		return logs, total, err
+	conditions := []string{}
+	args := []interface{}{}
+	if filter.AccountID != nil {
+		conditions = append(conditions, "cl.account_id = ?")
+		args = append(args, *filter.AccountID)
 	}
-	_ = Get(&total, `SELECT COUNT(*) FROM checkin_logs`)
-	err := Select(&logs, baseQuery+` ORDER BY cl.created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	if filter.Status != "" && filter.Status != "all" {
+		conditions = append(conditions, "cl.status = ?")
+		args = append(args, filter.Status)
+	}
+	if filter.Start != "" {
+		conditions = append(conditions, "cl.created_at >= ?")
+		args = append(args, filter.Start)
+	}
+	if filter.End != "" {
+		conditions = append(conditions, "cl.created_at < ?")
+		args = append(args, filter.End)
+	}
+	where := ""
+	if len(conditions) > 0 {
+		where = " WHERE " + strings.Join(conditions, " AND ")
+	}
+	countArgs := append([]interface{}{}, args...)
+	_ = Get(&total, `SELECT COUNT(*) FROM checkin_logs cl`+where, countArgs...)
+	args = append(args, limit, offset)
+	err := Select(&logs, baseQuery+where+` ORDER BY cl.created_at DESC LIMIT ? OFFSET ?`, args...)
 	return logs, total, err
 }
 
@@ -652,11 +678,42 @@ func InsertEvent(typ, title, message, level string, relatedID *int64, relatedTyp
 	return err
 }
 
-func ListEvents(limit, offset int) ([]Event, int, error) {
+type EventFilter struct {
+	Level string
+	Type  string
+	Start string
+	End   string
+}
+
+func ListEvents(filter EventFilter, limit, offset int) ([]Event, int, error) {
 	var events []Event
 	var total int
-	_ = Get(&total, `SELECT COUNT(*) FROM events`)
-	err := Select(&events, `SELECT id, COALESCE(type, 'system') AS type, COALESCE(title, 'Event') AS title, message, COALESCE(level, 'info') AS level, read, related_id, related_type, created_at FROM events ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	conditions := []string{}
+	args := []interface{}{}
+	if filter.Level != "" && filter.Level != "all" {
+		conditions = append(conditions, "COALESCE(level, 'info') = ?")
+		args = append(args, filter.Level)
+	}
+	if filter.Type != "" && filter.Type != "all" {
+		conditions = append(conditions, "COALESCE(type, 'system') = ?")
+		args = append(args, filter.Type)
+	}
+	if filter.Start != "" {
+		conditions = append(conditions, "created_at >= ?")
+		args = append(args, filter.Start)
+	}
+	if filter.End != "" {
+		conditions = append(conditions, "created_at < ?")
+		args = append(args, filter.End)
+	}
+	where := ""
+	if len(conditions) > 0 {
+		where = " WHERE " + strings.Join(conditions, " AND ")
+	}
+	countArgs := append([]interface{}{}, args...)
+	_ = Get(&total, `SELECT COUNT(*) FROM events`+where, countArgs...)
+	args = append(args, limit, offset)
+	err := Select(&events, `SELECT id, COALESCE(type, 'system') AS type, COALESCE(title, 'Event') AS title, message, COALESCE(level, 'info') AS level, read, related_id, related_type, created_at FROM events`+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`, args...)
 	return events, total, err
 }
 

@@ -5,26 +5,85 @@ import { RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAlert } from '../components/AlertProvider';
 
+type TimeFilter = 'today' | 'week' | 'all';
+type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+const pageSizeOptions = [25, 50, 100];
+
+const getTimeParams = (range: TimeFilter) => {
+  if (range === 'all') return {};
+  const now = new Date();
+  const end = new Date(now);
+  const start = new Date(now);
+  if (range === 'today') {
+    start.setHours(0, 0, 0, 0);
+    end.setHours(24, 0, 0, 0);
+  } else {
+    start.setDate(start.getDate() - 7);
+  }
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  };
+};
+
+const buildQuery = (params: Record<string, string | number | undefined>) => {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '' || value === 'all') return;
+    query.set(key, String(value));
+  });
+  return query.toString();
+};
+
 export default function Logs() {
   const { showAlert } = useAlert();
   const [logs, setLogs] = useState<CheckinLog[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  const [logTotal, setLogTotal] = useState(0);
+  const [eventTotal, setEventTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'checkin' | 'events'>('checkin');
-  
+
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failed' | 'skipped'>('all');
-  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week'>('all');
+  const [eventLevelFilter, setEventLevelFilter] = useState<'all' | 'info' | 'warning' | 'error'>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
+  const [pageSize, setPageSize] = useState(50);
+  const [checkinPage, setCheckinPage] = useState(1);
+  const [eventPage, setEventPage] = useState(1);
   const [runningAll, setRunningAll] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     try {
+      const timeParams = getTimeParams(timeFilter);
+      const checkinQuery = buildQuery({
+        limit: pageSize,
+        offset: (checkinPage - 1) * pageSize,
+        status: statusFilter,
+        ...timeParams,
+      });
+      const eventQuery = buildQuery({
+        limit: pageSize,
+        offset: (eventPage - 1) * pageSize,
+        level: eventLevelFilter,
+        ...timeParams,
+      });
       const [logsRes, eventsRes] = await Promise.all([
-        api.get('/api/checkin/logs?limit=50'),
-        api.get('/api/events?limit=50')
+        api.get(`/api/checkin/logs?${checkinQuery}`),
+        api.get(`/api/events?${eventQuery}`)
       ]);
-      setLogs(logsRes as any || []);
-      setEvents(eventsRes as any || []);
+      const logPage = logsRes as unknown as PaginatedResult<CheckinLog>;
+      const eventPageResult = eventsRes as unknown as PaginatedResult<Event>;
+      setLogs(logPage.items || []);
+      setLogTotal(logPage.total || 0);
+      setEvents(eventPageResult.items || []);
+      setEventTotal(eventPageResult.total || 0);
     } catch (err: any) {
       console.error(err);
       showAlert(`加载失败: ${err}`);
@@ -35,7 +94,7 @@ export default function Logs() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [timeFilter, statusFilter, eventLevelFilter, pageSize, checkinPage, eventPage]);
 
   const handleCheckinAll = async () => {
     if (!confirm('确定要运行所有账号的签到任务吗？')) return;
@@ -51,21 +110,14 @@ export default function Logs() {
     }
   };
 
-  const filteredLogs = logs.filter(log => {
-    if (statusFilter !== 'all' && log.status !== statusFilter) return false;
-    
-    if (timeFilter !== 'all') {
-      const logDate = new Date(log.created_at);
-      const now = new Date();
-      if (timeFilter === 'today') {
-        if (logDate.toDateString() !== now.toDateString()) return false;
-      } else if (timeFilter === 'week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        if (logDate < weekAgo) return false;
-      }
-    }
-    return true;
-  });
+  const activeTotal = activeTab === 'checkin' ? logTotal : eventTotal;
+  const activePage = activeTab === 'checkin' ? checkinPage : eventPage;
+  const totalPages = Math.max(1, Math.ceil(activeTotal / pageSize));
+  const setActivePage = (page: number) => {
+    const next = Math.min(Math.max(1, page), totalPages);
+    if (activeTab === 'checkin') setCheckinPage(next);
+    else setEventPage(next);
+  };
 
   const selectClass = "px-3 py-1.5 bg-surface border border-border rounded-lg text-[13px] text-textPrimary focus:outline-none focus:border-primary transition-all pr-8";
   const btnWarningClass = "relative inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-warning rounded-sm transition-all duration-200 hover:bg-warning/90 hover:-translate-y-px hover:shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
@@ -95,39 +147,65 @@ export default function Logs() {
             onClick={() => setActiveTab('checkin')}
             className={`px-4 py-1.5 text-[13px] font-medium rounded-lg transition-all whitespace-nowrap ${activeTab === 'checkin' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
           >
-            签到日志 <span className="font-mono opacity-70 ml-1">{logs.length}</span>
+            签到日志 <span className="font-mono opacity-70 ml-1">{logTotal}</span>
           </button>
           <button
             onClick={() => setActiveTab('events')}
             className={`px-4 py-1.5 text-[13px] font-medium rounded-lg transition-all whitespace-nowrap ${activeTab === 'events' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
           >
-            系统事件 <span className="font-mono opacity-70 ml-1">{events.length}</span>
+            系统事件 <span className="font-mono opacity-70 ml-1">{eventTotal}</span>
           </button>
         </div>
-        
-        {activeTab === 'checkin' && (
-          <div className="flex items-center gap-2">
-            <select 
-              className={selectClass}
-              value={timeFilter} 
-              onChange={e => setTimeFilter(e.target.value as any)}
-            >
-              <option value="all">所有时间</option>
-              <option value="today">今天</option>
-              <option value="week">最近7天</option>
-            </select>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className={selectClass}
+            value={timeFilter}
+            onChange={e => {
+              setTimeFilter(e.target.value as TimeFilter);
+              setCheckinPage(1);
+              setEventPage(1);
+            }}
+          >
+            <option value="today">今天</option>
+            <option value="week">最近7天</option>
+            <option value="all">所有时间</option>
+          </select>
+          {activeTab === 'checkin' ? (
             <select 
               className={selectClass}
               value={statusFilter} 
-              onChange={e => setStatusFilter(e.target.value as any)}
+              onChange={e => { setStatusFilter(e.target.value as any); setCheckinPage(1); }}
             >
               <option value="all">所有状态</option>
               <option value="success">成功</option>
               <option value="failed">失败</option>
               <option value="skipped">跳过</option>
             </select>
-          </div>
-        )}
+          ) : (
+            <select
+              className={selectClass}
+              value={eventLevelFilter}
+              onChange={e => { setEventLevelFilter(e.target.value as any); setEventPage(1); }}
+            >
+              <option value="all">所有级别</option>
+              <option value="info">信息</option>
+              <option value="warning">警告</option>
+              <option value="error">错误</option>
+            </select>
+          )}
+          <select
+            className={selectClass}
+            value={pageSize}
+            onChange={e => {
+              setPageSize(Number(e.target.value));
+              setCheckinPage(1);
+              setEventPage(1);
+            }}
+          >
+            {pageSizeOptions.map(size => <option key={size} value={size}>每页 {size}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="bg-surface rounded-xl border border-border shadow-sm overflow-x-auto">
@@ -158,10 +236,10 @@ export default function Logs() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredLogs.map((log, i) => (
+                  {logs.map((log, i) => (
                     <tr key={i}>
                       <td className="text-[12px] text-textSecondary whitespace-nowrap">
-                        {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}
+                        {log.created_at ? format(new Date(log.created_at), 'MM/dd HH:mm:ss') : '-'}
                       </td>
                       <td className="font-semibold text-textPrimary">
                         {log.account_username || `Account #${log.account_id}`}
@@ -200,7 +278,7 @@ export default function Logs() {
                 </tbody>
               </table>
             )}
-            {filteredLogs.length === 0 && (
+            {logs.length === 0 && (
               <div className="flex flex-col items-center justify-center p-12 text-center">
                 <svg className="w-12 h-12 text-textMuted mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -226,7 +304,7 @@ export default function Logs() {
                   {events.map((ev, i) => (
                     <tr key={i}>
                       <td className="text-[12px] text-textSecondary whitespace-nowrap">
-                        {format(new Date(ev.created_at), 'MM/dd HH:mm:ss')}
+                        {ev.created_at ? format(new Date(ev.created_at), 'MM/dd HH:mm:ss') : '-'}
                       </td>
                       <td>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium bg-infoSoft text-info">{ev.type}</span>
@@ -240,8 +318,8 @@ export default function Logs() {
                         {ev.title}
                       </td>
                       <td className="max-w-[400px]">
-                        <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-textSecondary" title={ev.message}>
-                          {ev.message}
+                        <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-textSecondary" title={ev.message || ''}>
+                          {ev.message || '-'}
                         </span>
                       </td>
                     </tr>
@@ -260,6 +338,32 @@ export default function Logs() {
           </>
         )}
       </div>
+      {!loading && activeTotal > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 text-[13px] text-textSecondary">
+          <div>
+            第 <span className="font-mono text-textPrimary">{activePage}</span> / <span className="font-mono text-textPrimary">{totalPages}</span> 页，
+            共 <span className="font-mono text-textPrimary">{activeTotal}</span> 条
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={btnSecondaryClass}
+              disabled={activePage <= 1}
+              onClick={() => setActivePage(activePage - 1)}
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              className={btnSecondaryClass}
+              disabled={activePage >= totalPages}
+              onClick={() => setActivePage(activePage + 1)}
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

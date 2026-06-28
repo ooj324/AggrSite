@@ -155,7 +155,7 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 			"extra_config":    cfgString,
 		}
 		// In sqlite, checkin_enabled should be 1
-		if db.DB.DriverName() == "postgres" {
+		if db.IsPostgres() {
 			updates["checkin_enabled"] = true
 		}
 		if preferredToken != "" {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon } from 'lucide-react';
+import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon, RefreshCw } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
 import { useAlert } from '../components/AlertProvider';
@@ -24,6 +24,26 @@ const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
 };
 
 const resolveRuntimeHealth = (account: any) => parseAccountExtraConfig(account)?.runtimeHealth || null;
+
+const runtimeSourceLabel = (source?: string) => {
+  const normalized = (source || '').trim().toLowerCase();
+  if (normalized === 'checkin') return '签到';
+  if (normalized === 'balance') return '余额';
+  if (normalized === 'login') return '登录';
+  if (normalized === 'verify') return '验证';
+  if (normalized === 'system') return '系统';
+  return normalized || '';
+};
+
+const normalizeRuntimeReason = (reason?: string) => {
+  const text = (reason || '').trim();
+  if (!text) return '正常';
+  return text
+    .replace(/^failed to fetch balance:\s*/i, '')
+    .replace(/^failed:\s*/i, '')
+    .replace(/^error:\s*/i, '')
+    .trim() || text;
+};
 
 const getErrorPayload = (err: any): any => err?.data || err?.response?.data || null;
 
@@ -54,7 +74,7 @@ export default function Accounts() {
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [rebindMode, setRebindMode] = useState(false);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [actionLoading, setActionLoading] = useState<{ id: number; type: 'checkin' | 'refresh' | 'toggle-checkin' } | null>(null);
 
   // Selection & Batch
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -140,7 +160,7 @@ export default function Accounts() {
       return;
     }
 
-    setActionLoading(id);
+    setActionLoading({ id, type });
     try {
       if (type === 'checkin') await api.post(`/api/checkin/${id}`);
       if (type === 'refresh') await api.post(`/api/balance/refresh/${id}`);
@@ -218,14 +238,19 @@ export default function Accounts() {
                     <th>余额</th>
                     <th>已用</th>
                     <th>签到</th>
-                    <th className="text-center w-[200px]">操作</th>
+                    <th className="text-center w-[220px]">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accounts.map(acc => {
                     const runtimeHealth = resolveRuntimeHealth(acc);
                     const runtimeState = runtimeHealth?.state || (acc.status === 'active' ? 'healthy' : 'disabled');
-                    const runtimeReason = runtimeHealth?.reason || (acc.status === 'active' ? '正常' : '账号已禁用');
+                    const runtimeReason = normalizeRuntimeReason(runtimeHealth?.reason || (acc.status === 'active' ? '正常' : '账号已禁用'));
+                    const runtimeSource = runtimeSourceLabel(runtimeHealth?.source);
+                    const isRowLoading = actionLoading?.id === acc.id;
+                    const isToggleLoading = isRowLoading && actionLoading?.type === 'toggle-checkin';
+                    const isCheckinLoading = isRowLoading && actionLoading?.type === 'checkin';
+                    const isRefreshLoading = isRowLoading && actionLoading?.type === 'refresh';
                     return (
                     <tr key={acc.id} className={`group animate-slide-up ${selectedIds.includes(acc.id) ? '!bg-primary/5' : ''}`}>
                       <td className="text-center">
@@ -261,25 +286,26 @@ export default function Accounts() {
                         )}
                       </td>
                       <td>
-                        <div className="flex flex-col gap-1.5 items-start">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${
-                              runtimeState === 'healthy'
-                                ? 'bg-successSoft text-success'
-                                : runtimeState === 'degraded'
-                                  ? 'bg-warningSoft text-warning'
-                                  : runtimeState === 'disabled'
-                                    ? 'bg-black/5 text-textSecondary dark:bg-white/5'
-                                    : 'bg-dangerSoft text-danger'
-                            }`}
-                            title={runtimeReason}
-                          >
-                            {acc.status === 'expired' ? '令牌失效' : runtimeState === 'healthy' ? '正常' : runtimeState === 'degraded' ? '需关注' : runtimeState === 'disabled' ? '禁用' : '异常'}
-                          </span>
-                          <span className="max-w-[140px] truncate text-[11px] text-textMuted" title={runtimeReason}>{runtimeReason}</span>
-                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={actionLoading === acc.id} className="text-[12px] text-primary hover:text-primaryHover hover:underline disabled:opacity-50 disabled:no-underline transition-colors p-0">
-                            {actionLoading === acc.id ? <span className="w-3 h-3 border-2 border-primary/20 border-t-primary rounded-full animate-spin inline-block align-middle" /> : '刷新余额'}
-                          </button>
+                        <div className="flex flex-col gap-1.5 items-start max-w-[180px]" title={runtimeHealth?.reason || runtimeReason}>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${
+                                runtimeState === 'healthy'
+                                  ? 'bg-successSoft text-success'
+                                  : runtimeState === 'degraded'
+                                    ? 'bg-warningSoft text-warning'
+                                    : runtimeState === 'disabled'
+                                      ? 'bg-black/5 text-textSecondary dark:bg-white/5'
+                                      : 'bg-dangerSoft text-danger'
+                              }`}
+                            >
+                              {acc.status === 'expired' ? '令牌失效' : runtimeState === 'healthy' ? '正常' : runtimeState === 'degraded' ? '需关注' : runtimeState === 'disabled' ? '禁用' : '异常'}
+                            </span>
+                            {runtimeSource && (
+                              <span className="text-[11px] text-textMuted">{runtimeSource}</span>
+                            )}
+                          </div>
+                          <span className="w-full truncate text-[11px] text-textMuted">{runtimeReason}</span>
                         </div>
                       </td>
                       <td className="font-mono">
@@ -308,10 +334,10 @@ export default function Accounts() {
                             type="button"
                             className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded transition-all duration-150 ${acc.checkin_enabled ? "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200" : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"} disabled:opacity-60 disabled:cursor-not-allowed`}
                             onClick={() => handleAction(acc.id, 'toggle-checkin')}
-                            disabled={actionLoading === acc.id}
+                            disabled={isRowLoading}
                             title={acc.checkin_enabled ? '已开启自动签到' : '已关闭自动签到'}
                           >
-                            {actionLoading === acc.id ? (
+                            {isToggleLoading ? (
                               <span className="w-2.5 h-2.5 border-2 border-current/20 border-t-current rounded-full animate-spin" />
                             ) : acc.checkin_enabled ? (
                               <span>ON</span>
@@ -320,10 +346,13 @@ export default function Accounts() {
                             )}
                           </button>
                           <div className="w-[1px] h-3 bg-border" />
-                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={actionLoading === acc.id} className="p-1.5 text-warning hover:text-warning/80 hover:bg-warning/10 rounded-md transition-colors disabled:opacity-50" title="手动签到">
-                            {actionLoading === acc.id ? <span className="w-4 h-4 border-2 border-warning/20 border-t-warning rounded-full animate-spin inline-block align-middle" /> : <CalendarCheck size={16} />}
+                          <button onClick={() => handleAction(acc.id, 'checkin')} disabled={isRowLoading} className="p-1.5 text-warning hover:text-warning/80 hover:bg-warning/10 rounded-md transition-colors disabled:opacity-50" title="手动签到">
+                            {isCheckinLoading ? <span className="w-4 h-4 border-2 border-warning/20 border-t-warning rounded-full animate-spin inline-block align-middle" /> : <CalendarCheck size={16} />}
                           </button>
-                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={actionLoading === acc.id} className="p-1.5 text-primary hover:text-primaryHover hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50" title="换绑">
+                          <button onClick={() => handleAction(acc.id, 'refresh')} disabled={isRowLoading} className="p-1.5 text-info hover:text-info/80 hover:bg-info/10 rounded-md transition-colors disabled:opacity-50" title="刷新余额">
+                            {isRefreshLoading ? <span className="w-4 h-4 border-2 border-info/20 border-t-info rounded-full animate-spin inline-block align-middle" /> : <RefreshCw size={16} />}
+                          </button>
+                          <button onClick={() => handleAction(acc.id, 'rebind')} disabled={isRowLoading} className="p-1.5 text-primary hover:text-primaryHover hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50" title="换绑">
                             <LinkIcon size={16} />
                           </button>
                           <div className="w-[1px] h-3 bg-border mx-0.5" />

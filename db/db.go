@@ -10,13 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var DB *sqlx.DB
 var driverName string
+var sqlDriverName string
 
 func Init() {
 	dbPath := strings.TrimSpace(config.C.DBUrl)
@@ -24,9 +26,18 @@ func Init() {
 
 	if strings.HasPrefix(dbPath, "postgres://") || strings.HasPrefix(dbPath, "postgresql://") {
 		driverName = "postgres"
-		dsn = dbPath
+		sqlDriverName = "pgx"
+		sqlx.BindDriver(sqlDriverName, sqlx.DOLLAR)
+		cfg, err := pgx.ParseConfig(dbPath)
+		if err != nil {
+			slog.Error("Failed to parse postgres DSN", "err", err)
+			panic(err)
+		}
+		cfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+		dsn = stdlib.RegisterConnConfig(cfg)
 	} else {
 		driverName = "sqlite3"
+		sqlDriverName = "sqlite3"
 		// Ensure directory exists
 		dir := filepath.Dir(dbPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -36,7 +47,7 @@ func Init() {
 	}
 
 	var err error
-	DB, err = sqlx.Connect(driverName, dsn)
+	DB, err = sqlx.Connect(sqlDriverName, dsn)
 	if err != nil {
 		slog.Error("Failed to connect to database", "path", dbPath, "err", err)
 		panic(err)
@@ -51,7 +62,7 @@ func Init() {
 		DB.SetConnMaxLifetime(5 * time.Minute)
 	}
 
-	slog.Info("Database connected", "driver", driverName)
+	slog.Info("Database connected", "driver", driverName, "sql_driver", sqlDriverName)
 
 	EnsureAccountTokensTable()
 	EnsureSettingsTable()
@@ -67,16 +78,45 @@ func NowUTC() string {
 	return "datetime('now')"
 }
 
+func IsPostgres() bool {
+	return driverName == "postgres"
+}
+
 // ---- Query Helpers (auto Rebind) ----
 
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	return DB.Exec(DB.Rebind(query), args...)
+	res, err := DB.Exec(DB.Rebind(query), args...)
+	if isPreparedStatementRetryable(err) {
+		_ = DB.Ping()
+		return DB.Exec(DB.Rebind(query), args...)
+	}
+	return res, err
 }
 
 func Get(dest interface{}, query string, args ...interface{}) error {
-	return DB.Get(dest, DB.Rebind(query), args...)
+	err := DB.Get(dest, DB.Rebind(query), args...)
+	if isPreparedStatementRetryable(err) {
+		_ = DB.Ping()
+		return DB.Get(dest, DB.Rebind(query), args...)
+	}
+	return err
 }
 
 func Select(dest interface{}, query string, args ...interface{}) error {
-	return DB.Select(dest, DB.Rebind(query), args...)
+	err := DB.Select(dest, DB.Rebind(query), args...)
+	if isPreparedStatementRetryable(err) {
+		_ = DB.Ping()
+		return DB.Select(dest, DB.Rebind(query), args...)
+	}
+	return err
+}
+
+func isPreparedStatementRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unnamed prepared statement does not exist") ||
+		strings.Contains(msg, "SQLSTATE 26000") ||
+		strings.Contains(msg, "(26000)")
 }
