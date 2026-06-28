@@ -676,9 +676,14 @@ type Setting struct {
 	Value *string `db:"value" json:"value"`
 }
 
+func NormalizeSettingKey(key string) string {
+	return strings.ToLower(strings.TrimSpace(key))
+}
+
 func GetSetting(key string) (*Setting, error) {
 	var s Setting
-	err := Get(&s, `SELECT * FROM settings WHERE key = ?`, key)
+	normalizedKey := NormalizeSettingKey(key)
+	err := Get(&s, `SELECT * FROM settings WHERE LOWER(key) = LOWER(?) ORDER BY CASE WHEN key = ? THEN 0 ELSE 1 END LIMIT 1`, normalizedKey, normalizedKey)
 	if err != nil {
 		return nil, err
 	}
@@ -686,6 +691,11 @@ func GetSetting(key string) (*Setting, error) {
 }
 
 func UpsertSetting(key, value string) error {
+	key = NormalizeSettingKey(key)
+	if existing, err := GetSetting(key); err == nil && existing.Key != key {
+		_, err := Exec(`UPDATE settings SET key = ?, value = ? WHERE key = ?`, key, value, existing.Key)
+		return err
+	}
 	if driverName == "postgres" {
 		_, err := Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, key, value)
 		return err

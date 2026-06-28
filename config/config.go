@@ -3,7 +3,6 @@ package config
 import (
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -22,9 +21,7 @@ type Config struct {
 	AuthToken string
 
 	// Checkin
-	CheckinCron          string
-	CheckinScheduleMode  string // "cron" | "interval"
-	CheckinIntervalHours int
+	CheckinCron string
 
 	// Balance
 	BalanceRefreshCron string
@@ -53,9 +50,7 @@ func Init() {
 
 		AuthToken: envStr("AUTH_TOKEN", "change-me-admin-token"),
 
-		CheckinCron:          envStr("CHECKIN_CRON", "0 8 * * *"),
-		CheckinScheduleMode:  strings.ToLower(strings.TrimSpace(envStr("CHECKIN_SCHEDULE_MODE", "cron"))),
-		CheckinIntervalHours: clampInt(envInt("CHECKIN_INTERVAL_HOURS", 6), 1, 24),
+		CheckinCron: envStr("CHECKIN_CRON", "0 8 * * *"),
 
 		BalanceRefreshCron: envStr("BALANCE_REFRESH_CRON", "0 * * * *"),
 
@@ -91,32 +86,10 @@ func envStr(key, fallback string) string {
 	return v
 }
 
-func envInt(key string, fallback int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(v))
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
 func envBool(key string, fallback bool) bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
 	if v == "" {
 		return fallback
 	}
 	return v == "1" || v == "true" || v == "yes" || v == "on"
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }

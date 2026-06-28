@@ -4,6 +4,7 @@ import (
 	"metapi/aggrsite/db"
 	"metapi/aggrsite/service"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -38,7 +39,7 @@ func MarkAllEventsRead(w http.ResponseWriter, r *http.Request) {
 // ---- Settings ----
 
 func GetSetting(w http.ResponseWriter, r *http.Request) {
-	key := chi.URLParam(r, "key")
+	key := db.NormalizeSettingKey(chi.URLParam(r, "key"))
 	if key == "" {
 		fail(w, http.StatusBadRequest, "key is required")
 		return
@@ -49,6 +50,10 @@ func GetSetting(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "setting not found")
 		return
 	}
+	if setting.Value != nil && isSchedulerSettingKey(key) {
+		value := service.SettingStringValue(*setting.Value)
+		setting.Value = &value
+	}
 	ok(w, setting)
 }
 
@@ -57,7 +62,7 @@ type updateSettingInput struct {
 }
 
 func UpdateSetting(w http.ResponseWriter, r *http.Request) {
-	key := chi.URLParam(r, "key")
+	key := db.NormalizeSettingKey(chi.URLParam(r, "key"))
 	if key == "" {
 		fail(w, http.StatusBadRequest, "key is required")
 		return
@@ -69,16 +74,26 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input.Value = strings.TrimSpace(input.Value)
+	if isSchedulerSettingKey(key) {
+		if err := service.ValidateCronExpr(input.Value); err != nil {
+			fail(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+			return
+		}
+	}
+
 	if err := db.UpsertSetting(key, input.Value); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	if key == "CHECKIN_CRON" || key == "BALANCE_REFRESH_CRON" {
-		// Import "metapi/aggrsite/service" at top implicitly or explicitly, 
-		// but wait, I can just use service.ReloadScheduler() and add import at top.
+	if isSchedulerSettingKey(key) {
 		service.ReloadScheduler()
 	}
 
 	ok(w, map[string]interface{}{"key": key, "value": input.Value})
+}
+
+func isSchedulerSettingKey(key string) bool {
+	return key == "checkin_cron" || key == "balance_refresh_cron"
 }

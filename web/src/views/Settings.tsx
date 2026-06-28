@@ -20,8 +20,8 @@ export default function Settings() {
     try {
       const [schedRes, checkinSet, balanceSet, proxySet] = await Promise.all([
         api.get('/api/scheduler/status'),
-        api.get('/api/settings/CHECKIN_CRON').catch(() => ({ value: '' })),
-        api.get('/api/settings/BALANCE_REFRESH_CRON').catch(() => ({ value: '' })),
+        api.get('/api/settings/checkin_cron').catch(() => ({ value: '' })),
+        api.get('/api/settings/balance_refresh_cron').catch(() => ({ value: '' })),
         api.get('/api/settings/system_proxy_url').catch(() => ({ value: '' }))
       ]);
       
@@ -49,8 +49,8 @@ export default function Settings() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put('/api/settings/CHECKIN_CRON', { value: formData.CHECKIN_CRON });
-      await api.put('/api/settings/BALANCE_REFRESH_CRON', { value: formData.BALANCE_REFRESH_CRON });
+      await api.put('/api/settings/checkin_cron', { value: formData.CHECKIN_CRON });
+      await api.put('/api/settings/balance_refresh_cron', { value: formData.BALANCE_REFRESH_CRON });
       await api.put('/api/settings/system_proxy_url', { value: formData.SYSTEM_PROXY_URL });
       showAlert('设置已成功保存，且调度器重载成功！');
       loadData();
@@ -105,7 +105,7 @@ export default function Settings() {
 
             <div>
               <label className="block text-[13px] font-medium text-textSecondary mb-1.5">签到 Cron 表达式</label>
-              <p className="text-[12px] text-textMuted mb-2">控制自动签到的运行频率。留空表示禁用。</p>
+              <p className="text-[12px] text-textMuted mb-2">控制自动签到的运行频率。留空表示禁用。当前调度时区：{status?.timezone || 'Local'}。</p>
               <input 
                 type="text" 
                 className={inputClass}

@@ -116,6 +116,7 @@ export interface SchedulerStatus {
   next_checkin: string;
   balance_refresh_cron: string;
   next_balance_refresh: string;
+  timezone?: string;
 }
 
 export const detectSite = (url: string) =>
