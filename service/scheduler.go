@@ -13,11 +13,11 @@ import (
 )
 
 var (
-	scheduler      *cron.Cron
-	schedulerMu    sync.Mutex
-	scheduledRunMu sync.Mutex
-	checkinJobID   cron.EntryID
-	balanceJobID   cron.EntryID
+	scheduler   *cron.Cron
+	schedulerMu sync.Mutex
+	taskMu      sync.Map // per-task mutex: task name -> *sync.Mutex
+	checkinJobID  cron.EntryID
+	balanceJobID  cron.EntryID
 
 	activeCheckinCron string
 	activeBalanceCron string
@@ -61,12 +61,18 @@ func ValidateCronExpr(expr string) error {
 	return err
 }
 
+func getTaskMu(name string) *sync.Mutex {
+	mu, _ := taskMu.LoadOrStore(name, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 func runScheduledTask(name string, fn func() error) {
-	if !scheduledRunMu.TryLock() {
-		slog.Warn("Scheduled task skipped because another scheduled task is still running", "task", name)
+	mu := getTaskMu(name)
+	if !mu.TryLock() {
+		slog.Warn("Scheduled task skipped because the same task is still running", "task", name)
 		return
 	}
-	defer scheduledRunMu.Unlock()
+	defer mu.Unlock()
 	if err := fn(); err != nil {
 		slog.Error("Scheduled task failed", "task", name, "err", err)
 	}
