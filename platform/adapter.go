@@ -333,11 +333,18 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 	message := ExtractMessage(res)
 	if success {
 		token := extractLoginAccessToken(res)
+		hasCookie := cookieResult != nil && hasUsableSessionCookie(cookieResult.CookieHeader)
+
+		// Prefer cookie when both are available: some new-api forks only accept
+		// cookie/session auth on /api/user/checkin (and sign_in), while Bearer JWT
+		// is only accepted on read-only endpoints like /api/user/self.
+		// A cookie credential can do everything a JWT can (balance, tokens, etc.)
+		// but not vice-versa; so cookie takes priority.
+		if hasCookie {
+			return &LoginResult{Success: true, AccessToken: cookieResult.CookieHeader, Username: username}, nil
+		}
 		if token != "" {
 			return &LoginResult{Success: true, AccessToken: token, Username: username}, nil
-		}
-		if cookieResult != nil && hasUsableSessionCookie(cookieResult.CookieHeader) {
-			return &LoginResult{Success: true, AccessToken: cookieResult.CookieHeader, Username: username}, nil
 		}
 	}
 
