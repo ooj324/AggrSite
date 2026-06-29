@@ -276,13 +276,14 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 }
 
 func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
+	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
 
 	var res map[string]interface{}
 	var lastErr error
 
 	if !IsCookieSessionToken(accessToken) {
-		headers := AuthHeaders(accessToken, platformUserID)
+		headers := AuthHeaders(accessToken, resolvedUserID)
 		err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 		if err == nil {
 			success, _ := res["success"].(bool)
@@ -306,7 +307,7 @@ func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 	cookieCandidates := BuildCookieCandidates(accessToken)
 	for _, cookie := range cookieCandidates {
 		var cookieRes map[string]interface{}
-		cookieHeaders := CookieUserIDHeaders(platformUserID)
+		cookieHeaders := CookieUserIDHeaders(resolvedUserID)
 
 		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
 		if err != nil {
@@ -332,12 +333,13 @@ func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 }
 
 func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error) {
+	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
 	url := fmt.Sprintf("%s/api/token/?p=0&size=100", baseURL)
 	var res map[string]interface{}
 	var lastErr error
 
 	if !IsCookieSessionToken(accessToken) {
-		headers := AuthHeaders(accessToken, platformUserID)
+		headers := AuthHeaders(accessToken, resolvedUserID)
 		err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 		if err == nil {
 			success, _ := res["success"].(bool)
@@ -356,7 +358,7 @@ func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 	cookieCandidates := BuildCookieCandidates(accessToken)
 	for _, cookie := range cookieCandidates {
 		var cookieRes map[string]interface{}
-		cookieHeaders := CookieUserIDHeaders(platformUserID)
+		cookieHeaders := CookieUserIDHeaders(resolvedUserID)
 
 		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
 		if err != nil {
@@ -377,12 +379,13 @@ func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 }
 
 func (a *NewApiAdapter) GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error) {
+	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
 	url := fmt.Sprintf("%s/v1/models", baseURL)
 	var res map[string]interface{}
 	var lastErr error
 
 	if !IsCookieSessionToken(accessToken) {
-		headers := AuthHeaders(accessToken, platformUserID)
+		headers := AuthHeaders(accessToken, resolvedUserID)
 		err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
 		if err == nil {
 			if data, ok := res["data"].([]interface{}); ok {
@@ -400,7 +403,7 @@ func (a *NewApiAdapter) GetModels(baseURL, accessToken string, platformUserID in
 	cookieCandidates := BuildCookieCandidates(accessToken)
 	for _, cookie := range cookieCandidates {
 		var cookieRes map[string]interface{}
-		cookieHeaders := CookieUserIDHeaders(platformUserID)
+		cookieHeaders := CookieUserIDHeaders(resolvedUserID)
 
 		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
 		if err != nil {
@@ -420,19 +423,20 @@ func (a *NewApiAdapter) GetModels(baseURL, accessToken string, platformUserID in
 }
 
 func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
+	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
 	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
 	var lastErr error
 
 	// Try session validation via Bearer
 	if !IsCookieSessionToken(accessToken) {
-		headers := AuthHeaders(accessToken, platformUserID)
+		headers := AuthHeaders(accessToken, resolvedUserID)
 		var userRes map[string]interface{}
 		err := a.FetchJSON(userURL, "GET", headers, nil, &userRes, opt)
 		if err == nil {
 			success, _ := userRes["success"].(bool)
 			if success {
 				ui, bi := parseUserInfoAndBalance(userRes["data"])
-				apiToken, _ := a.GetApiToken(baseURL, accessToken, platformUserID, opt)
+				apiToken, _ := a.GetApiToken(baseURL, accessToken, resolvedUserID, opt)
 				return &VerifyTokenResult{
 					TokenType: "session",
 					UserInfo:  ui,
@@ -450,7 +454,7 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 	cookieCandidates := BuildCookieCandidates(accessToken)
 	for _, cookie := range cookieCandidates {
 		var userRes map[string]interface{}
-		cookieHeaders := CookieUserIDHeaders(platformUserID)
+		cookieHeaders := CookieUserIDHeaders(resolvedUserID)
 		_, err := FetchJSONWithCookieRetry(userURL, "GET", cookie, cookieHeaders, nil, &userRes, opt)
 		if err == nil {
 			success, _ := userRes["success"].(bool)
