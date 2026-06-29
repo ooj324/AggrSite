@@ -9,7 +9,7 @@ import (
 // ---- helpers ----
 
 func TimeNow() string {
-	return time.Now().UTC().Format(time.RFC3339)
+	return time.Now().Local().Format("2006-01-02T15:04:05")
 }
 
 func nilIfEmpty(s string) interface{} {
