@@ -1,6 +1,8 @@
 package platform
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -21,12 +23,194 @@ func (a *NewApiAdapter) Login(baseURL, username, password string, opt *RequestOp
 	return a.LoginWithCookieFallback(baseURL, username, password, opt)
 }
 
+// tryDecodeJwtUserId attempts to extract the user id from a JWT token payload.
+func tryDecodeJwtUserId(token string) int64 {
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) != 3 {
+		return 0
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Try standard base64
+		payloadBytes, err = base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return 0
+		}
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return 0
+	}
+	if id, ok := payload["id"].(float64); ok && id > 0 {
+		return int64(id)
+	}
+	if sub, ok := payload["sub"]; ok {
+		switch v := sub.(type) {
+		case float64:
+			if v > 0 {
+				return int64(v)
+			}
+		case string:
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// discoverUserId resolves the real platform user ID for accessToken.
+// Priority: passed-in platformUserID → JWT decode → Bearer /api/user/self → cookie probe.
+func (a *NewApiAdapter) discoverUserId(baseURL, accessToken string, platformUserID int64, opt *RequestOption) int64 {
+	if platformUserID > 0 {
+		return platformUserID
+	}
+
+	// 1. Try JWT decode
+	raw := strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer ")
+	if jwtID := tryDecodeJwtUserId(raw); jwtID > 0 {
+		// Validate the decoded id actually works
+		var res map[string]interface{}
+		url := fmt.Sprintf("%s/api/user/self", baseURL)
+		if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, jwtID), nil, &res, opt); err == nil {
+			if ok, _ := res["success"].(bool); ok {
+				return jwtID
+			}
+		}
+	}
+
+	// 2. Try Bearer without user id header, read id from response data
+	{
+		var res map[string]interface{}
+		url := fmt.Sprintf("%s/api/user/self", baseURL)
+		if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, 0), nil, &res, opt); err == nil {
+			if ok, _ := res["success"].(bool); ok {
+				if data, ok := res["data"].(map[string]interface{}); ok {
+					if id, ok := data["id"].(float64); ok && id > 0 {
+						return int64(id)
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Try cookie probe
+	for _, cookie := range BuildCookieCandidates(accessToken) {
+		var res map[string]interface{}
+		url := fmt.Sprintf("%s/api/user/self", baseURL)
+		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, nil, nil, &res, opt)
+		if err == nil {
+			if ok, _ := res["success"].(bool); ok {
+				if data, ok := res["data"].(map[string]interface{}); ok {
+					if id, ok := data["id"].(float64); ok && id > 0 {
+						return int64(id)
+					}
+				}
+			}
+		}
+	}
+
+	return 0
+}
+
+// tryCookieCheckin attempts sign_in then checkin via cookie, with the given userId header.
+// Returns a non-nil CheckinResult on success; updates lastErrMsg on failure.
+func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int64, opt *RequestOption) (*CheckinResult, string) {
+	var lastErrMsg string
+	for _, cookie := range BuildCookieCandidates(accessToken) {
+		cookieHeaders := CookieUserIDHeaders(userID)
+
+		// Try /api/user/sign_in first (preferred by some new-api forks)
+		signInURL := fmt.Sprintf("%s/api/user/sign_in", baseURL)
+		var signInRes map[string]interface{}
+		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, cookieHeaders, map[string]interface{}{}, &signInRes, opt)
+		if err == nil {
+			if ok, _ := signInRes["success"].(bool); ok {
+				msg := ExtractMessage(signInRes)
+				if msg == "" {
+					msg = "checked in via sign_in"
+				}
+				reward := ""
+				if data, ok := signInRes["data"].(map[string]interface{}); ok {
+					if r, ok := data["reward"]; ok {
+						reward = fmt.Sprintf("%v", r)
+					}
+				}
+				return &CheckinResult{Success: true, Message: msg, Reward: reward}, ""
+			}
+			if msg := ExtractMessage(signInRes); msg != "" {
+				lastErrMsg = msg
+			}
+		} else {
+			if lastErrMsg == "" {
+				lastErrMsg = err.Error()
+			}
+		}
+
+		// Try /api/user/checkin via cookie
+		checkinURL := fmt.Sprintf("%s/api/user/checkin", baseURL)
+		var checkinRes map[string]interface{}
+		_, err = FetchJSONWithCookieRetry(checkinURL, "POST", cookie, cookieHeaders, map[string]interface{}{}, &checkinRes, opt)
+		if err == nil {
+			if ok, _ := checkinRes["success"].(bool); ok {
+				msg := ExtractMessage(checkinRes)
+				if msg == "" {
+					msg = "checkin success"
+				}
+				reward := ""
+				if data, ok := checkinRes["data"].(map[string]interface{}); ok {
+					if r, ok := data["reward"]; ok {
+						reward = fmt.Sprintf("%v", r)
+					}
+				}
+				return &CheckinResult{Success: true, Message: msg, Reward: reward}, ""
+			}
+			if msg := ExtractMessage(checkinRes); msg != "" {
+				lastErrMsg = msg
+			}
+		} else {
+			if lastErrMsg == "" {
+				lastErrMsg = err.Error()
+			}
+		}
+	}
+	return nil, lastErrMsg
+}
+
+// probeAlternateCookieUserId tries common user id candidates via cookie to find a working one
+// that differs from currentUserID. Mirrors TS probeAlternateUserIdByCookie.
+func (a *NewApiAdapter) probeAlternateCookieUserId(baseURL, accessToken string, currentUserID int64, opt *RequestOption) int64 {
+	candidates := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100}
+	for _, cookie := range BuildCookieCandidates(accessToken) {
+		for _, id := range candidates {
+			if id == currentUserID {
+				continue
+			}
+			var res map[string]interface{}
+			url := fmt.Sprintf("%s/api/user/self", baseURL)
+			_, err := FetchJSONWithCookieRetry(url, "GET", cookie, CookieUserIDHeaders(id), nil, &res, opt)
+			if err == nil {
+				if ok, _ := res["success"].(bool); ok && res["data"] != nil {
+					return id
+				}
+			}
+		}
+	}
+	return 0
+}
+
 func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*CheckinResult, error) {
+	// Resolve the actual user id before anything else (mirrors TS discoverUserId)
+	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
+
+	var firstFailureMessage string
+
+	// --- Step 1: Bearer token checkin (only for non-cookie tokens) ---
 	if !IsCookieSessionToken(accessToken) {
-		headers := AuthHeaders(accessToken, platformUserID)
+		headers := AuthHeaders(accessToken, resolvedUserID)
 		url := fmt.Sprintf("%s/api/user/checkin", baseURL)
 		var res map[string]interface{}
-		err := a.FetchJSON(url, "POST", headers, nil, &res, opt)
+		err := a.FetchJSON(url, "POST", headers, map[string]interface{}{}, &res, opt)
 		if err == nil {
 			success, _ := res["success"].(bool)
 			message := ExtractMessage(res)
@@ -42,86 +226,40 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 				}
 				return &CheckinResult{Success: true, Message: message, Reward: reward}, nil
 			}
-			if message != "" && !isMissingCheckinEndpoint(message) {
-				if !isCookieSessionFailureMessage(message) {
-					return &CheckinResult{Success: false, Message: message}, nil
-				}
+			if message != "" {
+				firstFailureMessage = message
 			}
-		} else if err != nil && !strings.Contains(err.Error(), "HTTP 404") {
-			if !isCookieSessionFailureMessage(err.Error()) {
-				// pass through to cookie check
-			}
+		} else {
+			firstFailureMessage = err.Error()
+		}
+
+		// If the failure is a definitive non-auth error, bail out early
+		if firstFailureMessage != "" && !shouldFallbackToCookieCheckin(firstFailureMessage) {
+			return &CheckinResult{Success: false, Message: firstFailureMessage}, nil
 		}
 	}
 
-	cookieCandidates := BuildCookieCandidates(accessToken)
-	if len(cookieCandidates) == 0 {
-		return &CheckinResult{Success: false, Message: "checkin failed (no cookie candidates)"}, nil
+	// --- Step 2: Cookie-based checkin with resolved user id ---
+	if result, errMsg := a.tryCookieCheckin(baseURL, accessToken, resolvedUserID, opt); result != nil {
+		return result, nil
+	} else if errMsg != "" {
+		firstFailureMessage = errMsg
 	}
 
-	var lastErrMsg string
-	for _, cookie := range cookieCandidates {
-		signInURL := fmt.Sprintf("%s/api/user/sign_in", baseURL)
-		var signInRes map[string]interface{}
-		signInHeaders := CookieUserIDHeaders(platformUserID)
-
-		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, signInHeaders, map[string]interface{}{}, &signInRes, opt)
-		if err != nil {
-			lastErrMsg = err.Error()
-			continue
-		}
-
-		success, _ := signInRes["success"].(bool)
-		msg := ExtractMessage(signInRes)
-		if success {
-			reward := ""
-			if data, ok := signInRes["data"].(map[string]interface{}); ok {
-				if r, ok := data["reward"]; ok {
-					reward = fmt.Sprintf("%v", r)
-				}
-			}
-			if msg == "" {
-				msg = "checked in via sign_in"
-			}
-			return &CheckinResult{Success: true, Message: msg, Reward: reward}, nil
-		}
-
-		if msg != "" {
-			lastErrMsg = msg
-		}
-
-		checkinURL := fmt.Sprintf("%s/api/user/checkin", baseURL)
-		var checkinRes map[string]interface{}
-		_, err = FetchJSONWithCookieRetry(checkinURL, "POST", cookie, signInHeaders, nil, &checkinRes, opt)
-		if err != nil {
-			lastErrMsg = err.Error()
-			continue
-		}
-
-		checkinSuccess, _ := checkinRes["success"].(bool)
-		checkinMsg := ExtractMessage(checkinRes)
-		if checkinSuccess {
-			if checkinMsg == "" {
-				checkinMsg = "checkin success"
-			}
-			reward := ""
-			if data, ok := checkinRes["data"].(map[string]interface{}); ok {
-				if r, ok := data["reward"]; ok {
-					reward = fmt.Sprintf("%v", r)
-				}
-			}
-			return &CheckinResult{Success: true, Message: checkinMsg, Reward: reward}, nil
-		}
-
-		if checkinMsg != "" {
-			lastErrMsg = checkinMsg
+	// --- Step 3: Probe alternate user id via cookie and retry (mirrors TS probeAlternateUserIdByCookie) ---
+	alternateUserID := a.probeAlternateCookieUserId(baseURL, accessToken, resolvedUserID, opt)
+	if alternateUserID > 0 {
+		if result, errMsg := a.tryCookieCheckin(baseURL, accessToken, alternateUserID, opt); result != nil {
+			return result, nil
+		} else if errMsg != "" {
+			firstFailureMessage = errMsg
 		}
 	}
 
-	if lastErrMsg == "" {
-		lastErrMsg = "cookie checkin failed"
+	if firstFailureMessage == "" {
+		firstFailureMessage = "checkin failed"
 	}
-	return &CheckinResult{Success: false, Message: lastErrMsg}, nil
+	return &CheckinResult{Success: false, Message: firstFailureMessage}, nil
 }
 
 func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
@@ -488,6 +626,30 @@ func isCookieSessionFailureMessage(message string) bool {
 		strings.Contains(lower, "not logged") ||
 		strings.Contains(lower, "invalid url (post /api/user/checkin)") ||
 		strings.Contains(lower, "http 404")
+}
+
+// shouldFallbackToCookieCheckin mirrors TS shouldFallbackToCookieCheckin.
+// Returns true when the Bearer checkin failure message suggests we should
+// attempt a cookie-based checkin instead of giving up immediately.
+func shouldFallbackToCookieCheckin(message string) bool {
+	if message == "" {
+		return true
+	}
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "unexpected token") ||
+		strings.Contains(lower, "not valid json") ||
+		strings.Contains(lower, "<html") ||
+		strings.Contains(lower, "new-api-user") ||
+		strings.Contains(lower, "access token") ||
+		strings.Contains(lower, "unauthorized") ||
+		strings.Contains(lower, "forbidden") ||
+		strings.Contains(lower, "not login") ||
+		strings.Contains(lower, "not logged") ||
+		strings.Contains(lower, "invalid url (post /api/user/checkin)") ||
+		(strings.Contains(lower, "http 404") && strings.Contains(lower, "/api/user/checkin")) ||
+		strings.Contains(lower, "未登录") ||
+		strings.Contains(lower, "未提供") ||
+		strings.Contains(lower, "无权")
 }
 
 func toFloat(v interface{}) float64 {
