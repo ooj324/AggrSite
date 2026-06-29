@@ -434,11 +434,11 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   const loginSupported = !isSub2Api;
 
   useEffect(() => {
-    if (!account && !loginSupported && mode === 'login') {
+    if (!loginSupported && mode === 'login') {
       setMode('session');
       setVerifyResult(null);
     }
-  }, [account, loginSupported, mode]);
+  }, [loginSupported, mode]);
 
   const handleVerify = async () => {
     if (!formData.access_token) {
@@ -510,7 +510,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
 
     setLoading(true);
     try {
-      if (mode === 'login' && !account) {
+      if (mode === 'login') {
         // Login mode
         const res = await api.post('/api/accounts/login', {
           site_id: Number(formData.site_id),
@@ -573,32 +573,30 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   return (
     <Modal title={account ? (isRebind ? '换绑 / 编辑账户' : '编辑账户') : '添加账户'} onClose={onClose}>
       <div className="p-6">
-        {!account && (
-          <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
-            <button
-              type="button"
-              disabled={!loginSupported}
-              onClick={() => { if (loginSupported) { setMode('login'); setVerifyResult(null); } }}
-              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
-            >
-              账号密码
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('session'); setVerifyResult(null); }}
-              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'session' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
-            >
-              Session 令牌
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('apikey'); setVerifyResult(null); }}
-              className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'apikey' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
-            >
-              API Key
-            </button>
-          </div>
-        )}
+        <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
+          <button
+            type="button"
+            disabled={!loginSupported}
+            onClick={() => { if (loginSupported) { setMode('login'); setVerifyResult(null); } }}
+            className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed ${mode === 'login' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+          >
+            账号密码
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('session'); setVerifyResult(null); }}
+            className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'session' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+          >
+            Session 令牌
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('apikey'); setVerifyResult(null); }}
+            className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'apikey' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
+          >
+            API Key
+          </button>
+        </div>
 
         <form id="account-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -614,10 +612,10 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
               {sites.map((s: Site) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
 
-            <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} placeholder={`用户名 / 连接名称 ${mode !== 'login' ? '(可选)' : ''}`} />
+            <input required={mode === 'login'} type="text" className={inputClass} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} placeholder={`用户名 / 连接名称 ${mode !== 'login' ? '(可选)' : ''}`} disabled={!!account && mode === 'login'} />
 
-            {mode === 'login' && !account ? (
-              <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} placeholder="密码" />
+            {mode === 'login' ? (
+              <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} placeholder={account ? "密码 (用于重新登录)" : "密码"} />
             ) : (
               <>
                 {mode === 'apikey' && !account ? (
@@ -682,10 +680,10 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
             </div>
           )}
 
-          {mode === 'login' && !account && (
-            <p className="text-[12px] text-textMuted mt-[-8px]">密码用于自动刷新令牌。它将被加密存储。</p>
+          {mode === 'login' && (
+            <p className="text-[12px] text-textMuted mt-[-8px]">{account ? '重新登录后将更新 Token 及签到状态。密码将被加密存储。' : '密码用于自动刷新令牌。它将被加密存储。'}</p>
           )}
-          {!loginSupported && !account && (
+          {!loginSupported && (
             <p className="text-[12px] text-textMuted mt-[-8px]">当前平台不支持账号密码登录，请使用 Session 令牌或 API Key。</p>
           )}
 
