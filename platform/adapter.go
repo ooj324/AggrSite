@@ -142,7 +142,16 @@ func applyCustomHeaders(req *http.Request, opt *RequestOption) {
 	var custom map[string]string
 	if err := json.Unmarshal([]byte(*opt.CustomHeaders), &custom); err == nil {
 		for k, v := range custom {
-			req.Header.Set(k, v)
+			if strings.EqualFold(k, "Cookie") {
+				existing := req.Header.Get("Cookie")
+				if existing != "" {
+					req.Header.Set("Cookie", existing+"; "+v)
+				} else {
+					req.Header.Set("Cookie", v)
+				}
+			} else {
+				req.Header.Set(k, v)
+			}
 		}
 	}
 }
