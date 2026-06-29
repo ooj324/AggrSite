@@ -449,9 +449,20 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 	}
 
 	slog.Info("Auto-relogin via Login successful, updating access token", "account_id", row.ID)
-	_ = db.UpdateAccount(row.ID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"access_token": loginResult.AccessToken,
-	})
+	}
+
+	if loginResult.PlatformUserID > 0 {
+		if pid, ok := cfg["platformUserId"].(float64); !ok || pid <= 0 {
+			cfg["platformUserId"] = loginResult.PlatformUserID
+			if cfgBytes, err := json.Marshal(cfg); err == nil {
+				updates["extra_config"] = string(cfgBytes)
+			}
+		}
+	}
+
+	_ = db.UpdateAccount(row.ID, updates)
 
 	return loginResult.AccessToken
 }

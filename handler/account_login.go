@@ -108,7 +108,10 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guessedPlatformUserID := guessPlatformUserIDFromUsername(input.Username)
+	guessedPlatformUserID := loginResult.PlatformUserID
+	if guessedPlatformUserID <= 0 {
+		guessedPlatformUserID = guessPlatformUserIDFromUsername(input.Username)
+	}
 
 	// Match the main app: fetch both the preferred token and the full upstream token list,
 	// using the guessed platform user id for linuxdo_* style accounts.

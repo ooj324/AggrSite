@@ -61,33 +61,38 @@ func tryDecodeJwtUserId(token string) int64 {
 
 // discoverUserId resolves the real platform user ID for accessToken.
 // Priority: passed-in platformUserID → JWT decode → Bearer /api/user/self → cookie probe.
+// For cookie session tokens the Bearer steps are skipped to avoid sending a malformed
+// Authorization: Bearer session=... header that may trigger server-side protection.
 func (a *NewApiAdapter) discoverUserId(baseURL, accessToken string, platformUserID int64, opt *RequestOption) int64 {
 	if platformUserID > 0 {
 		return platformUserID
 	}
 
-	// 1. Try JWT decode
-	raw := strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer ")
-	if jwtID := tryDecodeJwtUserId(raw); jwtID > 0 {
-		// Validate the decoded id actually works
-		var res map[string]interface{}
-		url := fmt.Sprintf("%s/api/user/self", baseURL)
-		if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, jwtID), nil, &res, opt); err == nil {
-			if ok, _ := res["success"].(bool); ok {
-				return jwtID
+	isCookie := IsCookieSessionToken(accessToken)
+
+	if !isCookie {
+		// 1. Try JWT decode (only meaningful for Bearer tokens)
+		raw := strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer ")
+		if jwtID := tryDecodeJwtUserId(raw); jwtID > 0 {
+			var res map[string]interface{}
+			url := fmt.Sprintf("%s/api/user/self", baseURL)
+			if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, jwtID), nil, &res, opt); err == nil {
+				if ok, _ := res["success"].(bool); ok {
+					return jwtID
+				}
 			}
 		}
-	}
 
-	// 2. Try Bearer without user id header, read id from response data
-	{
-		var res map[string]interface{}
-		url := fmt.Sprintf("%s/api/user/self", baseURL)
-		if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, 0), nil, &res, opt); err == nil {
-			if ok, _ := res["success"].(bool); ok {
-				if data, ok := res["data"].(map[string]interface{}); ok {
-					if id, ok := data["id"].(float64); ok && id > 0 {
-						return int64(id)
+		// 2. Try Bearer without user id header, read id from response data
+		{
+			var res map[string]interface{}
+			url := fmt.Sprintf("%s/api/user/self", baseURL)
+			if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, 0), nil, &res, opt); err == nil {
+				if ok, _ := res["success"].(bool); ok {
+					if data, ok := res["data"].(map[string]interface{}); ok {
+						if id, ok := data["id"].(float64); ok && id > 0 {
+							return int64(id)
+						}
 					}
 				}
 			}
@@ -120,10 +125,14 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 	for _, cookie := range BuildCookieCandidates(accessToken) {
 		cookieHeaders := CookieUserIDHeaders(userID)
 
-		// Try /api/user/sign_in first (preferred by some new-api forks)
+		// Try /api/user/sign_in first (preferred by some new-api forks).
+		// X-Requested-With: XMLHttpRequest is required by new-api POST endpoints as a
+		// lightweight CSRF check; GET endpoints (e.g. /api/user/self) don't require it,
+		// which is why token verification passes but checkin returns Unauthorized without it.
 		signInURL := fmt.Sprintf("%s/api/user/sign_in", baseURL)
 		var signInRes map[string]interface{}
-		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, cookieHeaders, map[string]interface{}{}, &signInRes, opt)
+		signInHeaders := mergeMaps(cookieHeaders, map[string]string{"X-Requested-With": "XMLHttpRequest"})
+		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, signInHeaders, map[string]interface{}{}, &signInRes, opt)
 		if err == nil {
 			if ok, _ := signInRes["success"].(bool); ok {
 				msg := ExtractMessage(signInRes)
@@ -150,7 +159,8 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 		// Try /api/user/checkin via cookie
 		checkinURL := fmt.Sprintf("%s/api/user/checkin", baseURL)
 		var checkinRes map[string]interface{}
-		_, err = FetchJSONWithCookieRetry(checkinURL, "POST", cookie, cookieHeaders, map[string]interface{}{}, &checkinRes, opt)
+		checkinHeaders := mergeMaps(cookieHeaders, map[string]string{"X-Requested-With": "XMLHttpRequest"})
+		_, err = FetchJSONWithCookieRetry(checkinURL, "POST", cookie, checkinHeaders, map[string]interface{}{}, &checkinRes, opt)
 		if err == nil {
 			if ok, _ := checkinRes["success"].(bool); ok {
 				msg := ExtractMessage(checkinRes)
@@ -167,6 +177,9 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 			}
 			if msg := ExtractMessage(checkinRes); msg != "" {
 				lastErrMsg = msg
+				if !isCookieSessionFailureMessage(msg) {
+					return &CheckinResult{Success: false, Message: msg}, ""
+				}
 			}
 		} else {
 			if lastErrMsg == "" {
@@ -607,6 +620,19 @@ func isMissingCheckinEndpoint(message string) bool {
 		strings.Contains(lower, "not found") ||
 		strings.Contains(lower, "not support") ||
 		strings.Contains(lower, "does not support checkin")
+}
+
+// mergeMaps returns a new map combining base and extra; extra keys override base.
+// Nil inputs are handled gracefully.
+func mergeMaps(base, extra map[string]string) map[string]string {
+	out := make(map[string]string, len(base)+len(extra))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
 }
 
 func isCookieSessionFailureMessage(message string) bool {
