@@ -46,7 +46,7 @@ func stripCookieHeaderLabel(raw string) string {
 	return trimmed
 }
 
-func parseCookiePairs(raw string) []cookiePair {
+func parseCookiePairsFromSingle(raw string) []cookiePair {
 	raw = stripCookieHeaderLabel(raw)
 	if raw == "" {
 		return nil
@@ -78,6 +78,29 @@ func parseCookiePairs(raw string) []cookiePair {
 		pairs = append(pairs, cookiePair{name: name, value: value})
 	}
 	return pairs
+}
+
+func parseCookiePairs(raw string) []cookiePair {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	raw = strings.ReplaceAll(raw, "\r", "\n")
+	if strings.Contains(raw, "\n") {
+		pairs := []cookiePair{}
+		for _, line := range strings.Split(raw, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			pairs = append(pairs, parseCookiePairsFromSingle(line)...)
+		}
+		return pairs
+	}
+
+	return parseCookiePairsFromSingle(raw)
 }
 
 func mergeCookiePairLists(groups ...[]cookiePair) []cookiePair {
@@ -422,7 +445,11 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 			return nil, fmt.Errorf("read body: %w", err)
 		}
 
-		// Collect Set-Cookie headers
+		if resp.Request != nil {
+			currentCookie = mergeCookieHeaders(currentCookie, resp.Request.Header.Get("Cookie"))
+		}
+
+		// Collect Set-Cookie headers from the final response.
 		setCookies := resp.Header.Values("Set-Cookie")
 		currentCookie = mergeSetCookiePairs(currentCookie, setCookies)
 

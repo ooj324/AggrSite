@@ -133,8 +133,18 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 		"refresh_token": refreshToken,
 	}
 
-	var res map[string]interface{}
-	err := a.FetchJSON(url, "POST", headers, body, &res, opt)
+	fetchRefresh := func(headers map[string]string) (map[string]interface{}, error) {
+		var res map[string]interface{}
+		if err := a.FetchJSON(url, "POST", headers, body, &res, opt); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+
+	res, err := fetchRefresh(headers)
+	if err != nil && token != "" {
+		res, err = fetchRefresh(nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch refresh: %w", err)
 	}

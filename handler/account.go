@@ -110,6 +110,15 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if res == nil || res.TokenType == "" || res.TokenType == "unknown" {
+		ok(w, map[string]interface{}{
+			"success":   false,
+			"tokenType": "unknown",
+			"message":   "Token 验证失败：未能识别为有效 Session 或 API Key",
+		})
+		return
+	}
+
 	ok(w, map[string]interface{}{
 		"success":   true,
 		"tokenType": res.TokenType,

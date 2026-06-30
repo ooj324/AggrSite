@@ -12,12 +12,31 @@ func init() {
 	Register(&OneApiAdapter{BaseAdapter: BaseAdapter{Name: "one-api"}})
 }
 
+func (a *OneApiAdapter) GetApiToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
+	return getApiTokenWithSessionCookie(&a.BaseAdapter, baseURL, accessToken, platformUserID, opt)
+}
+
+func (a *OneApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error) {
+	return getApiTokensWithSessionCookie(&a.BaseAdapter, baseURL, accessToken, platformUserID, opt)
+}
+
 func (a *OneApiAdapter) Checkin(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*CheckinResult, error) {
 	url := fmt.Sprintf("%s/api/user/checkin", baseURL)
-	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "POST", headers, nil, &res, opt)
+	usedCookie, err := fetchJSONWithSessionCookie(
+		url,
+		"POST",
+		accessToken,
+		platformUserID,
+		map[string]string{"X-Requested-With": "XMLHttpRequest"},
+		map[string]interface{}{},
+		&res,
+		opt,
+	)
+	if !usedCookie {
+		err = a.FetchJSON(url, "POST", AuthHeaders(accessToken, platformUserID), nil, &res, opt)
+	}
 	if err != nil {
 		return &CheckinResult{Success: false, Message: err.Error()}, nil
 	}
@@ -44,10 +63,12 @@ func (a *OneApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 
 func (a *OneApiAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
-	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
+	usedCookie, err := fetchJSONWithSessionCookie(url, "GET", accessToken, platformUserID, nil, nil, &res, opt)
+	if !usedCookie {
+		err = a.FetchJSON(url, "GET", AuthHeaders(accessToken, platformUserID), nil, &res, opt)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balance: %w", err)
 	}
@@ -69,7 +90,12 @@ func (a *OneApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 func (a *OneApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
 	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
 	var userRes map[string]interface{}
-	if err := a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt); err == nil {
+
+	usedCookie, err := fetchJSONWithSessionCookie(userURL, "GET", accessToken, platformUserID, nil, nil, &userRes, opt)
+	if !usedCookie {
+		err = a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt)
+	}
+	if err == nil {
 		success, _ := userRes["success"].(bool)
 		if success {
 			ui, _ := parseUserInfoAndBalance(userRes["data"])
@@ -82,6 +108,10 @@ func (a *OneApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 				ApiToken:  apiToken,
 			}, nil
 		}
+	}
+
+	if usedCookie {
+		return &VerifyTokenResult{TokenType: "unknown"}, nil
 	}
 
 	models, err := a.GetModels(baseURL, accessToken, platformUserID, opt)

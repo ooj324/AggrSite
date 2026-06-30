@@ -148,9 +148,14 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 		authHeader := strings.TrimSpace(config.AuthHeader)
 		authPrefix := config.AuthPrefix
 		if authHeader == "" {
-			// No header name specified — fall back to the default Authorization: Bearer
-			authHeader = "Authorization"
-			authPrefix = "Bearer "
+			if platform.IsCookieSessionToken(credential) {
+				authHeader = "Cookie"
+				authPrefix = ""
+			} else {
+				// No header name specified — fall back to the default Authorization: Bearer
+				authHeader = "Authorization"
+				authPrefix = "Bearer "
+			}
 		}
 		if strings.EqualFold(authHeader, "Cookie") {
 			headers["Cookie"] = buildCookieAuthHeaderValue(credential, authPrefix)
@@ -266,10 +271,10 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 				overrideConfig.AuthPrefix = "Bearer "
 			}
 		} else {
-			// Simple Mode: always default to POST and Authorization Bearer
+			// Simple Mode: default auth header is selected from the credential type.
 			overrideConfig.Method = "POST"
-			overrideConfig.AuthHeader = "Authorization"
-			overrideConfig.AuthPrefix = "Bearer "
+			overrideConfig.AuthHeader = ""
+			overrideConfig.AuthPrefix = ""
 		}
 	}
 

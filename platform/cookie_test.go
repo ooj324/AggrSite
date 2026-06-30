@@ -14,6 +14,13 @@ func TestNormalizeCookieHeaderStripsSetCookieAttributes(t *testing.T) {
 	}
 }
 
+func TestNormalizeCookieHeaderHandlesMultipleSetCookieLines(t *testing.T) {
+	got := NormalizeCookieHeader("Set-Cookie: session=abc; Path=/; HttpOnly\nSet-Cookie: token=def; Path=/; SameSite=Lax")
+	if got != "session=abc; token=def" {
+		t.Fatalf("unexpected normalized cookie: %q", got)
+	}
+}
+
 func TestMergeCookieHeadersOverridesByNameAndStripsAttributes(t *testing.T) {
 	got := mergeCookieHeaders("session=old; acw=1", "session=new; Path=/; HttpOnly; token=t")
 	want := "session=new; acw=1; token=t"
@@ -78,5 +85,33 @@ func TestFetchJSONWithCookieRetryReturnsHTTPErrorForNon2xxJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "HTTP 403: missing Origin") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchJSONWithCookieRetryKeepsRedirectSetCookie(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "redirect-session", Path: "/"})
+			http.Redirect(w, r, "/done", http.StatusFound)
+		case "/done":
+			if got := r.Header.Get("Cookie"); got != "session=redirect-session" {
+				t.Fatalf("redirect request lost cookie: %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var res map[string]interface{}
+	result, err := FetchJSONWithCookieRetry(server.URL+"/login", "POST", "", nil, map[string]interface{}{}, &res, nil)
+	if err != nil {
+		t.Fatalf("FetchJSONWithCookieRetry returned error: %v", err)
+	}
+	if result == nil || result.CookieHeader != "session=redirect-session" {
+		t.Fatalf("unexpected cookie result: %#v", result)
 	}
 }

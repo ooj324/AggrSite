@@ -263,7 +263,7 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequest("GET", url+"/api/status", nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		// Cannot connect, return empty or error
@@ -277,11 +277,11 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(resp.Body)
 		if json.Unmarshal(body, &data) == nil {
 			if sysName, isStr := data["system_name"].(string); isStr && strings.Contains(strings.ToLower(sysName), "new api") {
-				ok(w, map[string]interface{}{"platform": "newapi", "url": url})
+				ok(w, map[string]interface{}{"platform": "new-api", "url": url})
 				return
 			}
 			if _, hasVer := data["version"]; hasVer {
-				ok(w, map[string]interface{}{"platform": "oneapi", "url": url})
+				ok(w, map[string]interface{}{"platform": "one-api", "url": url})
 				return
 			}
 		}
@@ -307,7 +307,7 @@ func PingSite(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
-	
+
 	resp, err := client.Do(req)
 	latency := time.Since(start).Milliseconds()
 

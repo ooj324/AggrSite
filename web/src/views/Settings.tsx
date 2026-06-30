@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { SchedulerStatus } from '../api';
+import { getAuthToken } from '../utils';
 import { RefreshCw, Save, Settings as SettingsIcon } from 'lucide-react';
 import { useAlert } from '../components/AlertProvider';
 
@@ -184,12 +185,12 @@ export default function Settings() {
               <p className="text-[12px] text-textMuted mb-3 mt-1">下载包含所有站点和账户信息的 JSON 文件。</p>
               <button 
                 onClick={() => {
-                  const url = api.defaults.baseURL ? api.defaults.baseURL + '/api/backup/export' : '/api/backup/export';
-                  const a = document.createElement('a');
-                  a.href = url + '?token=' + localStorage.getItem('AUTH_TOKEN');
-                  a.download = 'aggrsite-backup.json';
-                  a.click();
-                }}
+	                  const url = api.defaults.baseURL ? api.defaults.baseURL + '/api/backup/export' : '/api/backup/export';
+	                  const a = document.createElement('a');
+	                  a.href = url + '?token=' + encodeURIComponent(getAuthToken());
+	                  a.download = 'aggrsite-backup.json';
+	                  a.click();
+	                }}
                 className={btnSecondaryClass}
               >
                 导出为 JSON

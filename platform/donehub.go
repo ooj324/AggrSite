@@ -17,10 +17,12 @@ func (a *DoneHubAdapter) Checkin(_ string, _ string, _ int64, _ *RequestOption) 
 
 func (a *DoneHubAdapter) GetBalance(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*BalanceInfo, error) {
 	url := fmt.Sprintf("%s/api/user/self", baseURL)
-	headers := AuthHeaders(accessToken, platformUserID)
 
 	var res map[string]interface{}
-	err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
+	usedCookie, err := fetchJSONWithSessionCookie(url, "GET", accessToken, platformUserID, nil, nil, &res, opt)
+	if !usedCookie {
+		err = a.FetchJSON(url, "GET", AuthHeaders(accessToken, platformUserID), nil, &res, opt)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balance: %w", err)
 	}
@@ -47,7 +49,12 @@ func (a *DoneHubAdapter) PlatformName() string { return "done-hub" }
 func (a *DoneHubAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
 	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
 	var userRes map[string]interface{}
-	if err := a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt); err == nil {
+
+	usedCookie, err := fetchJSONWithSessionCookie(userURL, "GET", accessToken, platformUserID, nil, nil, &userRes, opt)
+	if !usedCookie {
+		err = a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt)
+	}
+	if err == nil {
 		success, _ := userRes["success"].(bool)
 		if success {
 			ui, _ := parseUserInfoAndBalance(userRes["data"])
@@ -60,6 +67,10 @@ func (a *DoneHubAdapter) VerifyToken(baseURL, accessToken string, platformUserID
 				ApiToken:  apiToken,
 			}, nil
 		}
+	}
+
+	if usedCookie {
+		return &VerifyTokenResult{TokenType: "unknown"}, nil
 	}
 
 	models, err := a.GetModels(baseURL, accessToken, platformUserID, opt)

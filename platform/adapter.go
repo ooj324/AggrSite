@@ -194,13 +194,35 @@ func applyCustomHeaders(req *http.Request, opt *RequestOption) {
 	}
 }
 
-// preserveHeadersRedirect preserves sensitive headers like Authorization and Cookie during redirects.
+func sameRedirectHost(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return strings.EqualFold(a.Host, b.Host)
+}
+
+func isRedirectSensitiveHeader(key string) bool {
+	return strings.EqualFold(key, "Authorization") || strings.EqualFold(key, "Cookie")
+}
+
+// preserveHeadersRedirect preserves auth headers for same-host redirects and
+// carries Set-Cookie from the previous response into the redirected request.
 func preserveHeadersRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return fmt.Errorf("stopped after 10 redirects")
 	}
-	for key, val := range via[0].Header {
-		req.Header[key] = val
+	prev := via[len(via)-1]
+	sameHost := sameRedirectHost(prev.URL, req.URL)
+	for key, val := range prev.Header {
+		if isRedirectSensitiveHeader(key) && !sameHost {
+			continue
+		}
+		req.Header[key] = append([]string(nil), val...)
+	}
+	if sameHost && req.Response != nil {
+		if setCookies := req.Response.Header.Values("Set-Cookie"); len(setCookies) > 0 {
+			setRequestHeader(req, "Cookie", mergeSetCookiePairs(req.Header.Get("Cookie"), setCookies))
+		}
 	}
 	return nil
 }
@@ -281,6 +303,66 @@ func AuthHeaders(accessToken string, platformUserID int64) map[string]string {
 		h["User-id"] = uid
 	}
 	return h
+}
+
+func fetchJSONWithSessionCookie(reqURL, method, accessToken string, platformUserID int64, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (bool, error) {
+	if !IsCookieSessionToken(accessToken) {
+		return false, nil
+	}
+
+	candidates := BuildCookieCandidates(accessToken)
+	if len(candidates) == 0 {
+		return false, nil
+	}
+
+	headers := mergeMaps(CookieUserIDHeaders(platformUserID), extraHeaders)
+	var lastErr error
+	for _, cookie := range candidates {
+		_, err := FetchJSONWithCookieRetry(reqURL, method, cookie, headers, body, out, opt)
+		if err == nil {
+			return true, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no valid cookie candidate")
+	}
+	return true, lastErr
+}
+
+func getApiTokensWithSessionCookie(base *BaseAdapter, baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error) {
+	if IsCookieSessionToken(accessToken) {
+		url := fmt.Sprintf("%s/api/token/?p=0&size=100", baseURL)
+		var res map[string]interface{}
+		usedCookie, err := fetchJSONWithSessionCookie(url, "GET", accessToken, platformUserID, nil, nil, &res, opt)
+		if usedCookie {
+			if err != nil {
+				return nil, err
+			}
+			success, _ := res["success"].(bool)
+			if !success {
+				return nil, fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
+			}
+			return parseApiTokensArray(res), nil
+		}
+	}
+	return base.GetApiTokens(baseURL, accessToken, platformUserID, opt)
+}
+
+func getApiTokenWithSessionCookie(base *BaseAdapter, baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
+	tokens, err := getApiTokensWithSessionCookie(base, baseURL, accessToken, platformUserID, opt)
+	if err != nil {
+		return "", err
+	}
+	for _, token := range tokens {
+		if token.Enabled && strings.TrimSpace(token.Key) != "" {
+			return strings.TrimSpace(token.Key), nil
+		}
+	}
+	if len(tokens) > 0 && strings.TrimSpace(tokens[0].Key) != "" {
+		return strings.TrimSpace(tokens[0].Key), nil
+	}
+	return "", fmt.Errorf("no valid api token found")
 }
 
 // ExtractMessage extracts a human-readable message from a typical API response body.

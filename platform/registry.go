@@ -8,10 +8,14 @@ func Register(a Adapter) {
 	adapters = append(adapters, a)
 }
 
+func normalizePlatformName(platform string) string {
+	return strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(platform)))
+}
+
 func GetAdapter(platform string) Adapter {
-	normalized := strings.ToLower(strings.TrimSpace(platform))
+	normalized := normalizePlatformName(platform)
 	for _, a := range adapters {
-		if strings.ToLower(a.PlatformName()) == normalized {
+		if normalizePlatformName(a.PlatformName()) == normalized {
 			return a
 		}
 	}

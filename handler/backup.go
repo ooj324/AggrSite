@@ -84,14 +84,18 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 
 		for _, s := range backup.Sites {
 			id, _ := db.CreateSite(db.CreateSiteInput{
-				Name:               s.Name,
-				URL:                s.URL,
-				Platform:           s.Platform,
-				Status:             s.Status,
-				ProxyURL:           s.ProxyURL,
-				UseSystemProxy:     s.UseSystemProxy,
-				ExternalCheckinURL: s.ExternalCheckinURL,
-				CustomHeaders:      s.CustomHeaders,
+				Name:                      s.Name,
+				URL:                       s.URL,
+				Platform:                  s.Platform,
+				Status:                    s.Status,
+				ProxyURL:                  s.ProxyURL,
+				UseSystemProxy:            s.UseSystemProxy,
+				ExternalCheckinURL:        s.ExternalCheckinURL,
+				ExternalCheckinMethod:     s.ExternalCheckinMethod,
+				ExternalCheckinAuthHeader: s.ExternalCheckinAuthHeader,
+				ExternalCheckinAuthPrefix: s.ExternalCheckinAuthPrefix,
+				ExternalCheckinBody:       s.ExternalCheckinBody,
+				CustomHeaders:             s.CustomHeaders,
 			})
 			if id > 0 {
 				siteIDMap[s.ID] = id
@@ -201,7 +205,7 @@ func ImportBackup(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			
+
 			accessToken, _ := row["access_token"].(string)
 			if accessToken == "" {
 				if accInfo, ok := row["account_info"].(map[string]interface{}); ok {

@@ -23,6 +23,15 @@ func TestBaseLoginExtractsTopLevelAccessToken(t *testing.T) {
 	}
 }
 
+func TestGetAdapterAcceptsLegacyPlatformAliases(t *testing.T) {
+	if GetAdapter("newapi") == nil {
+		t.Fatal("expected newapi alias to resolve")
+	}
+	if GetAdapter("oneapi") == nil {
+		t.Fatal("expected oneapi alias to resolve")
+	}
+}
+
 func TestOneApiVerifyTokenUsesOneApiBalanceFormula(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -47,6 +56,39 @@ func TestOneApiVerifyTokenUsesOneApiBalanceFormula(t *testing.T) {
 	}
 	if result.Balance.Balance != 0.0016 || result.Balance.Used != 0.0004 || result.Balance.Quota != 0.002 {
 		t.Fatalf("unexpected one-api balance: %+v", result.Balance)
+	}
+}
+
+func TestOneApiVerifyTokenUsesCookieSessionAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "" {
+			t.Fatalf("cookie session should not be sent as bearer auth: %q", auth)
+		}
+		if cookie := r.Header.Get("Cookie"); cookie != "session=abc" {
+			t.Fatalf("unexpected Cookie header: %q", cookie)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/user/self":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"username":"cookie-user","quota":1000,"used_quota":200}}`))
+		case "/api/token/":
+			_, _ = w.Write([]byte(`{"success":true,"data":[{"name":"main","key":"sk-cookie","status":1}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	adapter := &OneApiAdapter{BaseAdapter: BaseAdapter{Name: "one-api"}}
+	result, err := adapter.VerifyToken(server.URL, "session=abc; Path=/; HttpOnly", 0, nil)
+	if err != nil {
+		t.Fatalf("VerifyToken returned error: %v", err)
+	}
+	if result.TokenType != "session" || result.UserInfo == nil || result.UserInfo.Username != "cookie-user" {
+		t.Fatalf("unexpected verify result: %+v", result)
+	}
+	if result.ApiToken != "sk-cookie" {
+		t.Fatalf("unexpected api token: %q", result.ApiToken)
 	}
 }
 
