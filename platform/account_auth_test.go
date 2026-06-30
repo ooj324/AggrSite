@@ -30,6 +30,9 @@ func TestGetAdapterAcceptsLegacyPlatformAliases(t *testing.T) {
 	if GetAdapter("oneapi") == nil {
 		t.Fatal("expected oneapi alias to resolve")
 	}
+	if GetAdapter("agent-router") == nil {
+		t.Fatal("expected agent-router alias to resolve")
+	}
 }
 
 func TestOneApiVerifyTokenUsesOneApiBalanceFormula(t *testing.T) {

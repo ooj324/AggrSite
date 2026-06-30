@@ -276,9 +276,16 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 		var data map[string]interface{}
 		body, _ := io.ReadAll(resp.Body)
 		if json.Unmarshal(body, &data) == nil {
-			if sysName, isStr := data["system_name"].(string); isStr && strings.Contains(strings.ToLower(sysName), "new api") {
-				ok(w, map[string]interface{}{"platform": "new-api", "url": url})
-				return
+			if sysName, isStr := data["system_name"].(string); isStr {
+				lowerName := strings.ToLower(sysName)
+				if strings.Contains(lowerName, "agent router") || strings.Contains(lowerName, "agentrouter") {
+					ok(w, map[string]interface{}{"platform": "agentrouter", "url": url})
+					return
+				}
+				if strings.Contains(lowerName, "new api") {
+					ok(w, map[string]interface{}{"platform": "new-api", "url": url})
+					return
+				}
 			}
 			if _, hasVer := data["version"]; hasVer {
 				ok(w, map[string]interface{}{"platform": "one-api", "url": url})

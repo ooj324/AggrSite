@@ -2,6 +2,7 @@ package platform
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,22 @@ var setCookieAttributeNames = map[string]bool{
 	"priority":    true,
 	"samesite":    true,
 	"secure":      true,
+}
+
+func isLikelyCookieName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 80 {
+		return false
+	}
+	for _, r := range name {
+		if r <= 0x20 || r >= 0x7f {
+			return false
+		}
+		if strings.ContainsRune("()<>@,;:\\\"/[]?={}", r) {
+			return false
+		}
+	}
+	return true
 }
 
 func stripCookieHeaderLabel(raw string) string {
@@ -69,7 +86,7 @@ func parseCookiePairsFromSingle(raw string) []cookiePair {
 
 		name := strings.TrimSpace(part[:eq])
 		value := strings.TrimSpace(part[eq+1:])
-		if name == "" {
+		if !isLikelyCookieName(name) {
 			continue
 		}
 		if setCookieAttributeNames[strings.ToLower(name)] {
@@ -140,6 +157,34 @@ func normalizeCookieHeader(raw string) string {
 	return joinCookiePairs(mergeCookiePairLists(parseCookiePairs(raw)))
 }
 
+func looksLikeSecureCookieSessionValue(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 80 || strings.Contains(raw, ";") || strings.Contains(raw, "\n") {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		decoded, err = base64.RawURLEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		return false
+	}
+	parts := bytes.Split(decoded, []byte("|"))
+	if len(parts) < 3 {
+		return false
+	}
+	if _, err := strconv.ParseInt(string(parts[0]), 10, 64); err != nil {
+		return false
+	}
+	return len(parts[1]) > 0 && len(parts[2]) > 0
+}
+
 // NormalizeCookieHeader converts a pasted Cookie/Set-Cookie string into a request
 // Cookie header value by removing attributes such as Path, HttpOnly and SameSite.
 func NormalizeCookieHeader(raw string) string {
@@ -197,10 +242,8 @@ func BuildCookieCandidates(accessToken string) []string {
 		}
 	}
 
-	if strings.Contains(raw, "=") {
-		if normalized := normalizeCookieHeader(raw); normalized != "" {
-			add(normalized)
-		}
+	if normalized := normalizeCookieHeader(raw); normalized != "" {
+		add(normalized)
 		return candidates
 	}
 	add("session=" + raw)
@@ -212,7 +255,7 @@ func BuildCookieCandidates(accessToken string) []string {
 // IsCookieSessionToken returns true if the access token looks like a cookie.
 func IsCookieSessionToken(accessToken string) bool {
 	raw := strings.TrimSpace(stripBearerPrefix(accessToken))
-	return strings.Contains(raw, "=") && normalizeCookieHeader(raw) != ""
+	return normalizeCookieHeader(raw) != "" || looksLikeSecureCookieSessionValue(raw)
 }
 
 // CookieUserIDHeaders builds extra headers with user-id for cookie-based requests.

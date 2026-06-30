@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,6 +40,23 @@ func TestBuildCookieCandidatesNormalizesCookieInputs(t *testing.T) {
 	want := []string{"session=raw-token", "token=raw-token"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("unexpected token candidates:\nwant %#v\n got %#v", want, got)
+	}
+}
+
+func TestBuildCookieCandidatesTreatsPaddedRawSessionAsValue(t *testing.T) {
+	payload := strings.Repeat("payload", 20)
+	raw := base64.StdEncoding.EncodeToString([]byte("1782783060|" + payload + "|signature"))
+	if !strings.HasSuffix(raw, "=") {
+		t.Fatalf("test token should have base64 padding: %q", raw)
+	}
+
+	got := BuildCookieCandidates(raw)
+	want := []string{"session=" + raw, "token=" + raw}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("unexpected padded token candidates:\nwant %#v\n got %#v", want, got)
+	}
+	if !IsCookieSessionToken(raw) {
+		t.Fatal("expected signed session value to be treated as cookie session credential")
 	}
 }
 

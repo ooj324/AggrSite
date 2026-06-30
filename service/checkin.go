@@ -78,6 +78,11 @@ func isUnsupportedCheckin(message string) bool {
 	return false
 }
 
+func isAgentRouterPlatform(value string) bool {
+	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(value)))
+	return normalized == "agentrouter"
+}
+
 type ExternalCheckinConfig struct {
 	Method     string `json:"method"`
 	URL        string `json:"url"`
@@ -213,6 +218,70 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 	return result, nil
 }
 
+func tryAgentRouterLoginCheckin(row db.AccountWithSite, adapter platform.Adapter, opt *platform.RequestOption) (*platform.CheckinResult, string) {
+	if row.ExtraConfig == nil || *row.ExtraConfig == "" {
+		return nil, ""
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err != nil {
+		return nil, ""
+	}
+
+	autoRelogin, ok := cfg["autoRelogin"].(map[string]interface{})
+	if !ok {
+		return nil, ""
+	}
+
+	username, _ := autoRelogin["username"].(string)
+	passwordCipher, _ := autoRelogin["passwordCipher"].(string)
+	if username == "" || passwordCipher == "" {
+		return nil, ""
+	}
+
+	password := DecryptPassword(passwordCipher)
+	if password == "" {
+		return &platform.CheckinResult{Success: false, Message: "AgentRouter login checkin failed: stored password cannot be decrypted"}, ""
+	}
+
+	loginResult, err := adapter.Login(row.SiteURL, username, password, opt)
+	if err != nil {
+		return &platform.CheckinResult{Success: false, Message: err.Error()}, ""
+	}
+	if loginResult == nil || !loginResult.Success || loginResult.AccessToken == "" {
+		msg := "AgentRouter login checkin failed"
+		if loginResult != nil && loginResult.Message != "" {
+			msg = loginResult.Message
+		}
+		return &platform.CheckinResult{Success: false, Message: msg}, ""
+	}
+
+	updates := map[string]interface{}{
+		"access_token": loginResult.AccessToken,
+	}
+	if loginResult.PlatformUserID > 0 {
+		cfg["platformUserId"] = loginResult.PlatformUserID
+		if cfgBytes, err := json.Marshal(cfg); err == nil {
+			updates["extra_config"] = string(cfgBytes)
+		}
+	}
+	_ = db.UpdateAccount(row.ID, updates)
+
+	if strings.Contains(loginResult.Message, "签到") {
+		return &platform.CheckinResult{Success: true, Message: loginResult.Message}, loginResult.AccessToken
+	}
+
+	platformUserID := resolvePlatformUserID(row.ExtraConfig)
+	if loginResult.PlatformUserID > 0 {
+		platformUserID = loginResult.PlatformUserID
+	}
+	result, err := adapter.Checkin(row.SiteURL, loginResult.AccessToken, platformUserID, opt)
+	if err != nil {
+		return &platform.CheckinResult{Success: false, Message: err.Error()}, loginResult.AccessToken
+	}
+	return result, loginResult.AccessToken
+}
+
 func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	row, err := db.GetAccountWithSite(accountID)
 	if err != nil {
@@ -305,6 +374,15 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	executeCheckin := func(token string, overrideCred string) (*platform.CheckinResult, error) {
 		if useGeneric {
 			return doGenericCheckin(overrideConfig, overrideCred, opt)
+		}
+
+		if isAgentRouterPlatform(row.SitePlatform) {
+			if result, refreshedToken := tryAgentRouterLoginCheckin(*row, adapter, opt); result != nil {
+				if refreshedToken != "" {
+					row.AccessToken = refreshedToken
+				}
+				return result, nil
+			}
 		}
 
 		// Try adapter first (reuses main site auth method)

@@ -474,7 +474,9 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                     const url = e.target.value;
                     let nextPlatform = formData.platform;
                     if (!nextPlatform || nextPlatform === 'anyrouter') {
-                      if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
+                      if (url.includes('agentrouter')) {
+                        nextPlatform = 'agentrouter';
+                      } else if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
                         nextPlatform = 'newapi';
                       } else if (url.includes('sub2api') || url.includes('aiproxy')) {
                         nextPlatform = 'sub2api';
