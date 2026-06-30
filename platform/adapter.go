@@ -134,24 +134,62 @@ func buildTransport(opt *RequestOption) *http.Transport {
 	return transport
 }
 
+func stripBearerPrefix(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) >= 7 && strings.EqualFold(trimmed[:7], "Bearer ") {
+		return strings.TrimSpace(trimmed[7:])
+	}
+	return trimmed
+}
+
+func headerValueString(value interface{}) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case float64, bool:
+		return fmt.Sprintf("%v", v), true
+	default:
+		bs, err := json.Marshal(v)
+		if err != nil {
+			return "", false
+		}
+		return string(bs), true
+	}
+}
+
+func setRequestHeader(req *http.Request, key, value string) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	if strings.EqualFold(key, "Cookie") {
+		merged := mergeCookieHeaders(req.Header.Get("Cookie"), value)
+		if merged == "" {
+			req.Header.Del("Cookie")
+			return
+		}
+		req.Header.Set("Cookie", merged)
+		return
+	}
+	req.Header.Set(key, value)
+}
+
 // applyCustomHeaders parses and applies custom headers from opt onto req.
 func applyCustomHeaders(req *http.Request, opt *RequestOption) {
 	if opt == nil || opt.CustomHeaders == nil || *opt.CustomHeaders == "" || *opt.CustomHeaders == "{}" {
 		return
 	}
-	var custom map[string]string
+	var custom map[string]interface{}
 	if err := json.Unmarshal([]byte(*opt.CustomHeaders), &custom); err == nil {
-		for k, v := range custom {
-			if strings.EqualFold(k, "Cookie") {
-				existing := req.Header.Get("Cookie")
-				if existing != "" {
-					req.Header.Set("Cookie", existing+"; "+v)
-				} else {
-					req.Header.Set("Cookie", v)
-				}
-			} else {
-				req.Header.Set(k, v)
+		for k, raw := range custom {
+			v, ok := headerValueString(raw)
+			if !ok {
+				continue
 			}
+			setRequestHeader(req, k, v)
 		}
 	}
 }
@@ -184,20 +222,16 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	applyCustomHeaders(req, opt)
 
-	// Add a default User-Agent to bypass Cloudflare tarpitting of Go-http-client
-	hasUA := false
 	for k, v := range headers {
-		if strings.ToLower(k) == "user-agent" {
-			hasUA = true
-		}
-		req.Header.Set(k, v)
+		setRequestHeader(req, k, v)
 	}
-	if !hasUA {
+
+	// Add a default User-Agent to bypass Cloudflare tarpitting of Go-http-client.
+	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	}
-
-	applyCustomHeaders(req, opt)
 
 	client := &http.Client{
 		Timeout:       60 * time.Second,
@@ -235,9 +269,7 @@ func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string
 
 // AuthHeaders builds common user-id headers used by new-api / one-api family.
 func AuthHeaders(accessToken string, platformUserID int64) map[string]string {
-	cleanToken := strings.TrimSpace(accessToken)
-	cleanToken = strings.TrimPrefix(cleanToken, "Bearer ")
-	cleanToken = strings.TrimSpace(cleanToken)
+	cleanToken := stripBearerPrefix(accessToken)
 
 	h := map[string]string{
 		"Authorization": "Bearer " + cleanToken,

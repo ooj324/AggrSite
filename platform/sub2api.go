@@ -25,14 +25,6 @@ func normalizeSub2BaseURL(baseURL string) string {
 	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
 }
 
-func stripBearerPrefix(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if len(trimmed) >= 7 && strings.EqualFold(trimmed[:7], "Bearer ") {
-		return strings.TrimSpace(trimmed[7:])
-	}
-	return trimmed
-}
-
 func sub2AuthHeaders(accessToken string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + stripBearerPrefix(accessToken)}
 }

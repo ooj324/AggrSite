@@ -1,0 +1,82 @@
+package platform
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestNormalizeCookieHeaderStripsSetCookieAttributes(t *testing.T) {
+	got := NormalizeCookieHeader("Set-Cookie: session=abc; Path=/; HttpOnly; SameSite=Lax; Expires=Wed, 21 Oct 2025 07:28:00 GMT")
+	if got != "session=abc" {
+		t.Fatalf("unexpected normalized cookie: %q", got)
+	}
+}
+
+func TestMergeCookieHeadersOverridesByNameAndStripsAttributes(t *testing.T) {
+	got := mergeCookieHeaders("session=old; acw=1", "session=new; Path=/; HttpOnly; token=t")
+	want := "session=new; acw=1; token=t"
+	if got != want {
+		t.Fatalf("unexpected merged cookie:\nwant %q\n got %q", want, got)
+	}
+}
+
+func TestBuildCookieCandidatesNormalizesCookieInputs(t *testing.T) {
+	got := BuildCookieCandidates("Bearer session=abc; Path=/; HttpOnly")
+	if len(got) != 1 || got[0] != "session=abc" {
+		t.Fatalf("unexpected cookie candidates: %#v", got)
+	}
+
+	got = BuildCookieCandidates("raw-token")
+	want := []string{"session=raw-token", "token=raw-token"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("unexpected token candidates:\nwant %#v\n got %#v", want, got)
+	}
+}
+
+func TestFetchJSONAppliesCustomHeadersWithoutOverridingExplicitAuth(t *testing.T) {
+	customHeaders := `{"Authorization":"Bearer site","Cookie":"session=site; Path=/; HttpOnly; cf=1","X-Trace":123}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer account" {
+			t.Fatalf("unexpected Authorization: %q", got)
+		}
+		if got := r.Header.Get("Cookie"); got != "session=account; cf=1; token=abc" {
+			t.Fatalf("unexpected Cookie: %q", got)
+		}
+		if got := r.Header.Get("X-Trace"); got != "123" {
+			t.Fatalf("unexpected X-Trace: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	var res map[string]interface{}
+	base := &BaseAdapter{Name: "test"}
+	err := base.FetchJSON(server.URL, "GET", map[string]string{
+		"Authorization": "Bearer account",
+		"Cookie":        "session=account; token=abc",
+	}, nil, &res, &RequestOption{CustomHeaders: &customHeaders})
+	if err != nil {
+		t.Fatalf("FetchJSON returned error: %v", err)
+	}
+}
+
+func TestFetchJSONWithCookieRetryReturnsHTTPErrorForNon2xxJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"success":false,"message":"missing Origin"}`))
+	}))
+	defer server.Close()
+
+	var res map[string]interface{}
+	_, err := FetchJSONWithCookieRetry(server.URL, "POST", "session=abc", nil, map[string]interface{}{}, &res, nil)
+	if err == nil {
+		t.Fatal("expected HTTP error, got nil")
+	}
+	if !strings.Contains(err.Error(), "HTTP 403: missing Origin") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

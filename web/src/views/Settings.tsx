@@ -133,6 +133,30 @@ export default function Settings() {
               )}
             </div>
 
+            <div className="rounded-lg border border-border bg-background px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[13px] font-medium text-textSecondary">Sub2API Token 刷新</div>
+                  <div className="text-[12px] text-textMuted mt-1">
+                    固定后台任务，每 {status?.sub2api_refresh_interval_seconds || 300} 秒检查一次。
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-sm px-2 py-1 text-[12px] font-medium ${status?.sub2api_refresh_running ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
+                  {status?.sub2api_refresh_running ? 'Running' : 'Stopped'}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-[12px]">
+                <div>
+                  <div className="text-textMuted">检查间隔</div>
+                  <div className="mt-0.5 font-mono text-textPrimary">{status?.sub2api_refresh_interval_seconds || 300}s</div>
+                </div>
+                <div>
+                  <div className="text-textMuted">提前刷新</div>
+                  <div className="mt-0.5 font-mono text-textPrimary">{status?.sub2api_refresh_lead_seconds || 600}s</div>
+                </div>
+              </div>
+            </div>
+
             <div className="pt-4 flex justify-end">
               <button type="submit" disabled={saving} className={btnClass}>
                 {saving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}

@@ -17,13 +17,149 @@ import (
 
 // ---- Cookie helpers ----
 
-// BuildCookieCandidates generates cookie header candidates from an access token.
-func BuildCookieCandidates(accessToken string) []string {
-	raw := strings.TrimSpace(accessToken)
+type cookiePair struct {
+	name  string
+	value string
+}
+
+var setCookieAttributeNames = map[string]bool{
+	"comment":     true,
+	"domain":      true,
+	"expires":     true,
+	"httponly":    true,
+	"max-age":     true,
+	"partitioned": true,
+	"path":        true,
+	"priority":    true,
+	"samesite":    true,
+	"secure":      true,
+}
+
+func stripCookieHeaderLabel(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range []string{"cookie:", "set-cookie:"} {
+		if strings.HasPrefix(lower, prefix) {
+			return strings.TrimSpace(trimmed[len(prefix):])
+		}
+	}
+	return trimmed
+}
+
+func parseCookiePairs(raw string) []cookiePair {
+	raw = stripCookieHeaderLabel(raw)
 	if raw == "" {
 		return nil
 	}
-	raw = strings.TrimPrefix(raw, "Bearer ")
+
+	parts := strings.Split(raw, ";")
+	pairs := make([]cookiePair, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		eq := strings.Index(part, "=")
+		if eq <= 0 {
+			if setCookieAttributeNames[strings.ToLower(part)] {
+				continue
+			}
+			continue
+		}
+
+		name := strings.TrimSpace(part[:eq])
+		value := strings.TrimSpace(part[eq+1:])
+		if name == "" {
+			continue
+		}
+		if setCookieAttributeNames[strings.ToLower(name)] {
+			continue
+		}
+		pairs = append(pairs, cookiePair{name: name, value: value})
+	}
+	return pairs
+}
+
+func mergeCookiePairLists(groups ...[]cookiePair) []cookiePair {
+	merged := make([]cookiePair, 0)
+	indexByName := map[string]int{}
+
+	for _, group := range groups {
+		for _, pair := range group {
+			name := strings.TrimSpace(pair.name)
+			if name == "" {
+				continue
+			}
+			pair.name = name
+			if idx, exists := indexByName[name]; exists {
+				merged[idx] = pair
+				continue
+			}
+			indexByName[name] = len(merged)
+			merged = append(merged, pair)
+		}
+	}
+	return merged
+}
+
+func joinCookiePairs(pairs []cookiePair) string {
+	parts := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		if strings.TrimSpace(pair.name) == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", strings.TrimSpace(pair.name), pair.value))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func normalizeCookieHeader(raw string) string {
+	return joinCookiePairs(mergeCookiePairLists(parseCookiePairs(raw)))
+}
+
+// NormalizeCookieHeader converts a pasted Cookie/Set-Cookie string into a request
+// Cookie header value by removing attributes such as Path, HttpOnly and SameSite.
+func NormalizeCookieHeader(raw string) string {
+	return normalizeCookieHeader(raw)
+}
+
+// CookieValueFromHeader returns a cookie value by name from a Cookie/Set-Cookie string.
+func CookieValueFromHeader(raw, name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false
+	}
+	for _, pair := range parseCookiePairs(raw) {
+		if strings.EqualFold(pair.name, name) {
+			return pair.value, true
+		}
+	}
+	return "", false
+}
+
+// CookieCredentialValueFromHeader returns the first non-shield cookie value.
+func CookieCredentialValueFromHeader(raw string) (string, bool) {
+	ignored := map[string]bool{
+		"acw_tc":     true,
+		"acw_sc__v2": true,
+		"cdn_sec_tc": true,
+	}
+	for _, pair := range parseCookiePairs(raw) {
+		if ignored[strings.ToLower(strings.TrimSpace(pair.name))] {
+			continue
+		}
+		return pair.value, true
+	}
+	return "", false
+}
+
+func mergeCookieHeaders(existing, next string) string {
+	return joinCookiePairs(mergeCookiePairLists(parseCookiePairs(existing), parseCookiePairs(next)))
+}
+
+// BuildCookieCandidates generates cookie header candidates from an access token.
+func BuildCookieCandidates(accessToken string) []string {
+	raw := stripBearerPrefix(accessToken)
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -39,7 +175,10 @@ func BuildCookieCandidates(accessToken string) []string {
 	}
 
 	if strings.Contains(raw, "=") {
-		add(raw)
+		if normalized := normalizeCookieHeader(raw); normalized != "" {
+			add(normalized)
+		}
+		return candidates
 	}
 	add("session=" + raw)
 	add("token=" + raw)
@@ -49,10 +188,8 @@ func BuildCookieCandidates(accessToken string) []string {
 
 // IsCookieSessionToken returns true if the access token looks like a cookie.
 func IsCookieSessionToken(accessToken string) bool {
-	raw := strings.TrimSpace(accessToken)
-	raw = strings.TrimPrefix(raw, "Bearer ")
-	raw = strings.TrimSpace(raw)
-	return strings.Contains(raw, "=")
+	raw := strings.TrimSpace(stripBearerPrefix(accessToken))
+	return strings.Contains(raw, "=") && normalizeCookieHeader(raw) != ""
 }
 
 // CookieUserIDHeaders builds extra headers with user-id for cookie-based requests.
@@ -206,41 +343,16 @@ func isShieldChallenge(contentType, text string) bool {
 }
 
 func upsertCookie(cookieHeader, name, value string) string {
-	parts := strings.Split(cookieHeader, ";")
-	var next []string
-	replaced := false
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		eq := strings.Index(part, "=")
-		if eq < 0 {
-			next = append(next, part)
-			continue
-		}
-		k := strings.TrimSpace(part[:eq])
-		if k == name {
-			replaced = true
-			next = append(next, fmt.Sprintf("%s=%s", name, value))
-		} else {
-			next = append(next, part)
-		}
-	}
-	if !replaced {
-		next = append(next, fmt.Sprintf("%s=%s", name, value))
-	}
-	return strings.Join(next, "; ")
+	return joinCookiePairs(mergeCookiePairLists(parseCookiePairs(cookieHeader), []cookiePair{{name: name, value: value}}))
 }
 
 func mergeSetCookiePairs(cookieHeader string, setCookies []string) string {
-	merged := cookieHeader
+	merged := normalizeCookieHeader(cookieHeader)
 	for _, raw := range setCookies {
 		if raw == "" {
 			continue
 		}
-		firstPair := strings.TrimSpace(strings.Split(raw, ";")[0])
+		firstPair := strings.TrimSpace(strings.Split(stripCookieHeaderLabel(raw), ";")[0])
 		if firstPair == "" {
 			continue
 		}
@@ -264,7 +376,7 @@ type FetchCookieResult struct {
 // FetchJSONWithCookieRetry makes an HTTP request, merging Set-Cookie headers
 // and solving the shield challenge (acw_sc__v2) automatically.
 func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (*FetchCookieResult, error) {
-	currentCookie := cookie
+	currentCookie := normalizeCookieHeader(cookie)
 
 	for attempt := 0; attempt < 3; attempt++ {
 		var bodyReader io.Reader
@@ -282,14 +394,16 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
+		applyCustomHeaders(req, opt)
 		if currentCookie != "" {
-			req.Header.Set("Cookie", currentCookie)
+			setRequestHeader(req, "Cookie", currentCookie)
 		}
 		for k, v := range extraHeaders {
-			req.Header.Set(k, v)
+			setRequestHeader(req, k, v)
 		}
-		applyCustomHeaders(req, opt)
+		if req.Header.Get("User-Agent") == "" {
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
+		}
 
 		client := &http.Client{
 			Timeout:       30 * time.Second,
@@ -312,9 +426,23 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		setCookies := resp.Header.Values("Set-Cookie")
 		currentCookie = mergeSetCookiePairs(currentCookie, setCookies)
 
-		// Try to parse JSON first
-		if jsonErr := json.Unmarshal(respBody, out); jsonErr == nil {
+		// Try to parse JSON first, but never treat non-2xx JSON as success.
+		if out == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return &FetchCookieResult{CookieHeader: currentCookie}, nil
+		}
+		if out != nil {
+			if jsonErr := json.Unmarshal(respBody, out); jsonErr == nil {
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					var errData map[string]interface{}
+					if err := json.Unmarshal(respBody, &errData); err == nil {
+						if msg := ExtractMessage(errData); msg != "" {
+							return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
+						}
+					}
+					return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+				}
+				return &FetchCookieResult{CookieHeader: currentCookie}, nil
+			}
 		}
 
 		// If not valid JSON, check for shield challenge

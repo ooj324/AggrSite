@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"metapi/aggrsite/db"
@@ -54,25 +53,20 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		return &BalanceResult{Success: false, Message: "unsupported platform: " + row.SitePlatform}, nil
 	}
 
-	opt := &platform.RequestOption{
-		ProxyURL:       row.SiteProxyURL,
-		UseSystemProxy: row.SiteUseSystemProxy,
-		CustomHeaders:  row.SiteCustomHeaders,
-	}
+	opt := requestOptionForAccount(*row)
 
-	if row.ExtraConfig != nil && *row.ExtraConfig != "" {
-		var cfg map[string]interface{}
-		if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err == nil {
-			if proxyUrl, ok := cfg["proxyUrl"].(string); ok && proxyUrl != "" {
-				opt.ProxyURL = &proxyUrl
-			}
-			if useSystemProxy, ok := cfg["useSystemProxy"].(bool); ok {
-				opt.UseSystemProxy = &useSystemProxy
+	platformUserID := resolvePlatformUserID(row.ExtraConfig)
+	if isSub2APIPlatform(row.SitePlatform) {
+		if refreshedAccessToken, refreshedExtraConfig, _, err := ensureSub2APIManagedSession(*row, opt); err != nil {
+			slog.Warn("Sub2API managed session pre-refresh failed", "account_id", accountID, "err", err)
+		} else {
+			row.AccessToken = refreshedAccessToken
+			if refreshedExtraConfig != "" {
+				row.ExtraConfig = &refreshedExtraConfig
 			}
 		}
 	}
 
-	platformUserID := resolvePlatformUserID(row.ExtraConfig)
 	info, err := adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
 	if err != nil {
 		slog.Warn("Balance refresh failed, attempting auto-relogin", "account_id", accountID, "err", err)

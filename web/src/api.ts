@@ -124,6 +124,9 @@ export interface SchedulerStatus {
   next_checkin: string;
   balance_refresh_cron: string;
   next_balance_refresh: string;
+  sub2api_refresh_running?: boolean;
+  sub2api_refresh_interval_seconds?: number;
+  sub2api_refresh_lead_seconds?: number;
   timezone?: string;
 }
 

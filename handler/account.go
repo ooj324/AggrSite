@@ -418,15 +418,24 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		if input.PlatformUserID != nil {
 			userID = *input.PlatformUserID
 		}
+		activeAccessToken := input.AccessToken
 
 		// sync balance
-		if input.CredentialMode != "apikey" && input.AccessToken != "" {
+		if input.CredentialMode != "apikey" && activeAccessToken != "" {
 			service.RefreshBalance(id)
+			if account, err := db.GetAccount(id); err == nil {
+				activeAccessToken = account.AccessToken
+			}
 		}
 
 		// sync tokens
-		if input.CredentialMode != "apikey" && input.AccessToken != "" {
-			if tokens, err := ad.GetApiTokens(site.URL, input.AccessToken, userID, opt); err == nil {
+		if input.CredentialMode != "apikey" && activeAccessToken != "" {
+			if tokens, err := ad.GetApiTokens(site.URL, activeAccessToken, userID, opt); err == nil {
+				if input.ApiToken == "" {
+					if preferredToken := preferredApiToken("", tokens); preferredToken != "" {
+						_ = db.UpdateAccount(id, map[string]interface{}{"api_token": preferredToken})
+					}
+				}
 				for _, t := range tokens {
 					db.CreateAccountToken(id, t.Name, t.Key)
 				}

@@ -817,3 +817,14 @@ func GetAccountWithSite(accountID int64) (*AccountWithSite, error) {
 	}
 	return &row, nil
 }
+
+func ListActiveAccountsWithSiteByPlatform(platform string) ([]AccountWithSite, error) {
+	var rows []AccountWithSite
+	err := Select(&rows, accountWithSiteQuery+`
+		WHERE COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') = 'active'
+		  AND COALESCE(NULLIF(LOWER(TRIM(s.status)), ''), 'active') = 'active'
+		  AND COALESCE(LOWER(TRIM(s.platform)), '') = ?
+		ORDER BY a.id ASC
+	`, strings.ToLower(strings.TrimSpace(platform)))
+	return rows, err
+}

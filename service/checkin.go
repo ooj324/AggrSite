@@ -94,7 +94,45 @@ func originFromURL(rawURL string) string {
 	return parsed.Scheme + "://" + parsed.Host
 }
 
-func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *platform.RequestOption, customHeaders *string) (*platform.CheckinResult, error) {
+func stripAuthBearerPrefix(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) >= 7 && strings.EqualFold(trimmed[:7], "Bearer ") {
+		return strings.TrimSpace(trimmed[7:])
+	}
+	return trimmed
+}
+
+func buildCookieAuthHeaderValue(credential, prefix string) string {
+	cleanCredential := stripAuthBearerPrefix(credential)
+	cleanPrefix := strings.TrimSpace(prefix)
+
+	if cleanPrefix == "" {
+		if normalized := platform.NormalizeCookieHeader(cleanCredential); normalized != "" {
+			return normalized
+		}
+		return cleanCredential
+	}
+
+	if strings.HasSuffix(cleanPrefix, "=") && !strings.Contains(cleanPrefix, ";") {
+		cookieName := strings.TrimSpace(strings.TrimSuffix(cleanPrefix, "="))
+		if cookieName != "" {
+			if value, ok := platform.CookieValueFromHeader(cleanCredential, cookieName); ok {
+				return platform.NormalizeCookieHeader(cookieName + "=" + value)
+			}
+			if value, ok := platform.CookieCredentialValueFromHeader(cleanCredential); ok {
+				return platform.NormalizeCookieHeader(cookieName + "=" + value)
+			}
+		}
+	}
+
+	candidate := cleanPrefix + cleanCredential
+	if normalized := platform.NormalizeCookieHeader(candidate); normalized != "" {
+		return normalized
+	}
+	return candidate
+}
+
+func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *platform.RequestOption) (*platform.CheckinResult, error) {
 	base := platform.BaseAdapter{}
 	headers := map[string]string{
 		"Content-Type":     "application/json",
@@ -106,27 +144,18 @@ func doGenericCheckin(config ExternalCheckinConfig, credential string, opt *plat
 		headers["Referer"] = origin + "/"
 	}
 
-	if config.AuthHeader != "none" && config.AuthHeader != "None" {
-		cleanToken := strings.TrimSpace(credential)
-		cleanToken = strings.TrimPrefix(cleanToken, "Bearer ")
-		cleanToken = strings.TrimSpace(cleanToken)
-
-		authHeader := config.AuthHeader
+	if !strings.EqualFold(strings.TrimSpace(config.AuthHeader), "none") {
+		authHeader := strings.TrimSpace(config.AuthHeader)
 		authPrefix := config.AuthPrefix
 		if authHeader == "" {
 			// No header name specified — fall back to the default Authorization: Bearer
 			authHeader = "Authorization"
 			authPrefix = "Bearer "
 		}
-		headers[authHeader] = authPrefix + cleanToken
-	}
-
-	if customHeaders != nil && *customHeaders != "" {
-		var ch map[string]string
-		if err := json.Unmarshal([]byte(*customHeaders), &ch); err == nil {
-			for k, v := range ch {
-				headers[k] = v
-			}
+		if strings.EqualFold(authHeader, "Cookie") {
+			headers["Cookie"] = buildCookieAuthHeaderValue(credential, authPrefix)
+		} else {
+			headers[authHeader] = authPrefix + stripAuthBearerPrefix(credential)
 		}
 	}
 
@@ -270,7 +299,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 
 	executeCheckin := func(token string, overrideCred string) (*platform.CheckinResult, error) {
 		if useGeneric {
-			return doGenericCheckin(overrideConfig, overrideCred, opt, row.SiteCustomHeaders)
+			return doGenericCheckin(overrideConfig, overrideCred, opt)
 		}
 
 		// Try adapter first (reuses main site auth method)
@@ -279,7 +308,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		// If adapter returns unsupported, AND we have an override URL, fallback to generic checkin
 		if err == nil && res != nil && hasOverrideURL && isUnsupportedCheckin(res.Message) {
 			slog.Info("Adapter checkin unsupported, falling back to generic checkin", "url", overrideConfig.URL)
-			return doGenericCheckin(overrideConfig, overrideCred, opt, row.SiteCustomHeaders)
+			return doGenericCheckin(overrideConfig, overrideCred, opt)
 		}
 
 		return res, err
@@ -408,6 +437,17 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 	}
 
 	// 1. Try RefreshAuth first (e.g. sub2api with refreshToken)
+	if isSub2APIPlatform(row.SitePlatform) {
+		refreshedAccessToken, _, didRefresh, err := forceRefreshSub2APIManagedSession(row, opt)
+		if err == nil && refreshedAccessToken != "" && (didRefresh || refreshedAccessToken != row.AccessToken) {
+			return refreshedAccessToken
+		}
+		if err != nil {
+			slog.Warn("Sub2API managed RefreshAuth failed", "account_id", row.ID, "err", err)
+		}
+		return ""
+	}
+
 	refreshRes, err := adapter.RefreshAuth(row.SiteURL, row.AccessToken, *row.ExtraConfig, opt)
 	if err == nil && refreshRes != nil && refreshRes.Success && refreshRes.AccessToken != "" {
 		slog.Info("Auto RefreshAuth successful, updating access token and config", "account_id", row.ID)

@@ -13,23 +13,26 @@ import (
 )
 
 var (
-	scheduler   *cron.Cron
-	schedulerMu sync.Mutex
-	taskMu      sync.Map // per-task mutex: task name -> *sync.Mutex
-	checkinJobID  cron.EntryID
-	balanceJobID  cron.EntryID
+	scheduler    *cron.Cron
+	schedulerMu  sync.Mutex
+	taskMu       sync.Map // per-task mutex: task name -> *sync.Mutex
+	checkinJobID cron.EntryID
+	balanceJobID cron.EntryID
 
 	activeCheckinCron string
 	activeBalanceCron string
 )
 
 type SchedulerStatus struct {
-	Running     bool   `json:"running"`
-	CheckinCron string `json:"checkin_cron"`
-	NextCheckin string `json:"next_checkin,omitempty"`
-	BalanceCron string `json:"balance_refresh_cron"`
-	NextBalance string `json:"next_balance_refresh,omitempty"`
-	Timezone    string `json:"timezone"`
+	Running                       bool   `json:"running"`
+	CheckinCron                   string `json:"checkin_cron"`
+	NextCheckin                   string `json:"next_checkin,omitempty"`
+	BalanceCron                   string `json:"balance_refresh_cron"`
+	NextBalance                   string `json:"next_balance_refresh,omitempty"`
+	Sub2APIRefreshRunning         bool   `json:"sub2api_refresh_running"`
+	Sub2APIRefreshIntervalSeconds int    `json:"sub2api_refresh_interval_seconds"`
+	Sub2APIRefreshLeadSeconds     int    `json:"sub2api_refresh_lead_seconds"`
+	Timezone                      string `json:"timezone"`
 }
 
 func SettingStringValue(raw string) string {
@@ -157,6 +160,7 @@ func StartScheduler() {
 	}
 
 	scheduler.Start()
+	StartSub2APIManagedRefreshScheduler()
 	slog.Info("Scheduler started")
 }
 
@@ -167,6 +171,7 @@ func StopScheduler() {
 		scheduler.Stop()
 		slog.Info("Scheduler stopped")
 	}
+	StopSub2APIManagedRefreshScheduler()
 }
 
 func ReloadScheduler() {
@@ -178,11 +183,15 @@ func GetSchedulerStatus() SchedulerStatus {
 	schedulerMu.Lock()
 	defer schedulerMu.Unlock()
 
+	sub2APIRunning, sub2APIIntervalSeconds, sub2APILeadSeconds := GetSub2APIManagedRefreshSchedulerStatus()
 	status := SchedulerStatus{
-		Running:     scheduler != nil,
-		CheckinCron: activeCheckinCron,
-		BalanceCron: activeBalanceCron,
-		Timezone:    time.Local.String(),
+		Running:                       scheduler != nil,
+		CheckinCron:                   activeCheckinCron,
+		BalanceCron:                   activeBalanceCron,
+		Sub2APIRefreshRunning:         sub2APIRunning,
+		Sub2APIRefreshIntervalSeconds: sub2APIIntervalSeconds,
+		Sub2APIRefreshLeadSeconds:     sub2APILeadSeconds,
+		Timezone:                      time.Local.String(),
 	}
 
 	if scheduler != nil {

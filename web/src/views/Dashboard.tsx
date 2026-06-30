@@ -196,6 +196,22 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Card 9: Sub2API Refresh */}
+        <div className="bg-surface rounded-2xl p-5 border border-border shadow-sm hover:shadow-md transition-all duration-300 animate-slide-up" style={{ animationDelay: '0.45s' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-[14px] font-medium text-textSecondary">Sub2API 刷新</div>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${status?.sub2api_refresh_running ? 'bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400' : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M20 9A8 8 0 006.4 4.8L4 10m16 4l-2.4 5.2A8 8 0 014 15" /></svg>
+            </div>
+          </div>
+          <div className={`text-[24px] font-bold tracking-tight ${status?.sub2api_refresh_running ? 'text-success' : 'text-danger'}`}>
+            {status?.sub2api_refresh_running ? 'Running' : 'Stopped'}
+          </div>
+          <div className="text-[12px] text-textMuted mt-1">
+            每 {status?.sub2api_refresh_interval_seconds || 300}s 检查，提前 {status?.sub2api_refresh_lead_seconds || 600}s 刷新
+          </div>
+        </div>
+
       </div>
     </div>
   );
