@@ -133,3 +133,31 @@ func TestFetchJSONWithCookieRetryKeepsRedirectSetCookie(t *testing.T) {
 		t.Fatalf("unexpected cookie result: %#v", result)
 	}
 }
+
+func TestFetchJSONWithCookieRetryRetriesShieldWithNewSetCookie(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			http.SetCookie(w, &http.Cookie{Name: "acw_tc", Value: "fresh", Path: "/"})
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><script>window._shield=1</script></html>`))
+			return
+		}
+		if got := r.Header.Get("Cookie"); got != "session=abc; acw_tc=fresh" {
+			t.Fatalf("retry lost fresh shield cookie: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	var res map[string]interface{}
+	_, err := FetchJSONWithCookieRetry(server.URL, "GET", "session=abc", nil, nil, &res, nil)
+	if err != nil {
+		t.Fatalf("FetchJSONWithCookieRetry returned error: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
+	}
+}

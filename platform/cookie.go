@@ -493,6 +493,7 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		}
 
 		// Collect Set-Cookie headers from the final response.
+		cookieBeforeSetCookie := currentCookie
 		setCookies := resp.Header.Values("Set-Cookie")
 		currentCookie = mergeSetCookiePairs(currentCookie, setCookies)
 
@@ -530,6 +531,9 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 
 		acwScV2 := solveNewApiAcwScV2(string(respBody))
 		if acwScV2 == "" {
+			if currentCookie != cookieBeforeSetCookie {
+				continue
+			}
 			return nil, fmt.Errorf("failed to solve shield challenge")
 		}
 

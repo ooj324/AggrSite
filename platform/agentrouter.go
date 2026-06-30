@@ -152,7 +152,15 @@ func agentRouterBrowserHeaders(baseURL string, platformUserID int64) map[string]
 		headers = map[string]string{}
 	}
 	headers["Accept"] = "application/json, text/plain, */*"
+	headers["Accept-Language"] = "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"
 	headers["Cache-Control"] = "no-store"
+	headers["Connection"] = "keep-alive"
+	headers["Sec-Fetch-Dest"] = "empty"
+	headers["Sec-Fetch-Mode"] = "cors"
+	headers["Sec-Fetch-Site"] = "same-origin"
+	headers["sec-ch-ua"] = `"Microsoft Edge";v="149", "Chromium";v="149", "Not)A;Brand";v="24"`
+	headers["sec-ch-ua-mobile"] = "?0"
+	headers["sec-ch-ua-platform"] = `"Windows"`
 	origin := strings.TrimRight(baseURL, "/")
 	if origin != "" {
 		headers["Referer"] = origin + "/console"
@@ -318,6 +326,47 @@ func (a *AgentRouterAdapter) GetModels(baseURL, accessToken string, platformUser
 	return a.NewApiAdapter.GetModels(baseURL, accessToken, platformUserID, opt)
 }
 
+func (a *AgentRouterAdapter) probeSessionViaLog(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*UserInfo, string, error) {
+	now := time.Now()
+	start := now.AddDate(0, 0, -1).Unix()
+	end := now.Add(time.Hour).Unix()
+	logURL := fmt.Sprintf("%s/api/log/self?p=1&page_size=1&type=0&token_name=&model_name=&start_timestamp=%d&end_timestamp=%d&group=", baseURL, start, end)
+
+	var lastErr error
+	for _, cookie := range BuildCookieCandidates(accessToken) {
+		var res map[string]interface{}
+		_, err := FetchJSONWithCookieRetry(logURL, "GET", cookie, agentRouterBrowserHeaders(baseURL, platformUserID), nil, &res, opt)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		success, _ := res["success"].(bool)
+		if !success {
+			lastErr = fmt.Errorf("log probe failed: %s", ExtractMessage(res))
+			continue
+		}
+
+		ui := &UserInfo{}
+		if data, _ := res["data"].(map[string]interface{}); data != nil {
+			if items, _ := data["items"].([]interface{}); len(items) > 0 {
+				if row, _ := items[0].(map[string]interface{}); row != nil {
+					if username, _ := row["username"].(string); strings.TrimSpace(username) != "" {
+						ui.Username = strings.TrimSpace(username)
+					}
+				}
+			}
+		}
+		if ui.Username == "" {
+			ui = nil
+		}
+		return ui, "session verified via /api/log/self", nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("log probe failed: no cookie candidate")
+	}
+	return nil, "", lastErr
+}
+
 func (a *AgentRouterAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
 	userID, err := a.requireAgentRouterUserID(baseURL, accessToken, platformUserID, opt)
 	if err != nil {
@@ -347,6 +396,17 @@ func (a *AgentRouterAdapter) VerifyToken(baseURL, accessToken string, platformUs
 				}, nil
 			}
 			lastErr = fmt.Errorf("failed: %s", ExtractMessage(userRes))
+		}
+		if ui, message, err := a.probeSessionViaLog(baseURL, accessToken, userID, opt); err == nil {
+			apiToken, _ := a.GetApiToken(baseURL, accessToken, userID, opt)
+			return &VerifyTokenResult{
+				TokenType: "session",
+				Message:   message,
+				UserInfo:  ui,
+				ApiToken:  apiToken,
+			}, nil
+		} else if lastErr == nil {
+			lastErr = err
 		}
 		message := "session cookie not accepted"
 		if lastErr != nil {

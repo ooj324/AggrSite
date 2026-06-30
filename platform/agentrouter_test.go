@@ -68,6 +68,46 @@ func TestAgentRouterVerifyTokenRequiresUserIDForSession(t *testing.T) {
 	}
 }
 
+func TestAgentRouterVerifyTokenFallsBackToLogProbeWhenSelfShielded(t *testing.T) {
+	rawSession := testAgentRouterSessionValue()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "" {
+			t.Fatalf("raw browser session should not be sent as bearer auth: %q", auth)
+		}
+		if userID := r.Header.Get("New-API-User"); userID != "12345" {
+			t.Fatalf("unexpected New-API-User: %q", userID)
+		}
+
+		switch r.URL.Path {
+		case "/api/user/self":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<html><script>window._shield=1</script></html>`))
+		case "/api/log/self":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"data":{"page":1,"page_size":1,"total":0,"items":[{"username":"log_user"}]}}`))
+		case "/api/token/":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"data":{"items":[{"name":"main","key":"sk-log","status":1}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	adapter := &AgentRouterAdapter{NewApiAdapter: NewApiAdapter{BaseAdapter: BaseAdapter{Name: "agentrouter"}}}
+	result, err := adapter.VerifyToken(server.URL, rawSession, 12345, nil)
+	if err != nil {
+		t.Fatalf("VerifyToken returned error: %v", err)
+	}
+	if result.TokenType != "session" || result.UserInfo == nil || result.UserInfo.Username != "log_user" {
+		t.Fatalf("unexpected verify result: %+v", result)
+	}
+	if result.ApiToken != "sk-log" {
+		t.Fatalf("unexpected api token: %q", result.ApiToken)
+	}
+}
+
 func TestAgentRouterCheckinReadsTodayLog(t *testing.T) {
 	rawSession := testAgentRouterSessionValue()
 	wantCookie := "session=" + rawSession
