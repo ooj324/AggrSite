@@ -70,6 +70,7 @@ func TestAgentRouterVerifyTokenRequiresUserIDForSession(t *testing.T) {
 
 func TestAgentRouterVerifyTokenFallsBackToLogProbeWhenSelfShielded(t *testing.T) {
 	rawSession := testAgentRouterSessionValue()
+	fullCookie := "acw_tc=stale; session=" + rawSession
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth := r.Header.Get("Authorization"); auth != "" {
@@ -84,9 +85,19 @@ func TestAgentRouterVerifyTokenFallsBackToLogProbeWhenSelfShielded(t *testing.T)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write([]byte(`<html><script>window._shield=1</script></html>`))
 		case "/api/log/self":
+			if r.Header.Get("Cookie") != "session="+rawSession {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write([]byte(`<html><script>window._shield=1</script></html>`))
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"success":true,"data":{"page":1,"page_size":1,"total":0,"items":[{"username":"log_user"}]}}`))
 		case "/api/token/":
+			if r.Header.Get("Cookie") != "session="+rawSession {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write([]byte(`<html><script>window._shield=1</script></html>`))
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"success":true,"data":{"items":[{"name":"main","key":"sk-log","status":1}]}}`))
 		default:
@@ -96,7 +107,7 @@ func TestAgentRouterVerifyTokenFallsBackToLogProbeWhenSelfShielded(t *testing.T)
 	defer server.Close()
 
 	adapter := &AgentRouterAdapter{NewApiAdapter: NewApiAdapter{BaseAdapter: BaseAdapter{Name: "agentrouter"}}}
-	result, err := adapter.VerifyToken(server.URL, rawSession, 12345, nil)
+	result, err := adapter.VerifyToken(server.URL, fullCookie, 12345, nil)
 	if err != nil {
 		t.Fatalf("VerifyToken returned error: %v", err)
 	}

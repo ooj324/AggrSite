@@ -60,6 +60,14 @@ func TestBuildCookieCandidatesTreatsPaddedRawSessionAsValue(t *testing.T) {
 	}
 }
 
+func TestBuildCookieCandidatesAddsSessionOnlyFallbackForFullCookie(t *testing.T) {
+	got := BuildCookieCandidates("_ga=ga; acw_tc=stale; session=abc; _ga_x=ga2")
+	want := []string{"_ga=ga; acw_tc=stale; session=abc; _ga_x=ga2", "session=abc"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("unexpected full cookie candidates:\nwant %#v\n got %#v", want, got)
+	}
+}
+
 func TestFetchJSONAppliesCustomHeadersWithoutOverridingExplicitAuth(t *testing.T) {
 	customHeaders := `{"Authorization":"Bearer site","Cookie":"session=site; Path=/; HttpOnly; cf=1","X-Trace":123}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

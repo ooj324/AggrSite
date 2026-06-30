@@ -244,6 +244,18 @@ func BuildCookieCandidates(accessToken string) []string {
 
 	if normalized := normalizeCookieHeader(raw); normalized != "" {
 		add(normalized)
+		if sessionValue, ok := CookieValueFromHeader(normalized, "session"); ok {
+			add("session=" + sessionValue)
+		}
+		if tokenValue, ok := CookieValueFromHeader(normalized, "token"); ok {
+			add("token=" + tokenValue)
+		}
+		if tokenValue, ok := CookieValueFromHeader(normalized, "auth_token"); ok {
+			add("auth_token=" + tokenValue)
+		}
+		if tokenValue, ok := CookieValueFromHeader(normalized, "access_token"); ok {
+			add("access_token=" + tokenValue)
+		}
 		return candidates
 	}
 	add("session=" + raw)
