@@ -472,17 +472,18 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 <div className="flex gap-2">
                   <input required type="url" className={`${inputClass} flex-1`} value={formData.url} onChange={e => {
                     const url = e.target.value;
+                    const lowerUrl = url.toLowerCase();
                     let nextPlatform = formData.platform;
-                    if (!nextPlatform || nextPlatform === 'anyrouter') {
-                      if (url.includes('agentrouter')) {
-                        nextPlatform = 'agentrouter';
-                      } else if (url.includes('api.openai.com') || url.includes('oneapi') || url.includes('newapi')) {
+                    if (lowerUrl.includes('agentrouter')) {
+                      nextPlatform = 'agentrouter';
+                    } else if (!nextPlatform || nextPlatform === 'anyrouter') {
+                      if (lowerUrl.includes('api.openai.com') || lowerUrl.includes('oneapi') || lowerUrl.includes('newapi')) {
                         nextPlatform = 'newapi';
-                      } else if (url.includes('sub2api') || url.includes('aiproxy')) {
+                      } else if (lowerUrl.includes('sub2api') || lowerUrl.includes('aiproxy')) {
                         nextPlatform = 'sub2api';
-                      } else if (url.includes('donehub') || url.includes('oaifree')) {
+                      } else if (lowerUrl.includes('donehub') || lowerUrl.includes('oaifree')) {
                         nextPlatform = 'donehub';
-                      } else if (url.includes('veloera')) {
+                      } else if (lowerUrl.includes('veloera')) {
                         nextPlatform = 'veloera';
                       }
                     }

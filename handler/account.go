@@ -24,6 +24,11 @@ func getRequestOption(site *db.Site) *platform.RequestOption {
 	}
 }
 
+func isAgentRouterSite(platformName, siteURL string) bool {
+	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(platformName)))
+	return normalized == "agentrouter" || strings.Contains(strings.ToLower(siteURL), "agentrouter")
+}
+
 func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		SiteID         int64   `json:"siteId"`
@@ -111,6 +116,22 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if res == nil || res.TokenType == "" || res.TokenType == "unknown" {
+		if isAgentRouterSite(site.Platform, site.URL) {
+			message := "AgentRouter Session 验证失败：请确认站点平台为 agentrouter、用户 ID 已填写，并优先粘贴浏览器完整 Cookie header"
+			needsUserID := platformUserID <= 0
+			if strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(site.Platform))) != "agentrouter" {
+				message = "AgentRouter 站点当前平台不是 agentrouter，请先编辑站点平台后再验证"
+			} else if needsUserID {
+				message = "AgentRouter 需要用户 ID (New-API-User)，请填写浏览器 localStorage user.id 或请求里的 New-API-User"
+			}
+			ok(w, map[string]interface{}{
+				"success":     false,
+				"tokenType":   "unknown",
+				"needsUserId": needsUserID,
+				"message":     message,
+			})
+			return
+		}
 		ok(w, map[string]interface{}{
 			"success":   false,
 			"tokenType": "unknown",
