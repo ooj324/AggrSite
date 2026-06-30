@@ -366,6 +366,103 @@ func getApiTokenWithSessionCookie(base *BaseAdapter, baseURL, accessToken string
 	return "", fmt.Errorf("no valid api token found")
 }
 
+
+// probeAlternateCookieUserID tries common user IDs via cookie to find a working one
+// that differs from currentUserID. This is a standalone package-level helper so that
+// adapters like one-api, veloera, done-hub can use it without embedding NewApiAdapter.
+func probeAlternateCookieUserID(baseURL, accessToken string, currentUserID int64, opt *RequestOption) int64 {
+	candidates := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100}
+	for _, cookie := range BuildCookieCandidates(accessToken) {
+		for _, id := range candidates {
+			if id == currentUserID {
+				continue
+			}
+			var res map[string]interface{}
+			url := fmt.Sprintf("%s/api/user/self", baseURL)
+			_, err := FetchJSONWithCookieRetry(url, "GET", cookie, CookieUserIDHeaders(id), nil, &res, opt)
+			if err == nil {
+				if ok, _ := res["success"].(bool); ok && res["data"] != nil {
+					return id
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// verifyTokenWithCookieFallback implements VerifyToken for one-api family adapters
+// (one-api, veloera, done-hub) that use fetchJSONWithSessionCookie. It adds
+// alternate userId probing when the initial cookie attempt fails, matching
+// the TS adapter behavior.
+func verifyTokenWithCookieFallback(
+	adapter interface {
+		GetBalance(string, string, int64, *RequestOption) (*BalanceInfo, error)
+		GetApiToken(string, string, int64, *RequestOption) (string, error)
+		GetModels(string, string, int64, *RequestOption) ([]string, error)
+	},
+	base *BaseAdapter,
+	baseURL, accessToken string,
+	platformUserID int64,
+	opt *RequestOption,
+) (*VerifyTokenResult, error) {
+	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
+	var userRes map[string]interface{}
+
+	usedCookie, err := fetchJSONWithSessionCookie(userURL, "GET", accessToken, platformUserID, nil, nil, &userRes, opt)
+	if !usedCookie {
+		err = base.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt)
+	}
+	if err == nil {
+		success, _ := userRes["success"].(bool)
+		if success {
+			ui, balance := parseUserInfoAndBalance(userRes["data"])
+			apiToken, _ := adapter.GetApiToken(baseURL, accessToken, platformUserID, opt)
+			return &VerifyTokenResult{
+				TokenType: "session",
+				UserInfo:  ui,
+				Balance:   balance,
+				ApiToken:  apiToken,
+			}, nil
+		}
+		err = fmt.Errorf("%s", ExtractMessage(userRes))
+	}
+
+	lastErr := err
+
+	// When cookie was used but failed, try alternate userId probe before giving up.
+	if usedCookie {
+		alternateID := probeAlternateCookieUserID(baseURL, accessToken, platformUserID, opt)
+		if alternateID > 0 {
+			var retryRes map[string]interface{}
+			retryUsed, retryErr := fetchJSONWithSessionCookie(userURL, "GET", accessToken, alternateID, nil, nil, &retryRes, opt)
+			if retryUsed && retryErr == nil {
+				success, _ := retryRes["success"].(bool)
+				if success {
+					ui, balance := parseUserInfoAndBalance(retryRes["data"])
+					apiToken, _ := adapter.GetApiToken(baseURL, accessToken, alternateID, opt)
+					return &VerifyTokenResult{
+						TokenType: "session",
+						UserInfo:  ui,
+						Balance:   balance,
+						ApiToken:  apiToken,
+					}, nil
+				}
+			}
+		}
+	}
+
+	models, err := adapter.GetModels(baseURL, accessToken, platformUserID, opt)
+	if err == nil && len(models) > 0 {
+		return &VerifyTokenResult{TokenType: "apikey", Models: models}, nil
+	}
+
+	msg := "Token verification failed"
+	if lastErr != nil && strings.TrimSpace(lastErr.Error()) != "" {
+		msg = lastErr.Error()
+	}
+	return &VerifyTokenResult{TokenType: "unknown", Message: msg}, nil
+}
+
 // ExtractMessage extracts a human-readable message from a typical API response body.
 func ExtractMessage(data map[string]interface{}) string {
 	if msg, ok := data["message"].(string); ok && strings.TrimSpace(msg) != "" {
@@ -384,39 +481,7 @@ func ExtractMessage(data map[string]interface{}) string {
 
 // Login performs a standard username/password login for new-api compatible platforms.
 func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOption) (*LoginResult, error) {
-	url := fmt.Sprintf("%s/api/user/login", baseURL)
-	body := map[string]string{
-		"username": username,
-		"password": password,
-	}
-
-	var res map[string]interface{}
-	err := b.FetchJSON(url, "POST", nil, body, &res, opt)
-	if err != nil {
-		return &LoginResult{Success: false, Message: err.Error()}, nil
-	}
-
-	success, _ := res["success"].(bool)
-	message := ExtractMessage(res)
-
-	if !success {
-		if message == "" {
-			message = "Login failed"
-		}
-		return &LoginResult{Success: false, Message: message}, nil
-	}
-
-	token := extractLoginAccessToken(res)
-
-	if token == "" {
-		return &LoginResult{Success: false, Message: "No token in response"}, nil
-	}
-
-	return &LoginResult{
-		Success:     true,
-		AccessToken: token,
-		Username:    username,
-	}, nil
+	return b.LoginWithCookieFallback(baseURL, username, password, opt)
 }
 
 func extractLoginAccessToken(payload map[string]interface{}) string {
@@ -472,11 +537,32 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 		// is only accepted on read-only endpoints like /api/user/self.
 		// A cookie credential can do everything a JWT can (balance, tokens, etc.)
 		// but not vice-versa; so cookie takes priority.
+		accessToken := token
 		if hasCookie {
-			return &LoginResult{Success: true, AccessToken: cookieResult.CookieHeader, Username: username, PlatformUserID: platformUserID}, nil
+			accessToken = cookieResult.CookieHeader
 		}
-		if token != "" {
-			return &LoginResult{Success: true, AccessToken: token, Username: username, PlatformUserID: platformUserID}, nil
+		if accessToken != "" {
+			if platformUserID <= 0 {
+				// Try probe /api/user/self to get user id
+				selfURL := fmt.Sprintf("%s/api/user/self", baseURL)
+				var selfRes map[string]interface{}
+				var fetchErr error
+				if hasCookie {
+					_, fetchErr = FetchJSONWithCookieRetry(selfURL, "GET", accessToken, nil, nil, &selfRes, opt)
+				} else {
+					fetchErr = b.FetchJSON(selfURL, "GET", AuthHeaders(accessToken, 0), nil, &selfRes, opt)
+				}
+				if fetchErr == nil {
+					if ok, _ := selfRes["success"].(bool); ok {
+						if selfData, ok := selfRes["data"].(map[string]interface{}); ok {
+							if idFloat, ok := selfData["id"].(float64); ok && idFloat > 0 {
+								platformUserID = int64(idFloat)
+							}
+						}
+					}
+				}
+			}
+			return &LoginResult{Success: true, AccessToken: accessToken, Username: username, PlatformUserID: platformUserID}, nil
 		}
 	}
 
@@ -525,6 +611,9 @@ func hasUsableSessionCookie(cookieHeader string) bool {
 
 // GetApiToken fetches the first enabled API token.
 func (b *BaseAdapter) GetApiToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
+	if IsCookieSessionToken(accessToken) {
+		return getApiTokenWithSessionCookie(b, baseURL, accessToken, platformUserID, opt)
+	}
 	tokens, err := b.GetApiTokens(baseURL, accessToken, platformUserID, opt)
 	if err != nil {
 		return "", err

@@ -88,36 +88,5 @@ func (a *OneApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 }
 
 func (a *OneApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
-	userURL := fmt.Sprintf("%s/api/user/self", baseURL)
-	var userRes map[string]interface{}
-
-	usedCookie, err := fetchJSONWithSessionCookie(userURL, "GET", accessToken, platformUserID, nil, nil, &userRes, opt)
-	if !usedCookie {
-		err = a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, platformUserID), nil, &userRes, opt)
-	}
-	if err == nil {
-		success, _ := userRes["success"].(bool)
-		if success {
-			ui, _ := parseUserInfoAndBalance(userRes["data"])
-			balance, _ := a.GetBalance(baseURL, accessToken, platformUserID, opt)
-			apiToken, _ := a.GetApiToken(baseURL, accessToken, platformUserID, opt)
-			return &VerifyTokenResult{
-				TokenType: "session",
-				UserInfo:  ui,
-				Balance:   balance,
-				ApiToken:  apiToken,
-			}, nil
-		}
-	}
-
-	if usedCookie {
-		return &VerifyTokenResult{TokenType: "unknown"}, nil
-	}
-
-	models, err := a.GetModels(baseURL, accessToken, platformUserID, opt)
-	if err == nil && len(models) > 0 {
-		return &VerifyTokenResult{TokenType: "apikey", Models: models}, nil
-	}
-
-	return &VerifyTokenResult{TokenType: "unknown"}, nil
+	return verifyTokenWithCookieFallback(a, &a.BaseAdapter, baseURL, accessToken, platformUserID, opt)
 }

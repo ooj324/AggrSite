@@ -118,6 +118,35 @@ func (a *NewApiAdapter) discoverUserId(baseURL, accessToken string, platformUser
 	return 0
 }
 
+// probeBearerUserId tries common user IDs with Bearer auth to find one that works.
+// This mirrors the TS probeUserId that handles sites requiring New-Api-User header.
+func (a *NewApiAdapter) probeBearerUserId(baseURL, accessToken string, opt *RequestOption) int64 {
+	jwtID := tryDecodeJwtUserId(strings.TrimPrefix(strings.TrimSpace(accessToken), "Bearer "))
+	if jwtID > 0 {
+		var res map[string]interface{}
+		url := fmt.Sprintf("%s/api/user/self", baseURL)
+		if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, jwtID), nil, &res, opt); err == nil {
+			if ok, _ := res["success"].(bool); ok {
+				return jwtID
+			}
+		}
+	}
+	candidates := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100}
+	for _, id := range candidates {
+		if id == jwtID {
+			continue
+		}
+		var res map[string]interface{}
+		url := fmt.Sprintf("%s/api/user/self", baseURL)
+		if err := a.FetchJSON(url, "GET", AuthHeaders(accessToken, id), nil, &res, opt); err == nil {
+			if ok, _ := res["success"].(bool); ok && res["data"] != nil {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
 // tryCookieCheckin attempts sign_in then checkin via cookie, with the given userId header.
 // Returns a non-nil CheckinResult on success; updates lastErrMsg on failure.
 func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int64, opt *RequestOption) (*CheckinResult, string) {
@@ -332,7 +361,24 @@ func (a *NewApiAdapter) GetBalance(baseURL, accessToken string, platformUserID i
 	return nil, fmt.Errorf("failed to fetch balance: no valid method found")
 }
 
+func (a *NewApiAdapter) GetApiToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
+	tokens, err := a.GetApiTokens(baseURL, accessToken, platformUserID, opt)
+	if err != nil {
+		return "", err
+	}
+	for _, token := range tokens {
+		if token.Enabled && strings.TrimSpace(token.Key) != "" {
+			return strings.TrimSpace(token.Key), nil
+		}
+	}
+	if len(tokens) > 0 && strings.TrimSpace(tokens[0].Key) != "" {
+		return tokens[0].Key, nil
+	}
+	return "", fmt.Errorf("no valid api token found")
+}
+
 func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]ApiTokenInfo, error) {
+
 	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
 	url := fmt.Sprintf("%s/api/token/?p=0&size=100", baseURL)
 	var res map[string]interface{}
@@ -444,7 +490,29 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 					ApiToken:  apiToken,
 				}, nil
 			}
-			lastErr = fmt.Errorf("failed: %s", ExtractMessage(userRes))
+			lastErr = fmt.Errorf("%s", ExtractMessage(userRes))
+			// If the failure message mentions New-Api-User, probe for a valid userId
+			// and retry with it (mirrors TS probeUserId behavior).
+			errMsg := ExtractMessage(userRes)
+			if strings.Contains(errMsg, "New-Api-User") || strings.Contains(errMsg, "New-API-User") {
+				probedID := a.probeBearerUserId(baseURL, accessToken, opt)
+				if probedID > 0 {
+					var retryRes map[string]interface{}
+					retryErr := a.FetchJSON(userURL, "GET", AuthHeaders(accessToken, probedID), nil, &retryRes, opt)
+					if retryErr == nil {
+						if retrySuccess, _ := retryRes["success"].(bool); retrySuccess {
+							ui, bi := parseUserInfoAndBalance(retryRes["data"])
+							apiToken, _ := a.GetApiToken(baseURL, accessToken, probedID, opt)
+							return &VerifyTokenResult{
+								TokenType: "session",
+								UserInfo:  ui,
+								Balance:   bi,
+								ApiToken:  apiToken,
+							}, nil
+						}
+					}
+				}
+			}
 		} else {
 			lastErr = err
 		}
@@ -460,7 +528,7 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 			success, _ := userRes["success"].(bool)
 			if success {
 				ui, bi := parseUserInfoAndBalance(userRes["data"])
-				apiToken, _ := a.GetApiToken(baseURL, cookie, platformUserID, opt)
+				apiToken, _ := a.GetApiToken(baseURL, accessToken, resolvedUserID, opt)
 				return &VerifyTokenResult{
 					TokenType: "session",
 					UserInfo:  ui,
@@ -468,14 +536,37 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 					ApiToken:  apiToken,
 				}, nil
 			}
-			lastErr = fmt.Errorf("failed: %s", ExtractMessage(userRes))
+			lastErr = fmt.Errorf("%s", ExtractMessage(userRes))
 		} else {
 			lastErr = err
 		}
 	}
 
+	// Try with alternate cookie userId (mirrors TS probeAlternateUserIdByCookie)
+	alternateCookieUserID := a.probeAlternateCookieUserId(baseURL, accessToken, resolvedUserID, opt)
+	if alternateCookieUserID > 0 {
+		for _, cookie := range cookieCandidates {
+			var userRes map[string]interface{}
+			cookieHeaders := CookieUserIDHeaders(alternateCookieUserID)
+			_, err := FetchJSONWithCookieRetry(userURL, "GET", cookie, cookieHeaders, nil, &userRes, opt)
+			if err == nil {
+				success, _ := userRes["success"].(bool)
+				if success {
+					ui, bi := parseUserInfoAndBalance(userRes["data"])
+					apiToken, _ := a.GetApiToken(baseURL, accessToken, alternateCookieUserID, opt)
+					return &VerifyTokenResult{
+						TokenType: "session",
+						UserInfo:  ui,
+						Balance:   bi,
+						ApiToken:  apiToken,
+					}, nil
+				}
+			}
+		}
+	}
+
 	// Try apikey validation (mostly Bearer)
-	models, err := a.GetModels(baseURL, accessToken, platformUserID, opt)
+	models, err := a.GetModels(baseURL, accessToken, resolvedUserID, opt)
 	if err == nil && len(models) > 0 {
 		return &VerifyTokenResult{
 			TokenType: "apikey",
@@ -483,14 +574,16 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 		}, nil
 	}
 
-	if lastErr != nil {
-		// pass through
+	msg := "Token verification failed"
+	if lastErr != nil && strings.TrimSpace(lastErr.Error()) != "" {
+		msg = lastErr.Error()
 	}
-
 	return &VerifyTokenResult{
 		TokenType: "unknown",
+		Message:   msg,
 	}, nil
 }
+
 
 // Helpers
 
