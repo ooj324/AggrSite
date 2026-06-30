@@ -118,6 +118,9 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	if res == nil || res.TokenType == "" || res.TokenType == "unknown" {
 		if isAgentRouterSite(site.Platform, site.URL) {
 			message := "AgentRouter Session 验证失败：请确认站点平台为 agentrouter、用户 ID 已填写，并优先粘贴浏览器完整 Cookie header"
+			if res != nil && strings.TrimSpace(res.Message) != "" {
+				message = "AgentRouter Session 验证失败：" + strings.TrimSpace(res.Message)
+			}
 			needsUserID := platformUserID <= 0
 			if strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(site.Platform))) != "agentrouter" {
 				message = "AgentRouter 站点当前平台不是 agentrouter，请先编辑站点平台后再验证"

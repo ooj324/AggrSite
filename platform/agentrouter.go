@@ -146,6 +146,20 @@ func looksLikeAgentRouterSession(accessToken string) bool {
 	return IsCookieSessionToken(raw)
 }
 
+func agentRouterBrowserHeaders(baseURL string, platformUserID int64) map[string]string {
+	headers := CookieUserIDHeaders(platformUserID)
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	headers["Accept"] = "application/json, text/plain, */*"
+	headers["Cache-Control"] = "no-store"
+	origin := strings.TrimRight(baseURL, "/")
+	if origin != "" {
+		headers["Referer"] = origin + "/console"
+	}
+	return headers
+}
+
 func (a *AgentRouterAdapter) resolveAgentRouterUserID(baseURL, accessToken string, platformUserID int64, opt *RequestOption) int64 {
 	if platformUserID > 0 {
 		return platformUserID
@@ -237,6 +251,30 @@ func (a *AgentRouterAdapter) GetApiTokens(baseURL, accessToken string, platformU
 	if err != nil {
 		return nil, err
 	}
+
+	if looksLikeAgentRouterSession(accessToken) {
+		url := fmt.Sprintf("%s/api/token/?p=0&size=100", baseURL)
+		var lastErr error
+		for _, cookie := range BuildCookieCandidates(accessToken) {
+			var res map[string]interface{}
+			_, err := FetchJSONWithCookieRetry(url, "GET", cookie, agentRouterBrowserHeaders(baseURL, userID), nil, &res, opt)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			success, _ := res["success"].(bool)
+			if !success {
+				lastErr = fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
+				continue
+			}
+			return parseApiTokensArray(res), nil
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("failed to fetch api tokens")
+	}
+
 	return a.NewApiAdapter.GetApiTokens(baseURL, accessToken, userID, opt)
 }
 
@@ -245,6 +283,34 @@ func (a *AgentRouterAdapter) GetBalance(baseURL, accessToken string, platformUse
 	if err != nil {
 		return nil, err
 	}
+
+	if looksLikeAgentRouterSession(accessToken) {
+		url := fmt.Sprintf("%s/api/user/self", baseURL)
+		var lastErr error
+		for _, cookie := range BuildCookieCandidates(accessToken) {
+			var res map[string]interface{}
+			_, err := FetchJSONWithCookieRetry(url, "GET", cookie, agentRouterBrowserHeaders(baseURL, userID), nil, &res, opt)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			success, _ := res["success"].(bool)
+			if !success {
+				lastErr = fmt.Errorf("failed: %s", ExtractMessage(res))
+				continue
+			}
+			data, _ := res["data"].(map[string]interface{})
+			if data == nil {
+				return nil, fmt.Errorf("no data in balance response")
+			}
+			return parseNewApiBalance(data, 500000), nil
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to fetch balance: %w", lastErr)
+		}
+		return nil, fmt.Errorf("failed to fetch balance")
+	}
+
 	return a.NewApiAdapter.GetBalance(baseURL, accessToken, userID, opt)
 }
 
@@ -264,7 +330,7 @@ func (a *AgentRouterAdapter) VerifyToken(baseURL, accessToken string, platformUs
 	if looksLikeAgentRouterSession(accessToken) {
 		for _, cookie := range BuildCookieCandidates(accessToken) {
 			var userRes map[string]interface{}
-			_, err := FetchJSONWithCookieRetry(userURL, "GET", cookie, CookieUserIDHeaders(userID), nil, &userRes, opt)
+			_, err := FetchJSONWithCookieRetry(userURL, "GET", cookie, agentRouterBrowserHeaders(baseURL, userID), nil, &userRes, opt)
 			if err != nil {
 				lastErr = err
 				continue
@@ -282,7 +348,11 @@ func (a *AgentRouterAdapter) VerifyToken(baseURL, accessToken string, platformUs
 			}
 			lastErr = fmt.Errorf("failed: %s", ExtractMessage(userRes))
 		}
-		return &VerifyTokenResult{TokenType: "unknown"}, nil
+		message := "session cookie not accepted"
+		if lastErr != nil {
+			message = lastErr.Error()
+		}
+		return &VerifyTokenResult{TokenType: "unknown", Message: message}, nil
 	}
 
 	var userRes map[string]interface{}
@@ -348,7 +418,7 @@ func (a *AgentRouterAdapter) findTodayCheckinLog(baseURL, accessToken string, pl
 	var lastErr error
 	for _, cookie := range BuildCookieCandidates(accessToken) {
 		var res map[string]interface{}
-		_, err := FetchJSONWithCookieRetry(logURL, "GET", cookie, CookieUserIDHeaders(platformUserID), nil, &res, opt)
+		_, err := FetchJSONWithCookieRetry(logURL, "GET", cookie, agentRouterBrowserHeaders(baseURL, platformUserID), nil, &res, opt)
 		if err != nil {
 			lastErr = err
 			continue

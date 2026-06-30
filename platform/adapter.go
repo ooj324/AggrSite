@@ -47,6 +47,7 @@ type UserInfo struct {
 // VerifyTokenResult holds the verification result.
 type VerifyTokenResult struct {
 	TokenType string       `json:"tokenType"` // "session", "apikey", "unknown"
+	Message   string       `json:"message,omitempty"`
 	UserInfo  *UserInfo    `json:"userInfo,omitempty"`
 	Balance   *BalanceInfo `json:"balance,omitempty"`
 	ApiToken  string       `json:"apiToken,omitempty"`
