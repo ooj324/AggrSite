@@ -683,24 +683,30 @@ type FetchCookieResult struct {
 	CookieHeader string
 }
 
-// FetchJSONWithCookieRetry makes an HTTP request, merging Set-Cookie headers
-// and solving the shield challenge (acw_sc__v2) automatically.
-func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (*FetchCookieResult, error) {
-	currentCookie := normalizeCookieHeader(cookie)
+func truncateBodyForErr(s string) string {
+	if len(s) > 200 {
+		return s[:200] + "..."
+	}
+	return s
+}
 
+// FetchJSONWithCookieRetry executes an HTTP request, collects and merges Set-Cookie headers across retries,
+// automatically solves Aliyun WAF shield challenges (acw_sc__v2), and unmarshals the JSON response.
+func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (*FetchCookieResult, error) {
+	currentCookie := cookieHeader
 	for attempt := 0; attempt < 3; attempt++ {
 		var bodyReader io.Reader
 		if body != nil {
-			bs, err := json.Marshal(body)
+			payload, err := json.Marshal(body)
 			if err != nil {
-				return nil, fmt.Errorf("marshal body: %w", err)
+				return nil, fmt.Errorf("marshal request body: %w", err)
 			}
-			bodyReader = bytes.NewReader(bs)
+			bodyReader = bytes.NewReader(payload)
 		}
 
 		req, err := http.NewRequest(method, reqURL, bodyReader)
 		if err != nil {
-			return nil, fmt.Errorf("new request: %w", err)
+			return nil, fmt.Errorf("create request: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -739,7 +745,9 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		}
 
 		if resp.Request != nil {
-			currentCookie = mergeCookieHeaders(currentCookie, resp.Request.Header.Get("Cookie"))
+			if finalCookie := resp.Request.Header.Get("Cookie"); finalCookie != "" {
+				currentCookie = finalCookie
+			}
 		}
 
 		// Collect Set-Cookie headers from the final response.
@@ -760,7 +768,7 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 							return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
 						}
 					}
-					return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+					return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncateBodyForErr(string(respBody)))
 				}
 				return &FetchCookieResult{CookieHeader: currentCookie}, nil
 			}
@@ -770,9 +778,9 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		if !isShieldChallenge(resp.Header.Get("Content-Type"), string(respBody)) {
 			// Not a challenge, maybe just a server error
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+				return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncateBodyForErr(string(respBody)))
 			}
-			return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("invalid json response")
+			return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("invalid json response (HTTP %d, body snippet: %s)", resp.StatusCode, truncateBodyForErr(string(respBody)))
 		}
 
 		acwScV2 := solveNewApiAcwScV2(string(respBody))
@@ -780,7 +788,7 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 			if currentCookie != cookieBeforeSetCookie {
 				continue
 			}
-			return nil, fmt.Errorf("failed to solve shield challenge")
+			return nil, fmt.Errorf("failed to solve shield challenge (body snippet: %s)", truncateBodyForErr(string(respBody)))
 		}
 
 		currentCookie = upsertCookie(currentCookie, "acw_sc__v2", acwScV2)

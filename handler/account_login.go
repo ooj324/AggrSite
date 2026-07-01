@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"metapi/aggrsite/db"
 	"metapi/aggrsite/platform"
@@ -88,11 +89,13 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		CustomHeaders:  site.CustomHeaders,
 	}
 
+	slog.Info("LoginAccount: attempting login", "site_id", site.ID, "site_url", site.URL, "username", input.Username, "proxy", site.ProxyURL)
 	loginResult, err := adapter.Login(site.URL, input.Username, input.Password, opt)
 	if err != nil {
 		errStr := err.Error()
+		slog.Error("LoginAccount: adapter.Login returned error", "site_id", site.ID, "site_url", site.URL, "username", input.Username, "error", errStr)
 		if isLoginShieldBlocked(errStr) {
-			fail(w, http.StatusBadRequest, "站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。")
+			fail(w, http.StatusBadRequest, fmt.Sprintf("站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。[详细错误: %s]", errStr))
 			return
 		}
 		fail(w, http.StatusInternalServerError, "login error: "+errStr)
@@ -100,13 +103,15 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !loginResult.Success {
+		slog.Error("LoginAccount: adapter.Login failed", "site_id", site.ID, "site_url", site.URL, "username", input.Username, "message", loginResult.Message)
 		if isLoginShieldBlocked(loginResult.Message) {
-			fail(w, http.StatusBadRequest, "站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。")
+			fail(w, http.StatusBadRequest, fmt.Sprintf("站点存在人机验证或反爬策略 (Shield)，无法直接登录。建议在浏览器登录后提取 Session Token 或使用 API Key。[详细原因: %s]", loginResult.Message))
 			return
 		}
 		fail(w, http.StatusBadRequest, "login failed: "+loginResult.Message)
 		return
 	}
+	slog.Info("LoginAccount: login succeeded", "site_id", site.ID, "username", input.Username, "platform_user_id", loginResult.PlatformUserID)
 
 	guessedPlatformUserID := loginResult.PlatformUserID
 	if guessedPlatformUserID <= 0 {
