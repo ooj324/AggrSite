@@ -714,6 +714,12 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 		if req.Header.Get("User-Agent") == "" {
 			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
 		}
+		if req.Header.Get("Accept") == "" {
+			req.Header.Set("Accept", "application/json, text/plain, */*")
+		}
+		if req.Header.Get("Accept-Language") == "" {
+			req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+		}
 
 		client := &http.Client{
 			Timeout:       30 * time.Second,
