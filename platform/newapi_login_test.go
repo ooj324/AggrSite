@@ -9,6 +9,11 @@ import (
 
 func TestNewApiLoginAcceptsUsableSetCookieSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/user/self" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"data":null}`))
+			return
+		}
 		if r.URL.Path != "/api/user/login" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}

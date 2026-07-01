@@ -115,6 +115,20 @@ func (a *NewApiAdapter) discoverUserId(baseURL, accessToken string, platformUser
 		}
 	}
 
+	// 4. Try probing candidate IDs (including Gob/Regex extracted IDs)
+	for _, id := range BuildUserIDProbeCandidates(accessToken) {
+		for _, cookie := range BuildCookieCandidates(accessToken) {
+			var res map[string]interface{}
+			url := fmt.Sprintf("%s/api/user/self", baseURL)
+			_, err := FetchJSONWithCookieRetry(url, "GET", cookie, CookieUserIDHeaders(id), nil, &res, opt)
+			if err == nil {
+				if ok, _ := res["success"].(bool); ok && res["data"] != nil {
+					return id
+				}
+			}
+		}
+	}
+
 	return 0
 }
 
@@ -131,7 +145,7 @@ func (a *NewApiAdapter) probeBearerUserId(baseURL, accessToken string, opt *Requ
 			}
 		}
 	}
-	candidates := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100}
+	candidates := BuildUserIDProbeCandidates(accessToken)
 	for _, id := range candidates {
 		if id == jwtID {
 			continue
@@ -222,7 +236,7 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 // probeAlternateCookieUserId tries common user id candidates via cookie to find a working one
 // that differs from currentUserID. Mirrors TS probeAlternateUserIdByCookie.
 func (a *NewApiAdapter) probeAlternateCookieUserId(baseURL, accessToken string, currentUserID int64, opt *RequestOption) int64 {
-	candidates := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100}
+	candidates := BuildUserIDProbeCandidates(accessToken)
 	for _, cookie := range BuildCookieCandidates(accessToken) {
 		for _, id := range candidates {
 			if id == currentUserID {

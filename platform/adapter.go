@@ -1,16 +1,13 @@
 package platform
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"metapi/aggrsite/config"
 	"metapi/aggrsite/db"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // CheckinResult is returned by Checkin calls.
@@ -228,66 +225,10 @@ func preserveHeadersRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-// FetchJSON makes a JSON request and decodes response.
+// FetchJSON makes a JSON request and decodes response, using retry for shield challenges.
 func (b *BaseAdapter) FetchJSON(reqURL, method string, headers map[string]string, body interface{}, out interface{}, opt *RequestOption) error {
-	var bodyReader io.Reader
-	if body != nil {
-		bs, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("marshal body: %w", err)
-		}
-		bodyReader = bytes.NewReader(bs)
-	}
-
-	req, err := http.NewRequest(method, reqURL, bodyReader)
-	if err != nil {
-		return fmt.Errorf("new request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	applyCustomHeaders(req, opt)
-
-	for k, v := range headers {
-		setRequestHeader(req, k, v)
-	}
-
-	// Add a default User-Agent to bypass Cloudflare tarpitting of Go-http-client.
-	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	}
-
-	client := &http.Client{
-		Timeout:       60 * time.Second,
-		Transport:     buildTransport(opt),
-		CheckRedirect: preserveHeadersRedirect,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("do request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read body: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Attempt to extract a cleaner message from JSON error body
-		var errData map[string]interface{}
-		if jsonErr := json.Unmarshal(respBody, &errData); jsonErr == nil {
-			if msg := ExtractMessage(errData); msg != "" {
-				return fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
-			}
-		}
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	if out != nil {
-		return json.Unmarshal(respBody, out)
-	}
-	return nil
+	_, err := FetchJSONWithCookieRetry(reqURL, method, "", headers, body, out, opt)
+	return err
 }
 
 // AuthHeaders builds common user-id headers used by new-api / one-api family.
@@ -371,7 +312,7 @@ func getApiTokenWithSessionCookie(base *BaseAdapter, baseURL, accessToken string
 // that differs from currentUserID. This is a standalone package-level helper so that
 // adapters like one-api, veloera, done-hub can use it without embedding NewApiAdapter.
 func probeAlternateCookieUserID(baseURL, accessToken string, currentUserID int64, opt *RequestOption) int64 {
-	candidates := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100}
+	candidates := BuildUserIDProbeCandidates(accessToken)
 	for _, cookie := range BuildCookieCandidates(accessToken) {
 		for _, id := range candidates {
 			if id == currentUserID {
@@ -416,6 +357,9 @@ func verifyTokenWithCookieFallback(
 		success, _ := userRes["success"].(bool)
 		if success {
 			ui, balance := parseUserInfoAndBalance(userRes["data"])
+			if b, err := adapter.GetBalance(baseURL, accessToken, platformUserID, opt); err == nil && b != nil {
+				balance = b
+			}
 			apiToken, _ := adapter.GetApiToken(baseURL, accessToken, platformUserID, opt)
 			return &VerifyTokenResult{
 				TokenType: "session",
@@ -439,6 +383,9 @@ func verifyTokenWithCookieFallback(
 				success, _ := retryRes["success"].(bool)
 				if success {
 					ui, balance := parseUserInfoAndBalance(retryRes["data"])
+					if b, err := adapter.GetBalance(baseURL, accessToken, alternateID, opt); err == nil && b != nil {
+						balance = b
+					}
 					apiToken, _ := adapter.GetApiToken(baseURL, accessToken, alternateID, opt)
 					return &VerifyTokenResult{
 						TokenType: "session",

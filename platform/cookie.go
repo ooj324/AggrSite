@@ -270,6 +270,238 @@ func IsCookieSessionToken(accessToken string) bool {
 	return normalizeCookieHeader(raw) != "" || looksLikeSecureCookieSessionValue(raw)
 }
 
+// TryDecodeJwtUserID attempts to extract user id from a JWT payload.
+func TryDecodeJwtUserID(token string) int64 {
+	token = strings.TrimPrefix(strings.TrimSpace(token), "Bearer ")
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return 0
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		payloadBytes, err = base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return 0
+		}
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return 0
+	}
+	if id, ok := payload["id"].(float64); ok && id > 0 {
+		return int64(id)
+	}
+	if sub, ok := payload["sub"]; ok {
+		switch v := sub.(type) {
+		case float64:
+			if v > 0 {
+				return int64(v)
+			}
+		case string:
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+func decodeGobSignedInt(encoded []byte) int64 {
+	if len(encoded) == 0 {
+		return 0
+	}
+	var unsigned uint64
+	if encoded[0] < 0x80 {
+		unsigned = uint64(encoded[0])
+	} else {
+		width := int(0x100 - int(encoded[0]))
+		if width <= 0 || len(encoded) != width+1 {
+			return 0
+		}
+		for i := 1; i < len(encoded); i++ {
+			unsigned = (unsigned << 8) | uint64(encoded[i])
+		}
+	}
+	var signed int64
+	if (unsigned & 1) == 0 {
+		signed = int64(unsigned >> 1)
+	} else {
+		signed = -int64((unsigned >> 1) + 1)
+	}
+	if signed <= 0 || signed > 10000000 {
+		return 0
+	}
+	return signed
+}
+
+func extractGobFieldInts(payload []byte, fieldName string) []int64 {
+	var ids []int64
+	seen := make(map[int64]bool)
+	push := func(v int64) {
+		if v > 0 && v <= 10000000 && !seen[v] {
+			seen[v] = true
+			ids = append(ids, v)
+		}
+	}
+
+	marker := append([]byte(fieldName), 0x03)
+	marker = append(marker, []byte("int")...)
+	marker = append(marker, 0x04)
+
+	start := 0
+	for start < len(payload) {
+		pos := bytes.Index(payload[start:], marker)
+		if pos < 0 {
+			break
+		}
+		pos += start
+		if pos+len(marker)+1 < len(payload) {
+			encodedLen := int(payload[pos+len(marker)])
+			delim := payload[pos+len(marker)+1]
+			if delim == 0x00 && encodedLen > 0 {
+				byteLen := encodedLen - 1
+				valStart := pos + len(marker) + 2
+				valEnd := valStart + byteLen
+				if byteLen > 0 && valEnd <= len(payload) {
+					push(decodeGobSignedInt(payload[valStart:valEnd]))
+				}
+			}
+		}
+		start = pos + len(marker)
+	}
+	return ids
+}
+
+func decodeBase64Loose(value string) []byte {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if b, err := base64.StdEncoding.DecodeString(value); err == nil {
+		return b
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(value); err == nil {
+		return b
+	}
+	if b, err := base64.URLEncoding.DecodeString(value); err == nil {
+		return b
+	}
+	if b, err := base64.RawURLEncoding.DecodeString(value); err == nil {
+		return b
+	}
+	normalized := strings.ReplaceAll(value, "-", "+")
+	normalized = strings.ReplaceAll(normalized, "_", "/")
+	if pad := len(normalized) % 4; pad > 0 {
+		normalized += strings.Repeat("=", 4-pad)
+	}
+	if b, err := base64.StdEncoding.DecodeString(normalized); err == nil {
+		return b
+	}
+	return nil
+}
+
+// ExtractLikelyUserIDs decodes session tokens and extracts potential user IDs
+// from Gob-encoded structs or string pattern matches. Mirrors TS extractLikelyUserIds.
+func ExtractLikelyUserIDs(token string) []int64 {
+	var ids []int64
+	seen := make(map[int64]bool)
+	push := func(v int64) {
+		if v > 0 && v <= 10000000 && !seen[v] {
+			seen[v] = true
+			ids = append(ids, v)
+		}
+	}
+
+	raw := stripBearerPrefix(token)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ids
+	}
+
+	sessionValues := make(map[string]bool)
+	for _, cand := range BuildCookieCandidates(raw) {
+		re := regexp.MustCompile(`(?i)(?:^|;\s*)session=([^;]+)`)
+		matches := re.FindStringSubmatch(cand)
+		if len(matches) > 1 {
+			sessionValues[strings.TrimSpace(matches[1])] = true
+		}
+	}
+	if !strings.Contains(raw, "=") {
+		sessionValues[raw] = true
+	} else if val, ok := CookieValueFromHeader(raw, "session"); ok {
+		sessionValues[val] = true
+	}
+
+	re1 := regexp.MustCompile(`_(\d{4,8})([^0-9]|$)`)
+	re2 := regexp.MustCompile(`(?i)(?:user(?:name)?|uid|id)[^\d]{0,16}(\d{4,8})([^0-9]|$)`)
+
+	for sVal := range sessionValues {
+		decodedBuf := decodeBase64Loose(sVal)
+		if len(decodedBuf) == 0 {
+			continue
+		}
+		decodedStr := string(decodedBuf)
+
+		payloadCandidates := []string{decodedStr}
+		payloadBuffers := [][]byte{decodedBuf}
+
+		parts := strings.Split(decodedStr, "|")
+		if len(parts) >= 2 {
+			midBuf := decodeBase64Loose(parts[1])
+			if len(midBuf) > 0 {
+				payloadCandidates = append(payloadCandidates, string(midBuf))
+				payloadBuffers = append(payloadBuffers, midBuf)
+			}
+		}
+
+		for _, pStr := range payloadCandidates {
+			for _, m := range re1.FindAllStringSubmatch(pStr, -1) {
+				if len(m) > 1 {
+					if n, err := strconv.ParseInt(m[1], 10, 64); err == nil {
+						push(n)
+					}
+				}
+			}
+			for _, m := range re2.FindAllStringSubmatch(pStr, -1) {
+				if len(m) > 1 {
+					if n, err := strconv.ParseInt(m[1], 10, 64); err == nil {
+						push(n)
+					}
+				}
+			}
+		}
+
+		for _, pBuf := range payloadBuffers {
+			for _, id := range extractGobFieldInts(pBuf, "id") {
+				push(id)
+			}
+		}
+	}
+	return ids
+}
+
+// BuildUserIDProbeCandidates builds candidate user IDs to probe, including
+// decoded JWT IDs, Gob/regex extracted IDs, and common standard IDs. Mirrors TS buildUserIdProbeCandidates.
+func BuildUserIDProbeCandidates(accessToken string) []int64 {
+	var candidates []int64
+	seen := make(map[int64]bool)
+	push := func(v int64) {
+		if v > 0 && !seen[v] {
+			seen[v] = true
+			candidates = append(candidates, v)
+		}
+	}
+
+	push(TryDecodeJwtUserID(accessToken))
+	for _, id := range ExtractLikelyUserIDs(accessToken) {
+		push(id)
+	}
+	for _, id := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 50, 100, 8899, 11494} {
+		push(id)
+	}
+	return candidates
+}
+
 // CookieUserIDHeaders builds extra headers with user-id for cookie-based requests.
 func CookieUserIDHeaders(platformUserID int64) map[string]string {
 	if platformUserID <= 0 {
@@ -535,10 +767,6 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookie string, extraHeaders
 				return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 			}
 			return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("invalid json response")
-		}
-
-		if currentCookie == "" {
-			return nil, fmt.Errorf("shield challenge encountered but no cookie available")
 		}
 
 		acwScV2 := solveNewApiAcwScV2(string(respBody))
