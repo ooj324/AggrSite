@@ -440,23 +440,34 @@ func (a *NewApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 
 func (a *NewApiAdapter) GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error) {
 	resolvedUserID := a.discoverUserId(baseURL, accessToken, platformUserID, opt)
-	url := fmt.Sprintf("%s/v1/models", baseURL)
+	openAIModelsURL := fmt.Sprintf("%s/v1/models", baseURL)
+	sessionModelsURL := fmt.Sprintf("%s/api/user/models", baseURL)
 	var res map[string]interface{}
 	var lastErr error
 
 	if !IsCookieSessionToken(accessToken) {
 		headers := AuthHeaders(accessToken, resolvedUserID)
-		err := a.FetchJSON(url, "GET", headers, nil, &res, opt)
+		err := a.FetchJSON(openAIModelsURL, "GET", headers, nil, &res, opt)
 		if err == nil {
 			if data, ok := res["data"].([]interface{}); ok {
-				return parseModelsArray(data), nil
+				if models := parseModelsArray(data); len(models) > 0 {
+					return models, nil
+				}
 			}
 			lastErr = fmt.Errorf("no data in models response")
 		} else {
 			lastErr = err
 		}
-		if lastErr != nil && !isCookieSessionFailureMessage(lastErr.Error()) {
-			return nil, lastErr
+
+		if resolvedUserID > 0 {
+			var sessionRes map[string]interface{}
+			if err := a.FetchJSON(sessionModelsURL, "GET", headers, nil, &sessionRes, opt); err == nil {
+				if models := parseUserModelsPayload(sessionRes); len(models) > 0 {
+					return models, nil
+				}
+			} else {
+				lastErr = err
+			}
 		}
 	}
 
@@ -465,21 +476,46 @@ func (a *NewApiAdapter) GetModels(baseURL, accessToken string, platformUserID in
 		var cookieRes map[string]interface{}
 		cookieHeaders := CookieUserIDHeaders(resolvedUserID)
 
-		_, err := FetchJSONWithCookieRetry(url, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
+		_, err := FetchJSONWithCookieRetry(openAIModelsURL, "GET", cookie, cookieHeaders, nil, &cookieRes, opt)
+		if err != nil {
+			lastErr = err
+		} else if data, ok := cookieRes["data"].([]interface{}); ok {
+			if models := parseModelsArray(data); len(models) > 0 {
+				return models, nil
+			}
+		}
+
+		var sessionRes map[string]interface{}
+		_, err = FetchJSONWithCookieRetry(sessionModelsURL, "GET", cookie, cookieHeaders, nil, &sessionRes, opt)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if data, ok := cookieRes["data"].([]interface{}); ok {
-			return parseModelsArray(data), nil
+		if models := parseUserModelsPayload(sessionRes); len(models) > 0 {
+			return models, nil
 		}
-		lastErr = fmt.Errorf("cookie failed: no data in response")
+		lastErr = fmt.Errorf("cookie failed: no models in response")
 	}
 
-	if lastErr != nil {
+	alternateCookieUserID := a.probeAlternateCookieUserId(baseURL, accessToken, resolvedUserID, opt)
+	if alternateCookieUserID > 0 {
+		for _, cookie := range cookieCandidates {
+			var sessionRes map[string]interface{}
+			_, err := FetchJSONWithCookieRetry(sessionModelsURL, "GET", cookie, CookieUserIDHeaders(alternateCookieUserID), nil, &sessionRes, opt)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if models := parseUserModelsPayload(sessionRes); len(models) > 0 {
+				return models, nil
+			}
+		}
+	}
+
+	if lastErr != nil && !isCookieSessionFailureMessage(lastErr.Error()) {
 		return nil, lastErr
 	}
-	return nil, fmt.Errorf("failed to fetch models")
+	return []string{}, nil
 }
 
 func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error) {
@@ -598,7 +634,6 @@ func (a *NewApiAdapter) VerifyToken(baseURL, accessToken string, platformUserID 
 	}, nil
 }
 
-
 // Helpers
 
 func tokenItemsFromPayload(payload interface{}) []interface{} {
@@ -641,7 +676,9 @@ func parseApiTokensArray(payload interface{}) []ApiTokenInfo {
 			}
 
 			key, _ := m["key"].(string)
+			key = strings.TrimSpace(key)
 			name, _ := m["name"].(string)
+			name = strings.TrimSpace(name)
 			if name == "" {
 				if i == 0 {
 					name = "default"
@@ -651,11 +688,11 @@ func parseApiTokensArray(payload interface{}) []ApiTokenInfo {
 			}
 			group := ""
 			if g, ok := m["group"].(string); ok {
-				group = g
+				group = strings.TrimSpace(g)
 			} else if gn, ok := m["group_name"].(string); ok {
-				group = gn
+				group = strings.TrimSpace(gn)
 			} else if tg, ok := m["token_group"].(string); ok {
-				group = tg
+				group = strings.TrimSpace(tg)
 			}
 
 			if key != "" {
@@ -678,6 +715,42 @@ func parseModelsArray(data []interface{}) []string {
 			if id, ok := m["id"].(string); ok && id != "" {
 				models = append(models, id)
 			}
+		}
+	}
+	return models
+}
+
+func parseUserModelsPayload(payload map[string]interface{}) []string {
+	data, ok := payload["data"]
+	if !ok || data == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	models := []string{}
+	add := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" || seen[model] {
+			return
+		}
+		seen[model] = true
+		models = append(models, model)
+	}
+
+	switch v := data.(type) {
+	case []interface{}:
+		for _, item := range v {
+			switch m := item.(type) {
+			case string:
+				add(m)
+			case map[string]interface{}:
+				if id, ok := m["id"].(string); ok {
+					add(id)
+				}
+			}
+		}
+	case map[string]interface{}:
+		for model := range v {
+			add(model)
 		}
 	}
 	return models

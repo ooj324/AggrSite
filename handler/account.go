@@ -29,6 +29,51 @@ func isAgentRouterSite(platformName, siteURL string) bool {
 	return normalized == "agentrouter" || strings.Contains(strings.ToLower(siteURL), "agentrouter")
 }
 
+func resolveVerifyCredentialMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "session", "apikey", "auto":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "auto"
+	}
+}
+
+func isShieldBlockedErrorMessage(message string) bool {
+	text := strings.ToLower(message)
+	return strings.Contains(text, "acw_sc__v2") ||
+		strings.Contains(text, "cdn_sec_tc") ||
+		strings.Contains(text, "var arg1") ||
+		strings.Contains(text, "challenge") ||
+		strings.Contains(text, "cloudflare") ||
+		strings.Contains(text, "captcha") ||
+		strings.Contains(text, "invalid character")
+}
+
+func isUserIDRequiredErrorMessage(message string) bool {
+	text := strings.ToLower(message)
+	compact := strings.NewReplacer("-", "", "_", "", " ", "").Replace(text)
+	return strings.Contains(text, "new-api-user") ||
+		strings.Contains(text, "new_api_user") ||
+		strings.Contains(compact, "newapiuser") ||
+		strings.Contains(text, "user id required")
+}
+
+func appendSessionTokenRebindHint(message string) string {
+	const hint = "请在中转站重新生成系统访问令牌后重新绑定账号"
+	raw := strings.TrimSpace(message)
+	if raw == "" || strings.Contains(raw, hint) {
+		return raw
+	}
+	text := strings.ToLower(raw)
+	if strings.Contains(raw, "无权进行此操作，access token 无效") ||
+		strings.Contains(text, "invalid access token") ||
+		strings.Contains(text, "access token is invalid") ||
+		(strings.Contains(raw, "access token") && strings.Contains(raw, "无效")) {
+		return raw + "，" + hint
+	}
+	return raw
+}
+
 func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		SiteID         int64   `json:"siteId"`
@@ -40,6 +85,15 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := parseBody(r, &input); err != nil {
 		fail(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	accessToken := strings.TrimSpace(input.AccessToken)
+	if accessToken == "" {
+		ok(w, map[string]interface{}{
+			"success": false,
+			"message": "Token 不能为空",
+		})
 		return
 	}
 
@@ -63,28 +117,31 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		opt.UseSystemProxy = input.UseSystemProxy
 	}
 
-	// Mode handling
-	credentialMode := input.CredentialMode
-	if credentialMode == "" {
-		credentialMode = "session"
-	}
+	credentialMode := resolveVerifyCredentialMode(input.CredentialMode)
 
 	var platformUserID int64
-	if input.PlatformUserID != nil {
+	if input.PlatformUserID != nil && *input.PlatformUserID > 0 {
 		platformUserID = *input.PlatformUserID
 	}
 
 	if credentialMode == "apikey" {
 		// API Key mode: just test if we can fetch models
-		models, err := ad.GetModels(site.URL, input.AccessToken, platformUserID, opt)
+		models, err := ad.GetModels(site.URL, accessToken, platformUserID, opt)
 		if err != nil {
 			errStr := err.Error()
-			shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
+			shieldBlocked := isShieldBlockedErrorMessage(errStr)
 			if shieldBlocked {
 				ok(w, map[string]interface{}{"success": false, "shieldBlocked": true, "message": "被反爬或防火墙拦截"})
 				return
 			}
-			fail(w, http.StatusInternalServerError, errStr)
+			ok(w, map[string]interface{}{"success": false, "message": errStr})
+			return
+		}
+		if len(models) == 0 {
+			ok(w, map[string]interface{}{
+				"success": false,
+				"message": "API Key 验证失败：未获取到可用模型",
+			})
 			return
 		}
 		ok(w, map[string]interface{}{
@@ -96,12 +153,12 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := ad.VerifyToken(site.URL, input.AccessToken, platformUserID, opt)
+	res, err := ad.VerifyToken(site.URL, accessToken, platformUserID, opt)
 	if err != nil {
 		errStr := err.Error()
 		// Detect needsUserId or shield
-		needsUserId := strings.Contains(errStr, "New-API-User") || strings.Contains(errStr, "user id required")
-		shieldBlocked := strings.Contains(errStr, "acw_sc__v2") || strings.Contains(errStr, "var arg1") || strings.Contains(errStr, "challenge") || strings.Contains(errStr, "cloudflare") || strings.Contains(errStr, "invalid character")
+		needsUserId := isUserIDRequiredErrorMessage(errStr)
+		shieldBlocked := isShieldBlockedErrorMessage(errStr)
 		if needsUserId || shieldBlocked {
 			ok(w, map[string]interface{}{
 				"success":       false,
@@ -111,7 +168,10 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		fail(w, http.StatusInternalServerError, errStr)
+		ok(w, map[string]interface{}{
+			"success": false,
+			"message": appendSessionTokenRebindHint(errStr),
+		})
 		return
 	}
 
@@ -143,12 +203,22 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if res.TokenType == "apikey" && credentialMode == "session" {
+		ok(w, map[string]interface{}{
+			"success": false,
+			"message": "当前凭证是 API Key，请切换到 API Key 模式，或改用 Session Token",
+		})
+		return
+	}
+
 	ok(w, map[string]interface{}{
-		"success":   true,
-		"tokenType": res.TokenType,
-		"userInfo":  res.UserInfo,
-		"balance":   res.Balance,
-		"apiToken":  res.ApiToken,
+		"success":    true,
+		"tokenType":  res.TokenType,
+		"userInfo":   res.UserInfo,
+		"balance":    res.Balance,
+		"apiToken":   res.ApiToken,
+		"modelCount": len(res.Models),
+		"models":     res.Models,
 	})
 }
 

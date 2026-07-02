@@ -511,7 +511,10 @@ func CookieUserIDHeaders(platformUserID int64) map[string]string {
 	return map[string]string{
 		"New-Api-User": uid,
 		"Veloera-User": uid,
+		"voapi-user":   uid,
 		"User-id":      uid,
+		"Rix-Api-User": uid,
+		"neo-api-user": uid,
 	}
 }
 

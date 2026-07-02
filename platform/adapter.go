@@ -242,7 +242,10 @@ func AuthHeaders(accessToken string, platformUserID int64) map[string]string {
 		uid := fmt.Sprintf("%d", platformUserID)
 		h["New-API-User"] = uid
 		h["Veloera-User"] = uid
+		h["voapi-user"] = uid
 		h["User-id"] = uid
+		h["Rix-Api-User"] = uid
+		h["neo-api-user"] = uid
 	}
 	return h
 }
@@ -281,11 +284,15 @@ func getApiTokensWithSessionCookie(base *BaseAdapter, baseURL, accessToken strin
 			if err != nil {
 				return nil, err
 			}
+			tokens := parseApiTokensArray(res)
+			if len(tokens) > 0 {
+				return tokens, nil
+			}
 			success, _ := res["success"].(bool)
 			if !success {
 				return nil, fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
 			}
-			return parseApiTokensArray(res), nil
+			return tokens, nil
 		}
 	}
 	return base.GetApiTokens(baseURL, accessToken, platformUserID, opt)
@@ -306,7 +313,6 @@ func getApiTokenWithSessionCookie(base *BaseAdapter, baseURL, accessToken string
 	}
 	return "", fmt.Errorf("no valid api token found")
 }
-
 
 // probeAlternateCookieUserID tries common user IDs via cookie to find a working one
 // that differs from currentUserID. This is a standalone package-level helper so that
@@ -586,12 +592,16 @@ func (b *BaseAdapter) GetApiTokens(baseURL, accessToken string, platformUserID i
 		return nil, err
 	}
 
+	tokens := parseApiTokensArray(res)
+	if len(tokens) > 0 {
+		return tokens, nil
+	}
 	success, _ := res["success"].(bool)
 	if !success {
 		return nil, fmt.Errorf("fetch token failed: %s", ExtractMessage(res))
 	}
 
-	return parseApiTokensArray(res), nil
+	return tokens, nil
 }
 
 func (b *BaseAdapter) GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error) {
