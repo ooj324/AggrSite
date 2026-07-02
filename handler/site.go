@@ -259,6 +259,10 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	url = strings.TrimSuffix(url, "/")
+	if strings.Contains(strings.ToLower(url), "anyrouter") {
+		ok(w, map[string]interface{}{"platform": "anyrouter", "url": url})
+		return
+	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequest("GET", url+"/api/status", nil)
@@ -280,6 +284,10 @@ func DetectSite(w http.ResponseWriter, r *http.Request) {
 				lowerName := strings.ToLower(sysName)
 				if strings.Contains(lowerName, "agent router") || strings.Contains(lowerName, "agentrouter") {
 					ok(w, map[string]interface{}{"platform": "agentrouter", "url": url})
+					return
+				}
+				if strings.Contains(lowerName, "anyrouter") || strings.Contains(lowerName, "any router") {
+					ok(w, map[string]interface{}{"platform": "anyrouter", "url": url})
 					return
 				}
 				if strings.Contains(lowerName, "new api") {

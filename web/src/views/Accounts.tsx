@@ -441,7 +441,8 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   }, [loginSupported, mode]);
 
   const handleVerify = async () => {
-    if (!formData.access_token) {
+    const accessToken = formData.access_token.trim();
+    if (!accessToken) {
       showAlert('请先输入 Token');
       return;
     }
@@ -454,8 +455,8 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     try {
       const res = await api.post('/api/accounts/verify-token', {
         siteId: Number(formData.site_id),
-        accessToken: formData.access_token,
-        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0,
+        accessToken,
+        platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
         credentialMode: mode,
       });
       
@@ -495,9 +496,23 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const accessToken = formData.access_token.trim();
+    const apiToken = formData.api_token.trim();
+    const username = formData.username.trim();
+    const proxyUrl = formData.proxy_url.trim();
+    const checkinCredential = formData.checkin_credential.trim();
+    const refreshToken = formData.refresh_token.trim();
     
-    const isTokenChanged = account && formData.access_token !== account.access_token;
+    const savedCredential = account
+      ? (mode === 'apikey' ? (account.api_token || account.access_token || '') : (account.access_token || '')).trim()
+      : '';
+    const isTokenChanged = !!account && accessToken !== savedCredential;
     
+    if (mode !== 'login' && !accessToken) {
+      showAlert('请先输入 Token');
+      return;
+    }
+
     if (mode !== 'login' && !account && !isBatchApiKeyInput && !verifyResult?.success && !formData.skip_model_fetch) {
       showAlert('请先验证 Token 成功后再添加账号');
       return;
@@ -527,29 +542,29 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
         // Token mode
         const payload = {
           site_id: Number(formData.site_id),
-          username: formData.username,
-          access_token: formData.access_token,
+          username,
+          access_token: accessToken,
           accessTokens: isBatchApiKeyInput ? parsedApiKeys : undefined,
-          api_token: formData.api_token,
+          api_token: apiToken,
           checkin_enabled: formData.checkin_enabled,
           status: formData.status,
-          platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
+          platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : null,
           credentialMode: mode,
-          proxyUrl: formData.proxy_url,
+          proxyUrl,
           useSystemProxy: formData.use_system_proxy,
-          checkin_credential: formData.checkin_credential,
+          checkin_credential: checkinCredential,
           skipModelFetch: formData.skip_model_fetch,
-          refreshToken: formData.refresh_token,
-          tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : undefined,
+          refreshToken,
+          tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : null,
         };
 
         if (account) {
           if (isTokenChanged && mode === 'session') {
             await api.post(`/api/accounts/${account.id}/rebind-session`, {
-              accessToken: formData.access_token,
-              platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
-              refreshToken: formData.refresh_token,
-              tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : undefined,
+              accessToken,
+              platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0,
+              refreshToken,
+              tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : 0,
             });
           }
           await api.put(`/api/accounts/${account.id}`, payload);
@@ -618,17 +633,17 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
               <input required type="password" className={inputClass} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} placeholder={account ? "密码 (用于重新登录)" : "密码"} />
             ) : (
               <>
-                {mode === 'apikey' && !account ? (
-                  <textarea required className={`${inputClass} min-h-[80px] col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴 API Key (支持换行/逗号批量粘贴)" />
+                {mode === 'session' ? (
+                  <textarea required className={`${inputClass} min-h-[96px] resize-y col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴 Session Access Token、Cookie 或 Set-Cookie" />
                 ) : (
-                  <input required type="text" className={inputClass} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder={mode === 'session' ? "Access Token (Session)" : "API Key"} />
+                  <textarea required className={`${inputClass} min-h-[80px] resize-y col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder={account ? "API Key" : "粘贴 API Key (支持换行/逗号批量粘贴)"} />
                 )}
                 
                 {mode === 'session' && (
                   <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({ ...formData, api_token: e.target.value })} placeholder="API Token (可选，验证可自动获取)" />
                 )}
                 
-                <input type="number" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value }); setVerifyResult(null); }} placeholder="用户 ID (可选，部分站点需要)" />
+                <input type="text" inputMode="numeric" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value.replace(/\D/g, '') }); setVerifyResult(null); }} placeholder="用户 ID (可选，部分站点需要)" />
                 {mode === 'session' && isSub2Api && (
                   <>
                     <input type="text" className={inputClass} value={formData.refresh_token} onChange={e => setFormData({ ...formData, refresh_token: e.target.value })} placeholder="Sub2API refresh_token (可选)" />

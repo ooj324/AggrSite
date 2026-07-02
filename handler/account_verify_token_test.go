@@ -43,6 +43,27 @@ func setupVerifyTokenTestDB(t *testing.T, upstreamURL string) int64 {
 		external_checkin_auth_prefix TEXT,
 		external_checkin_body TEXT
 	)`)
+	db.DB.MustExec(`CREATE TABLE IF NOT EXISTS accounts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		site_id INTEGER NOT NULL,
+		username TEXT,
+		access_token TEXT NOT NULL DEFAULT '',
+		api_token TEXT,
+		balance REAL DEFAULT 0,
+		balance_used REAL DEFAULT 0,
+		quota REAL DEFAULT 0,
+		unit_cost REAL DEFAULT 0,
+		value_score REAL DEFAULT 0,
+		status TEXT DEFAULT 'active',
+		checkin_enabled INTEGER DEFAULT 1,
+		last_checkin_at TEXT,
+		last_balance_refresh TEXT,
+		extra_config TEXT,
+		created_at TEXT,
+		updated_at TEXT,
+		is_pinned INTEGER DEFAULT 0,
+		sort_order INTEGER DEFAULT 0
+	)`)
 
 	id, err := db.CreateSite(db.CreateSiteInput{
 		Name:     "Verify Site",

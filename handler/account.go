@@ -240,7 +240,8 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.AccessToken == "" {
+	accessToken := strings.TrimSpace(input.AccessToken)
+	if accessToken == "" {
 		fail(w, http.StatusBadRequest, "accessToken is required")
 		return
 	}
@@ -257,7 +258,7 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := map[string]interface{}{
-		"access_token": input.AccessToken,
+		"access_token": accessToken,
 	}
 
 	var cfg map[string]interface{}
@@ -271,20 +272,28 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 	platformUserID := int64(0)
 	if input.PlatformUserID != nil {
 		platformUserID = *input.PlatformUserID
-		cfg["platformUserId"] = platformUserID
+		if platformUserID > 0 {
+			cfg["platformUserId"] = platformUserID
+		} else {
+			delete(cfg, "platformUserId")
+			platformUserID = 0
+		}
 	} else if existingID, ok := cfg["platformUserId"].(float64); ok {
 		platformUserID = int64(existingID)
 	}
 
 	if input.RefreshToken != nil {
+		refreshToken := strings.TrimSpace(*input.RefreshToken)
 		sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
 		if sub2apiAuth == nil {
 			sub2apiAuth = make(map[string]interface{})
 		}
-		if *input.RefreshToken != "" {
-			sub2apiAuth["refreshToken"] = *input.RefreshToken
-			if input.TokenExpiresAt != nil {
+		if refreshToken != "" {
+			sub2apiAuth["refreshToken"] = refreshToken
+			if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
 				sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
+			} else {
+				delete(sub2apiAuth, "tokenExpiresAt")
 			}
 			cfg["sub2apiAuth"] = sub2apiAuth
 		} else {
@@ -299,7 +308,7 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 	ad := platform.GetAdapter(site.Platform)
 	if ad != nil {
 		opt := getRequestOption(site)
-		res, err := ad.VerifyToken(site.URL, input.AccessToken, platformUserID, opt)
+		res, err := ad.VerifyToken(site.URL, accessToken, platformUserID, opt)
 		if err == nil && res != nil {
 			if res.UserInfo != nil && res.UserInfo.Username != "" {
 				updates["username"] = res.UserInfo.Username
@@ -364,6 +373,19 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input.Username = strings.TrimSpace(input.Username)
+	input.AccessToken = strings.TrimSpace(input.AccessToken)
+	input.ApiToken = strings.TrimSpace(input.ApiToken)
+	input.CredentialMode = strings.TrimSpace(input.CredentialMode)
+	trimmedAccessTokens := input.AccessTokens[:0]
+	for i := range input.AccessTokens {
+		token := strings.TrimSpace(input.AccessTokens[i])
+		if token != "" {
+			trimmedAccessTokens = append(trimmedAccessTokens, token)
+		}
+	}
+	input.AccessTokens = trimmedAccessTokens
+
 	if input.AccessToken == "" && input.ApiToken == "" && len(input.AccessTokens) == 0 {
 		fail(w, http.StatusBadRequest, "access_token, api_token or accessTokens is required")
 		return
@@ -418,22 +440,22 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 			if input.CredentialMode != "" {
 				cfg["credentialMode"] = input.CredentialMode
 			}
-			if input.PlatformUserID != nil {
+			if input.PlatformUserID != nil && *input.PlatformUserID > 0 {
 				cfg["platformUserId"] = *input.PlatformUserID
 			}
-			if input.ProxyURL != nil && *input.ProxyURL != "" {
-				cfg["proxyUrl"] = *input.ProxyURL
+			if input.ProxyURL != nil && strings.TrimSpace(*input.ProxyURL) != "" {
+				cfg["proxyUrl"] = strings.TrimSpace(*input.ProxyURL)
 			}
 			if input.UseSystemProxy != nil {
 				cfg["useSystemProxy"] = *input.UseSystemProxy
 			}
-			if input.CheckinCredential != nil && *input.CheckinCredential != "" {
-				cfg["checkin_credential"] = *input.CheckinCredential
+			if input.CheckinCredential != nil && strings.TrimSpace(*input.CheckinCredential) != "" {
+				cfg["checkin_credential"] = strings.TrimSpace(*input.CheckinCredential)
 			}
-			if input.RefreshToken != nil && *input.RefreshToken != "" {
+			if input.RefreshToken != nil && strings.TrimSpace(*input.RefreshToken) != "" {
 				sub2apiAuth := make(map[string]interface{})
-				sub2apiAuth["refreshToken"] = *input.RefreshToken
-				if input.TokenExpiresAt != nil {
+				sub2apiAuth["refreshToken"] = strings.TrimSpace(*input.RefreshToken)
+				if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
 					sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
 				}
 				cfg["sub2apiAuth"] = sub2apiAuth
@@ -461,11 +483,11 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	// If missing ApiToken and it's a session token, try to fetch it
 	if input.ApiToken == "" && input.AccessToken != "" && input.CredentialMode != "apikey" {
 		userID := int64(0)
-		if input.PlatformUserID != nil {
+		if input.PlatformUserID != nil && *input.PlatformUserID > 0 {
 			userID = *input.PlatformUserID
 		}
 		if token, err := ad.GetApiToken(site.URL, input.AccessToken, userID, opt); err == nil {
-			input.ApiToken = token
+			input.ApiToken = strings.TrimSpace(token)
 			apiTokenFound = true
 		}
 	}
@@ -492,22 +514,22 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	if input.CredentialMode != "" {
 		cfg["credentialMode"] = input.CredentialMode
 	}
-	if input.PlatformUserID != nil {
+	if input.PlatformUserID != nil && *input.PlatformUserID > 0 {
 		cfg["platformUserId"] = *input.PlatformUserID
 	}
-	if input.ProxyURL != nil && *input.ProxyURL != "" {
-		cfg["proxyUrl"] = *input.ProxyURL
+	if input.ProxyURL != nil && strings.TrimSpace(*input.ProxyURL) != "" {
+		cfg["proxyUrl"] = strings.TrimSpace(*input.ProxyURL)
 	}
 	if input.UseSystemProxy != nil {
 		cfg["useSystemProxy"] = *input.UseSystemProxy
 	}
-	if input.CheckinCredential != nil && *input.CheckinCredential != "" {
-		cfg["checkin_credential"] = *input.CheckinCredential
+	if input.CheckinCredential != nil && strings.TrimSpace(*input.CheckinCredential) != "" {
+		cfg["checkin_credential"] = strings.TrimSpace(*input.CheckinCredential)
 	}
-	if input.RefreshToken != nil && *input.RefreshToken != "" {
+	if input.RefreshToken != nil && strings.TrimSpace(*input.RefreshToken) != "" {
 		sub2apiAuth := make(map[string]interface{})
-		sub2apiAuth["refreshToken"] = *input.RefreshToken
-		if input.TokenExpiresAt != nil {
+		sub2apiAuth["refreshToken"] = strings.TrimSpace(*input.RefreshToken)
+		if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
 			sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
 		}
 		cfg["sub2apiAuth"] = sub2apiAuth
@@ -518,7 +540,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	// Trigger async sync logic
 	go func() {
 		userID := int64(0)
-		if input.PlatformUserID != nil {
+		if input.PlatformUserID != nil && *input.PlatformUserID > 0 {
 			userID = *input.PlatformUserID
 		}
 		activeAccessToken := input.AccessToken
@@ -592,7 +614,8 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 
 	cfgModified := false
 	if v, ok := fields["proxyUrl"]; ok {
-		if s, isStr := v.(string); isStr && s != "" {
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) != "" {
+			s = strings.TrimSpace(s)
 			cfg["proxyUrl"] = s
 		} else {
 			delete(cfg, "proxyUrl")
@@ -610,7 +633,8 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		cfgModified = true
 	}
 	if v, ok := fields["credentialMode"]; ok {
-		if s, isStr := v.(string); isStr && s != "" {
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) != "" {
+			s = strings.TrimSpace(s)
 			cfg["credentialMode"] = s
 		}
 		delete(fields, "credentialMode")
@@ -618,6 +642,7 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := fields["checkin_credential"]; ok {
 		if s, isStr := v.(string); isStr {
+			s = strings.TrimSpace(s)
 			if s != "" {
 				cfg["checkin_credential"] = s
 			} else {
@@ -628,14 +653,17 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		cfgModified = true
 	}
 	if v, ok := fields["platformUserId"]; ok {
-		if f, isNum := v.(float64); isNum {
+		if f, isNum := v.(float64); isNum && f > 0 {
 			cfg["platformUserId"] = int64(f)
+		} else {
+			delete(cfg, "platformUserId")
 		}
 		delete(fields, "platformUserId")
 		cfgModified = true
 	}
 	if v, ok := fields["refreshToken"]; ok {
 		if s, isStr := v.(string); isStr {
+			s = strings.TrimSpace(s)
 			if s != "" {
 				sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
 				if sub2apiAuth == nil {
@@ -651,13 +679,20 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		cfgModified = true
 	}
 	if v, ok := fields["tokenExpiresAt"]; ok {
-		if f, isNum := v.(float64); isNum {
+		if f, isNum := v.(float64); isNum && f > 0 {
 			sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
 			if sub2apiAuth == nil {
 				sub2apiAuth = make(map[string]interface{})
 			}
 			sub2apiAuth["tokenExpiresAt"] = int64(f)
 			cfg["sub2apiAuth"] = sub2apiAuth
+		} else if sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{}); sub2apiAuth != nil {
+			delete(sub2apiAuth, "tokenExpiresAt")
+			if len(sub2apiAuth) == 0 {
+				delete(cfg, "sub2apiAuth")
+			} else {
+				cfg["sub2apiAuth"] = sub2apiAuth
+			}
 		}
 		delete(fields, "tokenExpiresAt")
 		cfgModified = true
@@ -665,6 +700,19 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 
 	delete(fields, "skipModelFetch")
 	delete(fields, "accessTokens")
+
+	if token, ok := fields["access_token"].(string); ok {
+		fields["access_token"] = strings.TrimSpace(token)
+	}
+	if token, ok := fields["api_token"].(string); ok {
+		fields["api_token"] = strings.TrimSpace(token)
+	}
+	if username, ok := fields["username"].(string); ok {
+		fields["username"] = strings.TrimSpace(username)
+	}
+	if status, ok := fields["status"].(string); ok {
+		fields["status"] = strings.TrimSpace(status)
+	}
 
 	if cfgModified {
 		bs, _ := json.Marshal(cfg)

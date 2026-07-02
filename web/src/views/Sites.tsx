@@ -5,6 +5,20 @@ import { Plus, Edit2, Trash2, Activity } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useAlert } from '../components/AlertProvider';
 
+const guessPlatformFromUrl = (url: string) => {
+  const lowerUrl = url.toLowerCase();
+  const compactUrl = lowerUrl.replace(/[-_\s]/g, '');
+  if (compactUrl.includes('anyrouter')) return 'anyrouter';
+  if (compactUrl.includes('agentrouter')) return 'agentrouter';
+  if (compactUrl.includes('sub2api') || compactUrl.includes('aiproxy')) return 'sub2api';
+  if (compactUrl.includes('donehub') || lowerUrl.includes('oaifree')) return 'done-hub';
+  if (lowerUrl.includes('veloera')) return 'veloera';
+  if (compactUrl.includes('onehub')) return 'one-hub';
+  if (compactUrl.includes('oneapi')) return 'one-api';
+  if (lowerUrl.includes('api.openai.com') || compactUrl.includes('newapi')) return 'new-api';
+  return '';
+};
+
 export default function Sites() {
   const { showAlert } = useAlert();
   const [sites, setSites] = useState<Site[]>([]);
@@ -472,21 +486,8 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 <div className="flex gap-2">
                   <input required type="url" className={`${inputClass} flex-1`} value={formData.url} onChange={e => {
                     const url = e.target.value;
-                    const lowerUrl = url.toLowerCase();
-                    let nextPlatform = formData.platform;
-                    if (lowerUrl.includes('agentrouter')) {
-                      nextPlatform = 'agentrouter';
-                    } else if (!nextPlatform || nextPlatform === 'anyrouter') {
-                      if (lowerUrl.includes('api.openai.com') || lowerUrl.includes('oneapi') || lowerUrl.includes('newapi')) {
-                        nextPlatform = 'newapi';
-                      } else if (lowerUrl.includes('sub2api') || lowerUrl.includes('aiproxy')) {
-                        nextPlatform = 'sub2api';
-                      } else if (lowerUrl.includes('donehub') || lowerUrl.includes('oaifree')) {
-                        nextPlatform = 'donehub';
-                      } else if (lowerUrl.includes('veloera')) {
-                        nextPlatform = 'veloera';
-                      }
-                    }
+                    const guessedPlatform = guessPlatformFromUrl(url);
+                    const nextPlatform = guessedPlatform || formData.platform;
                     setFormData({...formData, url, platform: nextPlatform});
                   }} placeholder="例如: https://api.example.com" />
                   <button type="button" onClick={handleDetect} disabled={detecting || !formData.url.trim()} className="px-3 py-1 bg-surface border border-border rounded-lg text-textPrimary text-[12px] hover:bg-surfaceHover disabled:opacity-50 transition-colors whitespace-nowrap">
