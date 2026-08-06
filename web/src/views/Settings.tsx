@@ -99,7 +99,8 @@ export default function Settings() {
         api_key: formData.TURNSTILE_API_KEY,
         api_url: formData.TURNSTILE_API_URL,
       });
-      showAlert(`Turnstile 求解测试成功！\n求解器: ${formData.TURNSTILE_PROVIDER}\nToken 长度: ${res.token_len} 字符`);
+      const urlInfo = res.tested_url ? `\n测试目标: ${res.tested_url}` : '';
+      showAlert(`Turnstile 求解测试成功！\n求解器: ${formData.TURNSTILE_PROVIDER}${urlInfo}\nToken 长度: ${res.token_len} 字符`);
     } catch (err: any) {
       showAlert(`Turnstile 求解测试失败: ${err}`);
     } finally {

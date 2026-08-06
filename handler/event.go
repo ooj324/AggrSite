@@ -138,13 +138,30 @@ func TestTurnstileSolver(w http.ResponseWriter, r *http.Request) {
 	}
 
 	testWebURL := input.WebsiteURL
-	if testWebURL == "" {
-		testWebURL = "https://example.com"
-	}
 	testSiteKey := input.SiteKey
+
+	if testWebURL == "" || testSiteKey == "" {
+		// Prefer picking an active site from DB if it has turnstile site key configured
+		if sites, err := db.ListSites(); err == nil {
+			for _, s := range sites {
+				if s.TurnstileSiteKey != nil && *s.TurnstileSiteKey != "" {
+					if testWebURL == "" {
+						testWebURL = s.URL
+					}
+					if testSiteKey == "" {
+						testSiteKey = *s.TurnstileSiteKey
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if testWebURL == "" {
+		testWebURL = "https://peet.ws/turnstile-test/"
+	}
 	if testSiteKey == "" {
-		// Cloudflare Turnstile always-pass test key
-		testSiteKey = "1x00000000000000000000AA"
+		testSiteKey = "0x4AAAAAAABSv23Psp10v74w"
 	}
 
 	token, err := solver.SolveTurnstile(r.Context(), testWebURL, testSiteKey, nil)
@@ -154,10 +171,12 @@ func TestTurnstileSolver(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ok(w, map[string]interface{}{
-		"success":   true,
-		"message":   "Turnstile 求解测试成功！",
-		"token_len": len(token),
-		"token":     token,
+		"success":    true,
+		"message":    "Turnstile 求解测试成功！",
+		"token_len":  len(token),
+		"token":      token,
+		"tested_url": testWebURL,
+		"tested_key": testSiteKey,
 	})
 }
 
