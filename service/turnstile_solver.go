@@ -368,6 +368,14 @@ func (c *customEndpointSolver) SolveTurnstile(ctx context.Context, websiteURL, s
 	client := createHTTPClient(opt)
 	trimmedURL := strings.TrimRight(c.apiURL, "/")
 
+	// If user provided a root URL like https://xxx.onrender.com, automatically append /turnstile
+	if !strings.HasSuffix(trimmedURL, "/turnstile") &&
+		!strings.HasSuffix(trimmedURL, "/createTask") &&
+		!strings.HasSuffix(trimmedURL, "/solve") &&
+		!strings.HasSuffix(trimmedURL, "/task") {
+		trimmedURL = trimmedURL + "/turnstile"
+	}
+
 	// Build request payload compatible with multiple self-hosted solver conventions
 	payload := map[string]interface{}{
 		"url":        websiteURL,
@@ -454,12 +462,17 @@ func (c *customEndpointSolver) SolveTurnstile(ctx context.Context, websiteURL, s
 // pollAsyncResult polls the /result endpoint for taozhiyu/Turnstile-Solver style async tasks.
 // API: GET /result?id=<task_id>  →  { "status": "success", "data": { "token": "..." } }
 func (c *customEndpointSolver) pollAsyncResult(ctx context.Context, client *http.Client, baseURL, taskID string) (string, error) {
-	// Derive result URL: if baseURL is ".../turnstile", result is ".../result"
-	resultBaseURL := baseURL
-	if idx := strings.LastIndex(resultBaseURL, "/"); idx > 0 {
-		resultBaseURL = resultBaseURL[:idx]
+	// Derive result URL accurately from host origin
+	var resultURL string
+	if u, err := url.Parse(baseURL); err == nil && u.Scheme != "" && u.Host != "" {
+		resultURL = fmt.Sprintf("%s://%s/result?id=%s", u.Scheme, u.Host, url.QueryEscape(taskID))
+	} else {
+		resultBaseURL := baseURL
+		if idx := strings.LastIndex(resultBaseURL, "/"); idx > 0 {
+			resultBaseURL = resultBaseURL[:idx]
+		}
+		resultURL = resultBaseURL + "/result?id=" + url.QueryEscape(taskID)
 	}
-	resultURL := resultBaseURL + "/result?id=" + url.QueryEscape(taskID)
 
 	// Initial wait before first poll
 	select {
