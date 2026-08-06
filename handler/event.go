@@ -139,7 +139,7 @@ func TestTurnstileSolver(w http.ResponseWriter, r *http.Request) {
 
 	testWebURL := input.WebsiteURL
 	if testWebURL == "" {
-		testWebURL = "https://challenges.cloudflare.com"
+		testWebURL = "https://example.com"
 	}
 	testSiteKey := input.SiteKey
 	if testSiteKey == "" {

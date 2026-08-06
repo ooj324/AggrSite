@@ -404,6 +404,14 @@ func (c *customEndpointSolver) SolveTurnstile(ctx context.Context, websiteURL, s
 		return "", err
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("custom Turnstile solver 身份验证失败 (HTTP %d): %s (请检查 API Key / Auth Token 是否填写正确)", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	}
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("custom Turnstile solver request error (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	}
+
 	var res map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &res); err != nil {
 		// Maybe plain text token
@@ -460,7 +468,7 @@ func (c *customEndpointSolver) pollAsyncResult(ctx context.Context, client *http
 	case <-time.After(2 * time.Second):
 	}
 
-	maxAttempts := 30
+	maxAttempts := 45
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		select {
 		case <-ctx.Done():
@@ -487,6 +495,10 @@ func (c *customEndpointSolver) pollAsyncResult(ctx context.Context, client *http
 
 		pollBody, _ := io.ReadAll(pollResp.Body)
 		pollResp.Body.Close()
+
+		if pollResp.StatusCode == http.StatusUnauthorized || pollResp.StatusCode == http.StatusForbidden {
+			return "", fmt.Errorf("custom Turnstile solver 身份验证失败 (HTTP %d): %s (请检查 API Key / Auth Token 是否填写正确)", pollResp.StatusCode, strings.TrimSpace(string(pollBody)))
+		}
 
 		var pollRes map[string]interface{}
 		if err := json.Unmarshal(pollBody, &pollRes); err != nil {
