@@ -329,6 +329,7 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
     external_checkin_auth_header: site?.external_checkin_auth_header || '',
     external_checkin_auth_prefix: site?.external_checkin_auth_prefix ?? '',
     custom_headers: site?.custom_headers || '',
+    turnstile_site_key: site?.turnstile_site_key || '',
   });
 
   const [useAdvancedCheckin, setUseAdvancedCheckin] = useState(
@@ -517,6 +518,11 @@ function SiteModal({ site, platforms, onClose, onSaved }: any) {
                 <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({...formData, proxy_url: e.target.value})} placeholder="仅填 HTTP 代理，例如 http://127.0.0.1:7890；不是签到接口" />
               </label>
               
+              <label className={fieldClass}>
+                <span className={labelClass}>Turnstile SiteKey (可选)</span>
+                <input type="text" className={inputClass} value={formData.turnstile_site_key} onChange={e => setFormData({...formData, turnstile_site_key: e.target.value})} placeholder="例如 0x4AAAAAA... 用于自动求解 Turnstile 验证码" />
+              </label>
+
               {!useAdvancedCheckin && (
                 <label className={fieldClass}>
                   <span className={labelClass}>外部签到 URL</span>

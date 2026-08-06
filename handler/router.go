@@ -68,6 +68,7 @@ func MountRoutes(r chi.Router) {
 
 		r.Get("/api/settings/{key}", GetSetting)
 		r.Put("/api/settings/{key}", UpdateSetting)
+		r.Post("/api/settings/turnstile-test", TestTurnstileSolver)
 
 		// Stats
 		r.Get("/api/stats/dashboard", GetDashboardStats)

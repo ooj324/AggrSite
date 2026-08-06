@@ -21,7 +21,8 @@ func (a *OneApiAdapter) GetApiTokens(baseURL, accessToken string, platformUserID
 }
 
 func (a *OneApiAdapter) Checkin(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*CheckinResult, error) {
-	url := fmt.Sprintf("%s/api/user/checkin", baseURL)
+	url := AppendTurnstileParam(fmt.Sprintf("%s/api/user/checkin", baseURL), opt)
+	body := BuildCheckinBodyWithTurnstile(map[string]interface{}{}, opt)
 
 	var res map[string]interface{}
 	usedCookie, err := fetchJSONWithSessionCookie(
@@ -30,12 +31,12 @@ func (a *OneApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 		accessToken,
 		platformUserID,
 		map[string]string{"X-Requested-With": "XMLHttpRequest"},
-		map[string]interface{}{},
+		body,
 		&res,
 		opt,
 	)
 	if !usedCookie {
-		err = a.FetchJSON(url, "POST", AuthHeaders(accessToken, platformUserID), nil, &res, opt)
+		err = a.FetchJSON(url, "POST", AuthHeaders(accessToken, platformUserID), body, &res, opt)
 	}
 	if err != nil {
 		return &CheckinResult{Success: false, Message: err.Error()}, nil

@@ -64,6 +64,7 @@ export interface Site {
   external_checkin_auth_prefix?: string;
   external_checkin_body?: string;
   custom_headers?: string;
+  turnstile_site_key?: string;
   created_at: string;
   total_balance?: number;
   sort_order?: number;

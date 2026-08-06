@@ -64,6 +64,7 @@ func Init() {
 
 	slog.Info("Database connected", "driver", driverName, "sql_driver", sqlDriverName)
 
+	EnsureCoreTables()
 	EnsureAccountTokensTable()
 	EnsureSettingsTable()
 	EnsureSiteExternalCheckinColumns()

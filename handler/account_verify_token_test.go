@@ -41,7 +41,8 @@ func setupVerifyTokenTestDB(t *testing.T, upstreamURL string) int64 {
 		external_checkin_method TEXT,
 		external_checkin_auth_header TEXT,
 		external_checkin_auth_prefix TEXT,
-		external_checkin_body TEXT
+		external_checkin_body TEXT,
+		turnstile_site_key TEXT
 	)`)
 	db.DB.MustExec(`CREATE TABLE IF NOT EXISTS accounts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -172,10 +172,11 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 		// X-Requested-With: XMLHttpRequest is required by new-api POST endpoints as a
 		// lightweight CSRF check; GET endpoints (e.g. /api/user/self) don't require it,
 		// which is why token verification passes but checkin returns Unauthorized without it.
-		signInURL := fmt.Sprintf("%s/api/user/sign_in", baseURL)
+		signInURL := AppendTurnstileParam(fmt.Sprintf("%s/api/user/sign_in", baseURL), opt)
 		var signInRes map[string]interface{}
 		signInHeaders := mergeMaps(cookieHeaders, map[string]string{"X-Requested-With": "XMLHttpRequest"})
-		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, signInHeaders, map[string]interface{}{}, &signInRes, opt)
+		signInBody := BuildCheckinBodyWithTurnstile(map[string]interface{}{}, opt)
+		_, err := FetchJSONWithCookieRetry(signInURL, "POST", cookie, signInHeaders, signInBody, &signInRes, opt)
 		if err == nil {
 			if ok, _ := signInRes["success"].(bool); ok {
 				msg := ExtractMessage(signInRes)
@@ -200,10 +201,11 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 		}
 
 		// Try /api/user/checkin via cookie
-		checkinURL := fmt.Sprintf("%s/api/user/checkin", baseURL)
+		checkinURL := AppendTurnstileParam(fmt.Sprintf("%s/api/user/checkin", baseURL), opt)
 		var checkinRes map[string]interface{}
 		checkinHeaders := mergeMaps(cookieHeaders, map[string]string{"X-Requested-With": "XMLHttpRequest"})
-		_, err = FetchJSONWithCookieRetry(checkinURL, "POST", cookie, checkinHeaders, map[string]interface{}{}, &checkinRes, opt)
+		checkinBody := BuildCheckinBodyWithTurnstile(map[string]interface{}{}, opt)
+		_, err = FetchJSONWithCookieRetry(checkinURL, "POST", cookie, checkinHeaders, checkinBody, &checkinRes, opt)
 		if err == nil {
 			if ok, _ := checkinRes["success"].(bool); ok {
 				msg := ExtractMessage(checkinRes)
@@ -264,9 +266,10 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 	// --- Step 1: Bearer token checkin (only for non-cookie tokens) ---
 	if !IsCookieSessionToken(accessToken) {
 		headers := AuthHeaders(accessToken, resolvedUserID)
-		url := fmt.Sprintf("%s/api/user/checkin", baseURL)
+		url := AppendTurnstileParam(fmt.Sprintf("%s/api/user/checkin", baseURL), opt)
+		body := BuildCheckinBodyWithTurnstile(map[string]interface{}{}, opt)
 		var res map[string]interface{}
-		err := a.FetchJSON(url, "POST", headers, map[string]interface{}{}, &res, opt)
+		err := a.FetchJSON(url, "POST", headers, body, &res, opt)
 		if err == nil {
 			success, _ := res["success"].(bool)
 			message := ExtractMessage(res)

@@ -409,6 +409,39 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	failureReason := AnalyzeCheckinFailure(result.Message)
 	turnstileRequired := failureReason.Code == "TURNSTILE_REQUIRED"
 
+	// If Turnstile is required, attempt to solve it via TurnstileSolver if configured
+	if turnstileRequired && !alreadyCheckedIn && !unsupported {
+		siteKey := ""
+		if row.SiteTurnstileSiteKey != nil && strings.TrimSpace(*row.SiteTurnstileSiteKey) != "" {
+			siteKey = strings.TrimSpace(*row.SiteTurnstileSiteKey)
+		} else {
+			siteKey = ExtractSiteKeyFromExtraConfig(row.ExtraConfig)
+		}
+
+		if siteKey != "" && IsTurnstileSolverConfigured() {
+			slog.Info("Attempting Turnstile solver for account", "account_id", accountID, "site_name", row.SiteName, "site_key", siteKey)
+			solvedToken, solveErr := SolveTurnstileIfConfigured(row.SiteURL, siteKey, opt)
+			if solveErr == nil && solvedToken != "" {
+				slog.Info("Turnstile solved, retrying checkin with token", "account_id", accountID)
+				opt.TurnstileToken = &solvedToken
+				result, err = executeCheckin(row.AccessToken, checkinCredential)
+				if err != nil {
+					result = &platform.CheckinResult{Success: false, Message: err.Error()}
+				}
+				// Re-analyze results
+				alreadyCheckedIn = isAlreadyCheckedIn(result.Message)
+				unsupported = isUnsupportedCheckin(result.Message)
+				failureReason = AnalyzeCheckinFailure(result.Message)
+				turnstileRequired = failureReason.Code == "TURNSTILE_REQUIRED"
+			} else if solveErr != nil {
+				slog.Warn("Turnstile solver failed", "account_id", accountID, "err", solveErr)
+				result.Message = fmt.Sprintf("Turnstile 求解失败: %s (%s)", solveErr.Error(), result.Message)
+			}
+		} else if siteKey == "" && IsTurnstileSolverConfigured() {
+			slog.Info("Turnstile required but siteKey is not configured", "account_id", accountID, "site_name", row.SiteName)
+		}
+	}
+
 	effectiveSuccess := result.Success || alreadyCheckedIn || unsupported || turnstileRequired
 
 	var status string

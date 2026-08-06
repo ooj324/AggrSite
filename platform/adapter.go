@@ -70,6 +70,38 @@ type RequestOption struct {
 	ProxyURL       *string
 	UseSystemProxy *bool
 	CustomHeaders  *string
+	TurnstileToken *string
+}
+
+// AppendTurnstileParam appends the turnstile token to the URL query string if present in opt.
+func AppendTurnstileParam(targetURL string, opt *RequestOption) string {
+	if opt == nil || opt.TurnstileToken == nil || *opt.TurnstileToken == "" {
+		return targetURL
+	}
+	token := *opt.TurnstileToken
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		if strings.Contains(targetURL, "?") {
+			return targetURL + "&turnstile=" + url.QueryEscape(token)
+		}
+		return targetURL + "?turnstile=" + url.QueryEscape(token)
+	}
+	q := u.Query()
+	q.Set("turnstile", token)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// BuildCheckinBodyWithTurnstile returns a body map enriched with turnstile token keys if present.
+func BuildCheckinBodyWithTurnstile(body map[string]interface{}, opt *RequestOption) map[string]interface{} {
+	if body == nil {
+		body = make(map[string]interface{})
+	}
+	if opt != nil && opt.TurnstileToken != nil && *opt.TurnstileToken != "" {
+		body["turnstile"] = *opt.TurnstileToken
+		body["cf-turnstile-response"] = *opt.TurnstileToken
+	}
+	return body
 }
 
 // Adapter is the interface each platform must implement.

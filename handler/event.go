@@ -106,3 +106,58 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request) {
 func isSchedulerSettingKey(key string) bool {
 	return key == "checkin_cron" || key == "balance_refresh_cron"
 }
+
+func TestTurnstileSolver(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Provider   string `json:"provider"`
+		APIKey     string `json:"api_key"`
+		APIURL     string `json:"api_url"`
+		WebsiteURL string `json:"website_url"`
+		SiteKey    string `json:"site_key"`
+	}
+	if err := parseBody(r, &input); err != nil {
+		fail(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	cfg := service.GetTurnstileSolverConfig()
+	if input.Provider != "" {
+		cfg.Provider = input.Provider
+	}
+	if input.APIKey != "" {
+		cfg.APIKey = input.APIKey
+	}
+	if input.APIURL != "" {
+		cfg.APIURL = input.APIURL
+	}
+
+	solver, err := service.NewTurnstileSolver(cfg)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	testWebURL := input.WebsiteURL
+	if testWebURL == "" {
+		testWebURL = "https://challenges.cloudflare.com"
+	}
+	testSiteKey := input.SiteKey
+	if testSiteKey == "" {
+		// Cloudflare Turnstile always-pass test key
+		testSiteKey = "1x00000000000000000000AA"
+	}
+
+	token, err := solver.SolveTurnstile(r.Context(), testWebURL, testSiteKey, nil)
+	if err != nil {
+		fail(w, http.StatusBadRequest, "Turnstile 求解测试失败: "+err.Error())
+		return
+	}
+
+	ok(w, map[string]interface{}{
+		"success":   true,
+		"message":   "Turnstile 求解测试成功！",
+		"token_len": len(token),
+		"token":     token,
+	})
+}
+

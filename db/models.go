@@ -31,7 +31,7 @@ func boolDBValue(v bool) interface{} {
 
 // ---- Site ----
 
-const siteColumns = `id, name, url, platform, status, created_at, updated_at, is_pinned, sort_order, proxy_url, use_system_proxy, custom_headers, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body`
+const siteColumns = `id, name, url, platform, status, created_at, updated_at, is_pinned, sort_order, proxy_url, use_system_proxy, custom_headers, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body, turnstile_site_key`
 
 type Site struct {
 	ID                        int64   `db:"id" json:"id"`
@@ -51,6 +51,7 @@ type Site struct {
 	ExternalCheckinAuthHeader *string `db:"external_checkin_auth_header" json:"external_checkin_auth_header"`
 	ExternalCheckinAuthPrefix *string `db:"external_checkin_auth_prefix" json:"external_checkin_auth_prefix"`
 	ExternalCheckinBody       *string `db:"external_checkin_body" json:"external_checkin_body"`
+	TurnstileSiteKey          *string `db:"turnstile_site_key" json:"turnstile_site_key"`
 }
 
 func ListSites() ([]Site, error) {
@@ -81,6 +82,7 @@ type CreateSiteInput struct {
 	ExternalCheckinAuthPrefix *string `json:"external_checkin_auth_prefix"`
 	ExternalCheckinBody       *string `json:"external_checkin_body"`
 	CustomHeaders             *string `json:"custom_headers"`
+	TurnstileSiteKey          *string `json:"turnstile_site_key"`
 }
 
 func CreateSite(in CreateSiteInput) (int64, error) {
@@ -109,16 +111,16 @@ func CreateSite(in CreateSiteInput) (int64, error) {
 		customHeaders = &emptyJson
 	}
 
-	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body, custom_headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO sites (name, url, platform, status, proxy_url, use_system_proxy, external_checkin_url, external_checkin_method, external_checkin_auth_header, external_checkin_auth_prefix, external_checkin_body, custom_headers, turnstile_site_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	if driverName == "postgres" {
 		var id int64
 		err := DB.QueryRowx(DB.Rebind(query+` RETURNING id`),
-			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, now, now).Scan(&id)
+			in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, in.TurnstileSiteKey, now, now).Scan(&id)
 		return id, err
 	}
 
-	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, now, now)
+	res, err := Exec(query, in.Name, in.URL, in.Platform, status, in.ProxyURL, useSystemProxyVal, in.ExternalCheckinURL, in.ExternalCheckinMethod, in.ExternalCheckinAuthHeader, in.ExternalCheckinAuthPrefix, in.ExternalCheckinBody, customHeaders, in.TurnstileSiteKey, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -412,6 +414,130 @@ type AccountToken struct {
 	UpdatedAt   *string `db:"updated_at" json:"updated_at"`
 }
 
+func EnsureCoreTables() {
+	if driverName == "postgres" {
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS sites (
+			id SERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			url TEXT NOT NULL,
+			platform TEXT NOT NULL,
+			status TEXT DEFAULT 'active',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			is_pinned BOOLEAN DEFAULT FALSE,
+			sort_order INTEGER DEFAULT 0,
+			proxy_url TEXT,
+			use_system_proxy BOOLEAN DEFAULT FALSE,
+			custom_headers TEXT,
+			external_checkin_url TEXT,
+			external_checkin_method TEXT,
+			external_checkin_auth_header TEXT,
+			external_checkin_auth_prefix TEXT,
+			external_checkin_body TEXT,
+			turnstile_site_key TEXT
+		)`)
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS accounts (
+			id SERIAL PRIMARY KEY,
+			site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+			username TEXT,
+			access_token TEXT NOT NULL DEFAULT '',
+			api_token TEXT,
+			balance REAL DEFAULT 0,
+			balance_used REAL DEFAULT 0,
+			quota REAL DEFAULT 0,
+			unit_cost REAL DEFAULT 0,
+			value_score REAL DEFAULT 0,
+			status TEXT DEFAULT 'active',
+			checkin_enabled BOOLEAN DEFAULT TRUE,
+			last_checkin_at TIMESTAMP,
+			last_balance_refresh TIMESTAMP,
+			extra_config TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			is_pinned BOOLEAN DEFAULT FALSE,
+			sort_order INTEGER DEFAULT 0
+		)`)
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS checkin_logs (
+			id SERIAL PRIMARY KEY,
+			account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+			status TEXT NOT NULL,
+			message TEXT,
+			reward TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS events (
+			id SERIAL PRIMARY KEY,
+			type TEXT NOT NULL,
+			title TEXT NOT NULL,
+			message TEXT NOT NULL,
+			data TEXT,
+			read BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`)
+	} else {
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS sites (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			name TEXT NOT NULL,
+			url TEXT NOT NULL,
+			platform TEXT NOT NULL,
+			status TEXT DEFAULT 'active',
+			created_at TEXT DEFAULT (datetime('now')),
+			updated_at TEXT DEFAULT (datetime('now')),
+			is_pinned INTEGER DEFAULT 0,
+			sort_order INTEGER DEFAULT 0,
+			proxy_url TEXT,
+			use_system_proxy INTEGER DEFAULT 0,
+			custom_headers TEXT,
+			external_checkin_url TEXT,
+			external_checkin_method TEXT,
+			external_checkin_auth_header TEXT,
+			external_checkin_auth_prefix TEXT,
+			external_checkin_body TEXT,
+			turnstile_site_key TEXT
+		)`)
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			site_id INTEGER NOT NULL,
+			username TEXT,
+			access_token TEXT NOT NULL DEFAULT '',
+			api_token TEXT,
+			balance REAL DEFAULT 0,
+			balance_used REAL DEFAULT 0,
+			quota REAL DEFAULT 0,
+			unit_cost REAL DEFAULT 0,
+			value_score REAL DEFAULT 0,
+			status TEXT DEFAULT 'active',
+			checkin_enabled INTEGER DEFAULT 1,
+			last_checkin_at TEXT,
+			last_balance_refresh TEXT,
+			extra_config TEXT,
+			created_at TEXT DEFAULT (datetime('now')),
+			updated_at TEXT DEFAULT (datetime('now')),
+			is_pinned INTEGER DEFAULT 0,
+			sort_order INTEGER DEFAULT 0,
+			FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+		)`)
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS checkin_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			account_id INTEGER NOT NULL,
+			status TEXT NOT NULL,
+			message TEXT,
+			reward TEXT,
+			created_at TEXT DEFAULT (datetime('now')),
+			FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+		)`)
+		DB.MustExec(`CREATE TABLE IF NOT EXISTS events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+			type TEXT NOT NULL,
+			title TEXT NOT NULL,
+			message TEXT NOT NULL,
+			data TEXT,
+			read INTEGER DEFAULT 0,
+			created_at TEXT DEFAULT (datetime('now'))
+		)`)
+	}
+}
+
 func EnsureAccountTokensTable() {
 	if driverName == "postgres" {
 		DB.MustExec(`CREATE TABLE IF NOT EXISTS account_tokens (
@@ -473,6 +599,7 @@ func EnsureSiteExternalCheckinColumns() {
 	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_header TEXT`)
 	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_prefix TEXT`)
 	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_body TEXT`)
+	DB.Exec(`ALTER TABLE sites ADD COLUMN turnstile_site_key TEXT`)
 }
 
 func ListAccountTokens(accountID int64) ([]AccountToken, error) {
@@ -749,7 +876,7 @@ func NormalizeSettingKey(key string) string {
 func GetSetting(key string) (*Setting, error) {
 	var s Setting
 	normalizedKey := NormalizeSettingKey(key)
-	err := Get(&s, `SELECT * FROM settings WHERE LOWER(key) = LOWER(?) ORDER BY CASE WHEN key = ? THEN 0 ELSE 1 END LIMIT 1`, normalizedKey, normalizedKey)
+	err := Get(&s, `SELECT key, value FROM settings WHERE LOWER(key) = LOWER(?) ORDER BY CASE WHEN key = ? THEN 0 ELSE 1 END LIMIT 1`, normalizedKey, normalizedKey)
 	if err != nil {
 		return nil, err
 	}
@@ -787,6 +914,7 @@ type AccountWithSite struct {
 	SiteExternalCheckinAuthHeader *string `db:"site_external_checkin_auth_header"`
 	SiteExternalCheckinAuthPrefix *string `db:"site_external_checkin_auth_prefix"`
 	SiteExternalCheckinBody       *string `db:"site_external_checkin_body"`
+	SiteTurnstileSiteKey          *string `db:"site_turnstile_site_key"`
 }
 
 const accountWithSiteQuery = `
@@ -797,7 +925,8 @@ const accountWithSiteQuery = `
 	       s.proxy_url AS site_proxy_url, s.use_system_proxy AS site_use_system_proxy, s.custom_headers AS site_custom_headers,
 	       s.external_checkin_url AS site_external_checkin_url, s.external_checkin_method AS site_external_checkin_method,
 	       s.external_checkin_auth_header AS site_external_checkin_auth_header, s.external_checkin_auth_prefix AS site_external_checkin_auth_prefix,
-	       s.external_checkin_body AS site_external_checkin_body
+	       s.external_checkin_body AS site_external_checkin_body,
+	       s.turnstile_site_key AS site_turnstile_site_key
 	FROM accounts a
 	INNER JOIN sites s ON a.site_id = s.id
 `
