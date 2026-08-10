@@ -165,3 +165,34 @@ func jsonNumber(value int64) string {
 	out, _ := json.Marshal(value)
 	return string(out)
 }
+
+func TestSetNewApiV1RefreshCookieAcceptsRawValueOrCookieHeader(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "raw value", input: "  refresh-value  ", want: "refresh-value"},
+		{name: "cookie header", input: "session=abc; new_api_refresh=refresh-value; Path=/", want: "refresh-value"},
+		{name: "set-cookie header", input: "new_api_refresh=refresh-value; Path=/; HttpOnly", want: "refresh-value"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := map[string]interface{}{}
+			SetNewApiV1RefreshCookie(cfg, tc.input)
+			node, _ := cfg[NewApiV1AuthConfigKey].(map[string]interface{})
+			if node == nil || node[RefreshCookieKey] != tc.want {
+				t.Fatalf("stored %#v, want refreshCookie=%q", cfg, tc.want)
+			}
+		})
+	}
+
+	cfg := map[string]interface{}{
+		NewApiV1AuthConfigKey: map[string]interface{}{RefreshCookieKey: "old"},
+	}
+	SetNewApiV1RefreshCookie(cfg, "   ")
+	if _, exists := cfg[NewApiV1AuthConfigKey]; exists {
+		t.Fatalf("empty input should clear the refresh cookie: %#v", cfg)
+	}
+}

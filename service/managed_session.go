@@ -84,12 +84,7 @@ func ApplyLoginManagedAuth(cfg map[string]interface{}, res *platform.LoginResult
 		return false
 	}
 
-	authNode, _ := cfg[platform.NewApiV1AuthConfigKey].(map[string]interface{})
-	if authNode == nil {
-		authNode = map[string]interface{}{}
-	}
-	authNode[platform.RefreshCookieKey] = strings.TrimSpace(res.RefreshCookie)
-	cfg[platform.NewApiV1AuthConfigKey] = authNode
+	platform.SetNewApiV1RefreshCookie(cfg, res.RefreshCookie)
 
 	expiresAt := platform.NormalizeEpochMillis(res.ExpiresAt)
 	if expiresAt <= 0 {

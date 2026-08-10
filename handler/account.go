@@ -233,6 +233,7 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 		AccessToken    string  `json:"accessToken"`
 		PlatformUserID *int64  `json:"platformUserId"`
 		RefreshToken   *string `json:"refreshToken"`
+		RefreshCookie  *string `json:"refreshCookie"`
 		TokenExpiresAt *int64  `json:"tokenExpiresAt"`
 	}
 	if err := parseBody(r, &input); err != nil {
@@ -302,6 +303,10 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if input.RefreshCookie != nil {
+		platform.SetNewApiV1RefreshCookie(cfg, *input.RefreshCookie)
+	}
+
 	cfgBytes, _ := json.Marshal(cfg)
 	updates["extra_config"] = string(cfgBytes)
 
@@ -362,6 +367,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		UseSystemProxy    *bool    `json:"useSystemProxy"`
 		CheckinCredential *string  `json:"checkin_credential"`
 		RefreshToken      *string  `json:"refreshToken"`
+		RefreshCookie     *string  `json:"refreshCookie"`
 		TokenExpiresAt    *int64   `json:"tokenExpiresAt"`
 	}
 	if err := parseBody(r, &input); err != nil {
@@ -457,9 +463,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 				cfg[platform.Sub2APIAuthConfigKey] = map[string]interface{}{
 					platform.RefreshTokenKey: strings.TrimSpace(*input.RefreshToken),
 				}
-				if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
-					platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
-				}
+			}
+			if input.RefreshCookie != nil {
+				platform.SetNewApiV1RefreshCookie(cfg, *input.RefreshCookie)
+			}
+			if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
+				platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
 			}
 			bs, _ := json.Marshal(cfg)
 			db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
@@ -531,9 +540,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		cfg[platform.Sub2APIAuthConfigKey] = map[string]interface{}{
 			platform.RefreshTokenKey: strings.TrimSpace(*input.RefreshToken),
 		}
-		if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
-			platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
-		}
+	}
+	if input.RefreshCookie != nil {
+		platform.SetNewApiV1RefreshCookie(cfg, *input.RefreshCookie)
+	}
+	if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
+		platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
 	}
 	bs, _ := json.Marshal(cfg)
 	db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
@@ -677,6 +689,13 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		delete(fields, "refreshToken")
+		cfgModified = true
+	}
+	if v, ok := fields["refreshCookie"]; ok {
+		if s, isStr := v.(string); isStr {
+			platform.SetNewApiV1RefreshCookie(cfg, s)
+		}
+		delete(fields, "refreshCookie")
 		cfgModified = true
 	}
 	if v, ok := fields["tokenExpiresAt"]; ok {

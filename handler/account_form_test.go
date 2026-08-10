@@ -195,6 +195,54 @@ func TestUpdateAccountStoresTokenExpiryInManagedAuth(t *testing.T) {
 	}
 }
 
+func TestUpdateAccountStoresNewApiV1RefreshCookie(t *testing.T) {
+	siteID := setupVerifyTokenTestDB(t, "https://example.invalid")
+	id, err := db.CreateAccount(db.CreateAccountInput{
+		SiteID:         siteID,
+		Username:       "new-api-v1 account",
+		AccessToken:    "jwt-old",
+		CheckinEnabled: true,
+		Status:         "active",
+		CredentialMode: "session",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+
+	rec := callJSONRoute(t, http.MethodPut, "/api/accounts/"+strconv.FormatInt(id, 10), func(r chi.Router) {
+		r.Put("/api/accounts/{id}", UpdateAccount)
+	}, map[string]interface{}{
+		// Pasted straight from the browser, cookie header form included.
+		"refreshCookie": "session=abc; new_api_refresh=refresh-value",
+	})
+	responseDataMap(t, rec)
+
+	account, err := db.GetAccount(id)
+	if err != nil {
+		t.Fatalf("GetAccount failed: %v", err)
+	}
+	cfg := accountExtraConfig(t, account)
+	authNode, _ := cfg["newApiV1Auth"].(map[string]interface{})
+	if authNode == nil || authNode["refreshCookie"] != "refresh-value" {
+		t.Fatalf("refresh cookie not stored: %#v", cfg)
+	}
+
+	rec = callJSONRoute(t, http.MethodPut, "/api/accounts/"+strconv.FormatInt(id, 10), func(r chi.Router) {
+		r.Put("/api/accounts/{id}", UpdateAccount)
+	}, map[string]interface{}{
+		"refreshCookie": "",
+	})
+	responseDataMap(t, rec)
+
+	account, err = db.GetAccount(id)
+	if err != nil {
+		t.Fatalf("GetAccount failed: %v", err)
+	}
+	if _, exists := accountExtraConfig(t, account)["newApiV1Auth"]; exists {
+		t.Fatalf("empty input should clear newApiV1Auth: %s", *account.ExtraConfig)
+	}
+}
+
 func TestRebindSessionClearsZeroPlatformUserIDAndTrimsToken(t *testing.T) {
 	sawTrimmedAuth := false
 	sawOldUserIDHeader := false

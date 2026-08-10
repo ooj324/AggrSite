@@ -421,6 +421,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     checkin_credential: accountConfig.checkin_credential || '',
     skip_model_fetch: false,
     refresh_token: accountConfig.sub2apiAuth?.refreshToken || '',
+    refresh_cookie: accountConfig.newApiV1Auth?.refreshCookie || '',
     token_expires_at: (accountConfig.managedAuth?.tokenExpiresAt ?? accountConfig.sub2apiAuth?.tokenExpiresAt)?.toString() || '',
   });
   const [loading, setLoading] = useState(false);
@@ -431,6 +432,8 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   const isBatchApiKeyInput = mode === 'apikey' && parsedApiKeys.length > 1;
   const currentSite = sites.find((s: Site) => s.id === formData.site_id);
   const isSub2Api = currentSite?.platform === 'sub2api';
+  const isNewApiV1 = currentSite?.platform === 'new-api-v1';
+  const isManagedSession = isSub2Api || isNewApiV1;
   const loginSupported = !isSub2Api;
 
   useEffect(() => {
@@ -502,6 +505,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     const proxyUrl = formData.proxy_url.trim();
     const checkinCredential = formData.checkin_credential.trim();
     const refreshToken = formData.refresh_token.trim();
+    const refreshCookie = formData.refresh_cookie.trim();
     
     const savedCredential = account
       ? (mode === 'apikey' ? (account.api_token || account.access_token || '') : (account.access_token || '')).trim()
@@ -555,6 +559,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           checkin_credential: checkinCredential,
           skipModelFetch: formData.skip_model_fetch,
           refreshToken,
+          refreshCookie,
           tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : null,
         };
 
@@ -564,6 +569,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
               accessToken,
               platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : 0,
               refreshToken,
+              refreshCookie,
               tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : 0,
             });
           }
@@ -644,10 +650,15 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
                 )}
                 
                 <input type="text" inputMode="numeric" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value.replace(/\D/g, '') }); setVerifyResult(null); }} placeholder="用户 ID (可选，部分站点需要)" />
-                {mode === 'session' && isSub2Api && (
+                {mode === 'session' && isManagedSession && (
                   <>
-                    <input type="text" className={inputClass} value={formData.refresh_token} onChange={e => setFormData({ ...formData, refresh_token: e.target.value })} placeholder="Sub2API refresh_token (可选)" />
-                    <input type="number" className={inputClass} value={formData.token_expires_at} onChange={e => setFormData({ ...formData, token_expires_at: e.target.value })} placeholder="token_expires_at (可选)" />
+                    {isSub2Api && (
+                      <input type="text" className={inputClass} value={formData.refresh_token} onChange={e => setFormData({ ...formData, refresh_token: e.target.value })} placeholder="Sub2API refresh_token (可选)" />
+                    )}
+                    {isNewApiV1 && (
+                      <input type="text" className={inputClass} value={formData.refresh_cookie} onChange={e => setFormData({ ...formData, refresh_cookie: e.target.value })} placeholder="new_api_refresh Cookie (可选，用于后台续期)" />
+                    )}
+                    <input type="number" className={inputClass} value={formData.token_expires_at} onChange={e => setFormData({ ...formData, token_expires_at: e.target.value })} placeholder="token_expires_at (可选，毫秒时间戳)" />
                   </>
                 )}
                 <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({ ...formData, proxy_url: e.target.value })} placeholder="代理 URL (可选)" />

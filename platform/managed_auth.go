@@ -1,5 +1,7 @@
 package platform
 
+import "strings"
+
 // Config node names used to persist managed-session state inside an account's
 // extra_config. They live in one place so writers (adapters, handlers) and
 // readers (the managed refresh scheduler) cannot drift apart.
@@ -18,6 +20,56 @@ const (
 
 // legacyExpiryNodes are pre-managedAuth locations that may still carry tokenExpiresAt.
 var legacyExpiryNodes = []string{Sub2APIAuthConfigKey, NewApiV1AuthConfigKey}
+
+// SetNewApiV1RefreshCookie stores the rotating refresh cookie used by new-api forks.
+// The value may be pasted as a bare cookie value or as a full cookie / Set-Cookie
+// header, in which case the new_api_refresh value is extracted.
+func SetNewApiV1RefreshCookie(cfg map[string]interface{}, value string) {
+	if cfg == nil {
+		return
+	}
+	value = normalizeRefreshCookieInput(value)
+	if value == "" {
+		ClearNewApiV1RefreshCookie(cfg)
+		return
+	}
+	node, _ := cfg[NewApiV1AuthConfigKey].(map[string]interface{})
+	if node == nil {
+		node = map[string]interface{}{}
+	}
+	node[RefreshCookieKey] = value
+	cfg[NewApiV1AuthConfigKey] = node
+}
+
+// ClearNewApiV1RefreshCookie removes the refresh cookie, dropping the node when empty.
+func ClearNewApiV1RefreshCookie(cfg map[string]interface{}) {
+	if cfg == nil {
+		return
+	}
+	node, ok := cfg[NewApiV1AuthConfigKey].(map[string]interface{})
+	if !ok || node == nil {
+		return
+	}
+	delete(node, RefreshCookieKey)
+	if len(node) == 0 {
+		delete(cfg, NewApiV1AuthConfigKey)
+	} else {
+		cfg[NewApiV1AuthConfigKey] = node
+	}
+}
+
+func normalizeRefreshCookieInput(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, newApiV1RefreshCookieName+"=") {
+		if extracted, ok := CookieValueFromHeader(value, newApiV1RefreshCookieName); ok {
+			return strings.TrimSpace(extracted)
+		}
+	}
+	return value
+}
 
 // NormalizeEpochMillis accepts a unix timestamp in seconds or milliseconds and
 // returns milliseconds. 1e12 ms is 2001-09-09, so smaller values are seconds.
