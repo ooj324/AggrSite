@@ -31,6 +31,8 @@ type LoginResult struct {
 	AccessToken    string `json:"access_token"`
 	Username       string `json:"username"`
 	PlatformUserID int64  `json:"platform_user_id"`
+	RefreshCookie  string `json:"refresh_cookie,omitempty"` // new-api fork: rotating refresh cookie value
+	ExpiresAt      int64  `json:"expires_at,omitempty"`     // access token expiry, unix millis
 }
 
 // UserInfo holds user information from upstream.
@@ -470,15 +472,19 @@ func (b *BaseAdapter) Login(baseURL, username, password string, opt *RequestOpti
 }
 
 func extractLoginAccessToken(payload map[string]interface{}) string {
-	candidates := []interface{}{
-		payload["data"],
+	var candidates []interface{}
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		// Forks with stateless panel auth: {"data":{"access_token":"<jwt>",...}}
+		candidates = append(candidates, data["access_token"], data["accessToken"], data["token"])
+	} else {
+		// Original new-api: {"data":"<jwt>"}
+		candidates = append(candidates, payload["data"])
+	}
+	candidates = append(candidates,
 		payload["token"],
 		payload["accessToken"],
 		payload["access_token"],
-	}
-	if data, ok := payload["data"].(map[string]interface{}); ok {
-		candidates = append(candidates, data["token"], data["accessToken"], data["access_token"])
-	}
+	)
 	for _, candidate := range candidates {
 		if token, ok := candidate.(string); ok && strings.TrimSpace(token) != "" {
 			return strings.TrimSpace(token)
@@ -511,9 +517,27 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 		hasCookie := cookieResult != nil && hasUsableSessionCookie(cookieResult.CookieHeader)
 
 		var platformUserID int64
+		var refreshCookie string
+		var expiresAt int64
 		if data, ok := res["data"].(map[string]interface{}); ok {
 			if idFloat, ok := data["id"].(float64); ok && idFloat > 0 {
 				platformUserID = int64(idFloat)
+			}
+			// QuantumNous new-api: extract user id from nested user object
+			if user, ok := data["user"].(map[string]interface{}); ok {
+				if idFloat, ok := user["id"].(float64); ok && idFloat > 0 {
+					platformUserID = int64(idFloat)
+				}
+			}
+			// new-api forks with stateless panel auth report the access token expiry.
+			if exp, ok := data["access_expires_at"].(float64); ok && exp > 0 {
+				expiresAt = NormalizeEpochMillis(int64(exp))
+			}
+		}
+
+		if cookieResult != nil && cookieResult.CookieHeader != "" {
+			if val, ok := CookieValueFromHeader(cookieResult.CookieHeader, newApiV1RefreshCookieName); ok && strings.TrimSpace(val) != "" {
+				refreshCookie = strings.TrimSpace(val)
 			}
 		}
 
@@ -522,8 +546,11 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 		// is only accepted on read-only endpoints like /api/user/self.
 		// A cookie credential can do everything a JWT can (balance, tokens, etc.)
 		// but not vice-versa; so cookie takes priority.
+		// Exception: forks that pair a short-lived access token with a refresh cookie
+		// (QuantumNous new-api) only accept the access token as an API credential,
+		// so the JWT wins there - unless the response carried no token at all.
 		accessToken := token
-		if hasCookie {
+		if hasCookie && (token == "" || refreshCookie == "") {
 			accessToken = cookieResult.CookieHeader
 		}
 		if accessToken != "" {
@@ -532,7 +559,7 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 				selfURL := fmt.Sprintf("%s/api/user/self", baseURL)
 				var selfRes map[string]interface{}
 				var fetchErr error
-				if hasCookie {
+				if IsCookieSessionToken(accessToken) {
 					_, fetchErr = FetchJSONWithCookieRetry(selfURL, "GET", accessToken, nil, nil, &selfRes, opt)
 				} else {
 					fetchErr = b.FetchJSON(selfURL, "GET", AuthHeaders(accessToken, 0), nil, &selfRes, opt)
@@ -547,7 +574,12 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 					}
 				}
 			}
-			return &LoginResult{Success: true, AccessToken: accessToken, Username: username, PlatformUserID: platformUserID}, nil
+			result := &LoginResult{Success: true, AccessToken: accessToken, Username: username, PlatformUserID: platformUserID}
+			if refreshCookie != "" {
+				result.RefreshCookie = refreshCookie
+				result.ExpiresAt = expiresAt
+			}
+			return result, nil
 		}
 	}
 
@@ -585,6 +617,7 @@ func hasUsableSessionCookie(cookieHeader string) bool {
 			name == "access_token" ||
 			name == "jwt" ||
 			name == "jwt_token" ||
+			name == newApiV1RefreshCookieName ||
 			strings.Contains(name, "session") ||
 			strings.Contains(name, "token") ||
 			strings.Contains(name, "auth") {

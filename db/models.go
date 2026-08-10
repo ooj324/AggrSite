@@ -956,13 +956,30 @@ func GetAccountWithSite(accountID int64) (*AccountWithSite, error) {
 	return &row, nil
 }
 
-func ListActiveAccountsWithSiteByPlatform(platform string) ([]AccountWithSite, error) {
+// ListAccountsWithSiteByPlatforms returns accounts on active sites whose platform is
+// one of platforms and whose account status is active or expired. Unlike
+// ListCheckinableAccounts it ignores checkin_enabled, because session upkeep is also
+// needed for balance-only / key-pool accounts, and expired accounts are exactly the
+// ones a refresh may recover.
+func ListAccountsWithSiteByPlatforms(platforms []string) ([]AccountWithSite, error) {
+	normalized := make([]interface{}, 0, len(platforms))
+	for _, platform := range platforms {
+		value := strings.ToLower(strings.TrimSpace(platform))
+		if value != "" {
+			normalized = append(normalized, value)
+		}
+	}
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(normalized)), ",")
 	var rows []AccountWithSite
 	err := Select(&rows, accountWithSiteQuery+`
-		WHERE COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') = 'active'
+		WHERE COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
 		  AND COALESCE(NULLIF(LOWER(TRIM(s.status)), ''), 'active') = 'active'
-		  AND COALESCE(LOWER(TRIM(s.platform)), '') = ?
+		  AND COALESCE(LOWER(TRIM(s.platform)), '') IN (`+placeholders+`)
 		ORDER BY a.id ASC
-	`, strings.ToLower(strings.TrimSpace(platform)))
+	`, normalized...)
 	return rows, err
 }

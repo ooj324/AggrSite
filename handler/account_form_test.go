@@ -143,10 +143,55 @@ func TestUpdateAccountClearsEmptyExtraConfigFieldsAndTrimsToken(t *testing.T) {
 		t.Fatalf("AccessToken = %q", account.AccessToken)
 	}
 	cfg := accountExtraConfig(t, account)
-	for _, key := range []string{"platformUserId", "proxyUrl", "checkin_credential", "sub2apiAuth"} {
+	for _, key := range []string{"platformUserId", "proxyUrl", "checkin_credential", "sub2apiAuth", "managedAuth"} {
 		if _, exists := cfg[key]; exists {
 			t.Fatalf("%s should be cleared from extra_config: %#v", key, cfg)
 		}
+	}
+}
+
+func TestUpdateAccountStoresTokenExpiryInManagedAuth(t *testing.T) {
+	siteID := setupVerifyTokenTestDB(t, "https://example.invalid")
+	id, err := db.CreateAccount(db.CreateAccountInput{
+		SiteID:         siteID,
+		Username:       "sub2api account",
+		AccessToken:    "old-session",
+		CheckinEnabled: true,
+		Status:         "active",
+		CredentialMode: "session",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccount failed: %v", err)
+	}
+	extraConfig := `{"credentialMode":"session","sub2apiAuth":{"refreshToken":"old-refresh","tokenExpiresAt":12345}}`
+	if err := db.UpdateAccount(id, map[string]interface{}{"extra_config": extraConfig}); err != nil {
+		t.Fatalf("UpdateAccount setup failed: %v", err)
+	}
+
+	rec := callJSONRoute(t, http.MethodPut, "/api/accounts/"+strconv.FormatInt(id, 10), func(r chi.Router) {
+		r.Put("/api/accounts/{id}", UpdateAccount)
+	}, map[string]interface{}{
+		"refreshToken":   "new-refresh",
+		"tokenExpiresAt": 1700000000000,
+	})
+	responseDataMap(t, rec)
+
+	account, err := db.GetAccount(id)
+	if err != nil {
+		t.Fatalf("GetAccount failed: %v", err)
+	}
+	cfg := accountExtraConfig(t, account)
+
+	sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
+	if sub2apiAuth == nil || sub2apiAuth["refreshToken"] != "new-refresh" {
+		t.Fatalf("refreshToken not stored: %#v", cfg)
+	}
+	if _, exists := sub2apiAuth["tokenExpiresAt"]; exists {
+		t.Fatalf("legacy expiry copy must not be written: %#v", cfg)
+	}
+	managedAuth, _ := cfg["managedAuth"].(map[string]interface{})
+	if managedAuth == nil || int64(managedAuth["tokenExpiresAt"].(float64)) != 1700000000000 {
+		t.Fatalf("expiry not stored in managedAuth: %#v", cfg)
 	}
 }
 
@@ -209,6 +254,9 @@ func TestRebindSessionClearsZeroPlatformUserIDAndTrimsToken(t *testing.T) {
 	}
 	if _, exists := cfg["sub2apiAuth"]; exists {
 		t.Fatalf("sub2apiAuth should be cleared: %#v", cfg)
+	}
+	if _, exists := cfg["managedAuth"]; exists {
+		t.Fatalf("managedAuth should be cleared: %#v", cfg)
 	}
 	if !sawTrimmedAuth {
 		t.Fatalf("upstream did not receive trimmed bearer token")

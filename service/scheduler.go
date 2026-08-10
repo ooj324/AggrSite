@@ -29,9 +29,9 @@ type SchedulerStatus struct {
 	NextCheckin                   string `json:"next_checkin,omitempty"`
 	BalanceCron                   string `json:"balance_refresh_cron"`
 	NextBalance                   string `json:"next_balance_refresh,omitempty"`
-	Sub2APIRefreshRunning         bool   `json:"sub2api_refresh_running"`
-	Sub2APIRefreshIntervalSeconds int    `json:"sub2api_refresh_interval_seconds"`
-	Sub2APIRefreshLeadSeconds     int    `json:"sub2api_refresh_lead_seconds"`
+	ManagedRefreshRunning         bool   `json:"managed_refresh_running"`
+	ManagedRefreshIntervalSeconds int    `json:"managed_refresh_interval_seconds"`
+	ManagedRefreshLeadSeconds     int    `json:"managed_refresh_lead_seconds"`
 	Timezone                      string `json:"timezone"`
 }
 
@@ -160,7 +160,7 @@ func StartScheduler() {
 	}
 
 	scheduler.Start()
-	StartSub2APIManagedRefreshScheduler()
+	StartManagedRefreshScheduler()
 	slog.Info("Scheduler started")
 }
 
@@ -171,7 +171,7 @@ func StopScheduler() {
 		scheduler.Stop()
 		slog.Info("Scheduler stopped")
 	}
-	StopSub2APIManagedRefreshScheduler()
+	StopManagedRefreshScheduler()
 }
 
 func ReloadScheduler() {
@@ -183,14 +183,14 @@ func GetSchedulerStatus() SchedulerStatus {
 	schedulerMu.Lock()
 	defer schedulerMu.Unlock()
 
-	sub2APIRunning, sub2APIIntervalSeconds, sub2APILeadSeconds := GetSub2APIManagedRefreshSchedulerStatus()
+	managedRunning, managedIntervalSeconds, managedLeadSeconds := GetManagedRefreshSchedulerStatus()
 	status := SchedulerStatus{
 		Running:                       scheduler != nil,
 		CheckinCron:                   activeCheckinCron,
 		BalanceCron:                   activeBalanceCron,
-		Sub2APIRefreshRunning:         sub2APIRunning,
-		Sub2APIRefreshIntervalSeconds: sub2APIIntervalSeconds,
-		Sub2APIRefreshLeadSeconds:     sub2APILeadSeconds,
+		ManagedRefreshRunning:         managedRunning,
+		ManagedRefreshIntervalSeconds: managedIntervalSeconds,
+		ManagedRefreshLeadSeconds:     managedLeadSeconds,
 		Timezone:                      time.Local.String(),
 	}
 

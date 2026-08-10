@@ -149,6 +149,9 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 	if guessedPlatformUserID > 0 {
 		cfg["platformUserId"] = guessedPlatformUserID
 	}
+	// Persist managed-session credentials (e.g. the rotating refresh cookie used by
+	// new-api-v1) so the background refresher can keep this account alive.
+	service.ApplyLoginManagedAuth(cfg, loginResult)
 
 	cfgBytes, _ := json.Marshal(cfg)
 	cfgString := string(cfgBytes)

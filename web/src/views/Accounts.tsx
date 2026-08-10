@@ -421,7 +421,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     checkin_credential: accountConfig.checkin_credential || '',
     skip_model_fetch: false,
     refresh_token: accountConfig.sub2apiAuth?.refreshToken || '',
-    token_expires_at: accountConfig.sub2apiAuth?.tokenExpiresAt?.toString() || '',
+    token_expires_at: (accountConfig.managedAuth?.tokenExpiresAt ?? accountConfig.sub2apiAuth?.tokenExpiresAt)?.toString() || '',
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);

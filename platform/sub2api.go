@@ -101,21 +101,22 @@ func (a *Sub2ApiAdapter) Login(_ string, _ string, _ string, _ *RequestOption) (
 }
 
 func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
-	if extraConfig == "" {
-		return &RefreshResult{Success: false, Message: "No extraConfig provided"}, nil
+	cfg := map[string]interface{}{}
+	if strings.TrimSpace(extraConfig) != "" {
+		if err := json.Unmarshal([]byte(extraConfig), &cfg); err != nil {
+			return &RefreshResult{Success: false, Message: "Invalid extraConfig format"}, nil
+		}
+		if cfg == nil {
+			cfg = map[string]interface{}{}
+		}
 	}
 
-	var cfg map[string]interface{}
-	if err := json.Unmarshal([]byte(extraConfig), &cfg); err != nil {
-		return &RefreshResult{Success: false, Message: "Invalid extraConfig format"}, nil
-	}
-
-	sub2apiAuth, ok := cfg["sub2apiAuth"].(map[string]interface{})
+	sub2apiAuth, ok := cfg[Sub2APIAuthConfigKey].(map[string]interface{})
 	if !ok || sub2apiAuth == nil {
 		return &RefreshResult{Success: false, Message: "No sub2apiAuth found in extraConfig"}, nil
 	}
 
-	refreshToken, _ := sub2apiAuth["refreshToken"].(string)
+	refreshToken, _ := sub2apiAuth[RefreshTokenKey].(string)
 	if refreshToken == "" {
 		return &RefreshResult{Success: false, Message: "No refreshToken found in sub2apiAuth"}, nil
 	}
@@ -168,9 +169,9 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 
 	tokenExpiresAt := time.Now().UnixMilli() + int64(expiresIn*1000)
 
-	sub2apiAuth["refreshToken"] = newRefreshToken
-	sub2apiAuth["tokenExpiresAt"] = tokenExpiresAt
-	cfg["sub2apiAuth"] = sub2apiAuth
+	sub2apiAuth[RefreshTokenKey] = newRefreshToken
+	cfg[Sub2APIAuthConfigKey] = sub2apiAuth
+	SetManagedTokenExpiresAt(cfg, tokenExpiresAt)
 
 	newExtraConfigBytes, err := json.Marshal(cfg)
 	if err != nil {

@@ -284,20 +284,21 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 
 	if input.RefreshToken != nil {
 		refreshToken := strings.TrimSpace(*input.RefreshToken)
-		sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
-		if sub2apiAuth == nil {
-			sub2apiAuth = make(map[string]interface{})
-		}
 		if refreshToken != "" {
-			sub2apiAuth["refreshToken"] = refreshToken
-			if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
-				sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
-			} else {
-				delete(sub2apiAuth, "tokenExpiresAt")
+			sub2apiAuth, _ := cfg[platform.Sub2APIAuthConfigKey].(map[string]interface{})
+			if sub2apiAuth == nil {
+				sub2apiAuth = make(map[string]interface{})
 			}
-			cfg["sub2apiAuth"] = sub2apiAuth
+			sub2apiAuth[platform.RefreshTokenKey] = refreshToken
+			cfg[platform.Sub2APIAuthConfigKey] = sub2apiAuth
+			if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
+				platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
+			} else {
+				platform.ClearManagedTokenExpiresAt(cfg)
+			}
 		} else {
-			delete(cfg, "sub2apiAuth")
+			delete(cfg, platform.Sub2APIAuthConfigKey)
+			platform.ClearManagedTokenExpiresAt(cfg)
 		}
 	}
 
@@ -453,12 +454,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 				cfg["checkin_credential"] = strings.TrimSpace(*input.CheckinCredential)
 			}
 			if input.RefreshToken != nil && strings.TrimSpace(*input.RefreshToken) != "" {
-				sub2apiAuth := make(map[string]interface{})
-				sub2apiAuth["refreshToken"] = strings.TrimSpace(*input.RefreshToken)
-				if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
-					sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
+				cfg[platform.Sub2APIAuthConfigKey] = map[string]interface{}{
+					platform.RefreshTokenKey: strings.TrimSpace(*input.RefreshToken),
 				}
-				cfg["sub2apiAuth"] = sub2apiAuth
+				if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
+					platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
+				}
 			}
 			bs, _ := json.Marshal(cfg)
 			db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
@@ -527,12 +528,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		cfg["checkin_credential"] = strings.TrimSpace(*input.CheckinCredential)
 	}
 	if input.RefreshToken != nil && strings.TrimSpace(*input.RefreshToken) != "" {
-		sub2apiAuth := make(map[string]interface{})
-		sub2apiAuth["refreshToken"] = strings.TrimSpace(*input.RefreshToken)
-		if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
-			sub2apiAuth["tokenExpiresAt"] = *input.TokenExpiresAt
+		cfg[platform.Sub2APIAuthConfigKey] = map[string]interface{}{
+			platform.RefreshTokenKey: strings.TrimSpace(*input.RefreshToken),
 		}
-		cfg["sub2apiAuth"] = sub2apiAuth
+		if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
+			platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
+		}
 	}
 	bs, _ := json.Marshal(cfg)
 	db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
@@ -665,14 +666,14 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		if s, isStr := v.(string); isStr {
 			s = strings.TrimSpace(s)
 			if s != "" {
-				sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
+				sub2apiAuth, _ := cfg[platform.Sub2APIAuthConfigKey].(map[string]interface{})
 				if sub2apiAuth == nil {
 					sub2apiAuth = make(map[string]interface{})
 				}
-				sub2apiAuth["refreshToken"] = s
-				cfg["sub2apiAuth"] = sub2apiAuth
+				sub2apiAuth[platform.RefreshTokenKey] = s
+				cfg[platform.Sub2APIAuthConfigKey] = sub2apiAuth
 			} else {
-				delete(cfg, "sub2apiAuth")
+				delete(cfg, platform.Sub2APIAuthConfigKey)
 			}
 		}
 		delete(fields, "refreshToken")
@@ -680,19 +681,9 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := fields["tokenExpiresAt"]; ok {
 		if f, isNum := v.(float64); isNum && f > 0 {
-			sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{})
-			if sub2apiAuth == nil {
-				sub2apiAuth = make(map[string]interface{})
-			}
-			sub2apiAuth["tokenExpiresAt"] = int64(f)
-			cfg["sub2apiAuth"] = sub2apiAuth
-		} else if sub2apiAuth, _ := cfg["sub2apiAuth"].(map[string]interface{}); sub2apiAuth != nil {
-			delete(sub2apiAuth, "tokenExpiresAt")
-			if len(sub2apiAuth) == 0 {
-				delete(cfg, "sub2apiAuth")
-			} else {
-				cfg["sub2apiAuth"] = sub2apiAuth
-			}
+			platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(int64(f)))
+		} else {
+			platform.ClearManagedTokenExpiresAt(cfg)
 		}
 		delete(fields, "tokenExpiresAt")
 		cfgModified = true

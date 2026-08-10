@@ -15,6 +15,7 @@ const guessPlatformFromUrl = (url: string) => {
   if (lowerUrl.includes('veloera')) return 'veloera';
   if (compactUrl.includes('onehub')) return 'one-hub';
   if (compactUrl.includes('oneapi')) return 'one-api';
+  if (compactUrl.includes('tabitoken') || compactUrl.includes('quantumnous')) return 'new-api-v1';
   if (lowerUrl.includes('api.openai.com') || compactUrl.includes('newapi')) return 'new-api';
   return '';
 };

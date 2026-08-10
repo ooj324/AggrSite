@@ -56,9 +56,10 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 	opt := requestOptionForAccount(*row)
 
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
-	if isSub2APIPlatform(row.SitePlatform) {
-		if refreshedAccessToken, refreshedExtraConfig, _, err := ensureSub2APIManagedSession(*row, opt); err != nil {
-			slog.Warn("Sub2API managed session pre-refresh failed", "account_id", accountID, "err", err)
+	// Managed session pre-refresh if token is nearing expiry (e.g. sub2api, new-api-v1)
+	if IsManagedSessionPlatform(row.SitePlatform) {
+		if refreshedAccessToken, refreshedExtraConfig, _, err := EnsureManagedSession(*row, opt); err != nil {
+			slog.Warn("Managed session pre-refresh failed", "account_id", accountID, "platform", row.SitePlatform, "err", err)
 		} else {
 			row.AccessToken = refreshedAccessToken
 			if refreshedExtraConfig != "" {

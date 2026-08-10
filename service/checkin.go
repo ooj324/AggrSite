@@ -347,28 +347,23 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		}
 	}
 
-	opt := &platform.RequestOption{
-		ProxyURL:       row.SiteProxyURL,
-		UseSystemProxy: row.SiteUseSystemProxy,
-		CustomHeaders:  row.SiteCustomHeaders,
-	}
+	opt := requestOptionForAccount(*row)
 
-	checkinCredential := row.AccessToken
-	if row.ExtraConfig != nil && *row.ExtraConfig != "" {
-		var cfg map[string]interface{}
-		if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err == nil {
-			if proxyUrl, ok := cfg["proxyUrl"].(string); ok && proxyUrl != "" {
-				opt.ProxyURL = &proxyUrl
-			}
-			if useSystemProxy, ok := cfg["useSystemProxy"].(bool); ok {
-				opt.UseSystemProxy = &useSystemProxy
-			}
-			if cred, ok := cfg["checkin_credential"].(string); ok && cred != "" {
-				checkinCredential = cred
+	// Managed session pre-refresh if the token is nearing expiry (sub2api, new-api-v1).
+	// Must run before the checkin credential is resolved, otherwise the generic /
+	// external checkin path would keep using the stale token.
+	if IsManagedSessionPlatform(row.SitePlatform) {
+		if refreshedAccessToken, refreshedExtraConfig, _, err := EnsureManagedSession(*row, opt); err != nil {
+			slog.Warn("Managed session pre-refresh failed before checkin", "account_id", accountID, "platform", row.SitePlatform, "err", err)
+		} else {
+			row.AccessToken = refreshedAccessToken
+			if refreshedExtraConfig != "" {
+				row.ExtraConfig = &refreshedExtraConfig
 			}
 		}
 	}
 
+	checkinCredential := resolveCheckinCredential(*row)
 	platformUserID := resolvePlatformUserID(row.ExtraConfig)
 
 	executeCheckin := func(token string, overrideCred string) (*platform.CheckinResult, error) {
@@ -552,26 +547,27 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 		return ""
 	}
 
-	// 1. Try RefreshAuth first (e.g. sub2api with refreshToken)
-	if isSub2APIPlatform(row.SitePlatform) {
-		refreshedAccessToken, _, didRefresh, err := forceRefreshSub2APIManagedSession(row, opt)
+	// 1. Try RefreshAuth first (for platforms that support managed session refresh)
+	if IsManagedSessionPlatform(row.SitePlatform) {
+		refreshedAccessToken, _, didRefresh, err := ForceRefreshManagedSession(row, opt)
 		if err == nil && refreshedAccessToken != "" && (didRefresh || refreshedAccessToken != row.AccessToken) {
 			return refreshedAccessToken
 		}
 		if err != nil {
-			slog.Warn("Sub2API managed RefreshAuth failed", "account_id", row.ID, "err", err)
+			slog.Warn("Managed session RefreshAuth failed", "account_id", row.ID, "platform", row.SitePlatform, "err", err)
 		}
-		return ""
-	}
-
-	refreshRes, err := adapter.RefreshAuth(row.SiteURL, row.AccessToken, *row.ExtraConfig, opt)
-	if err == nil && refreshRes != nil && refreshRes.Success && refreshRes.AccessToken != "" {
-		slog.Info("Auto RefreshAuth successful, updating access token and config", "account_id", row.ID)
-		_ = db.UpdateAccount(row.ID, map[string]interface{}{
-			"access_token": refreshRes.AccessToken,
-			"extra_config": refreshRes.ExtraConfig,
-		})
-		return refreshRes.AccessToken
+		// Fall through to username/password relogin: platforms such as new-api-v1
+		// support it, and it is the only way back once the refresh credential is gone.
+	} else {
+		refreshRes, err := adapter.RefreshAuth(row.SiteURL, row.AccessToken, *row.ExtraConfig, opt)
+		if err == nil && refreshRes != nil && refreshRes.Success && refreshRes.AccessToken != "" {
+			slog.Info("Auto RefreshAuth successful, updating access token and config", "account_id", row.ID)
+			_ = db.UpdateAccount(row.ID, map[string]interface{}{
+				"access_token": refreshRes.AccessToken,
+				"extra_config": refreshRes.ExtraConfig,
+			})
+			return refreshRes.AccessToken
+		}
 	}
 
 	// 2. Fallback to classic username/password Login
@@ -609,18 +605,44 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 		"access_token": loginResult.AccessToken,
 	}
 
+	cfgModified := false
 	if loginResult.PlatformUserID > 0 {
 		if pid, ok := cfg["platformUserId"].(float64); !ok || pid <= 0 {
 			cfg["platformUserId"] = loginResult.PlatformUserID
-			if cfgBytes, err := json.Marshal(cfg); err == nil {
-				updates["extra_config"] = string(cfgBytes)
-			}
+			cfgModified = true
+		}
+	}
+	// Keep the managed refresh credential in sync, otherwise a relogged-in
+	// new-api-v1 account would drift back into "short-lived token, no refresh".
+	if ApplyLoginManagedAuth(cfg, loginResult) {
+		cfgModified = true
+	}
+	if cfgModified {
+		if cfgBytes, err := json.Marshal(cfg); err == nil {
+			updates["extra_config"] = string(cfgBytes)
 		}
 	}
 
 	_ = db.UpdateAccount(row.ID, updates)
 
 	return loginResult.AccessToken
+}
+
+// resolveCheckinCredential returns the credential used by the generic/external
+// checkin path: an explicit checkin_credential when configured, else the account
+// access token (which may just have been refreshed).
+func resolveCheckinCredential(row db.AccountWithSite) string {
+	if row.ExtraConfig == nil || *row.ExtraConfig == "" {
+		return row.AccessToken
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(*row.ExtraConfig), &cfg); err != nil {
+		return row.AccessToken
+	}
+	if cred, ok := cfg["checkin_credential"].(string); ok && cred != "" {
+		return cred
+	}
+	return row.AccessToken
 }
 
 type CheckinAllResult struct {

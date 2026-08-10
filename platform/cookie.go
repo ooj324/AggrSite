@@ -256,6 +256,9 @@ func BuildCookieCandidates(accessToken string) []string {
 		if tokenValue, ok := CookieValueFromHeader(normalized, "access_token"); ok {
 			add("access_token=" + tokenValue)
 		}
+		// Note: a rotating refresh cookie (e.g. new_api_refresh) is deliberately not
+		// emitted on its own - it is only accepted by the refresh endpoint, and the
+		// full cookie header above already carries it when present.
 		return candidates
 	}
 	add("session=" + raw)
