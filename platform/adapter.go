@@ -534,6 +534,10 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 				expiresAt = NormalizeEpochMillis(int64(exp))
 			}
 		}
+		if expiresAt <= 0 {
+			// Not reported: the access token is a JWT and carries its own exp.
+			expiresAt = JwtExpiresAtMillis(token)
+		}
 
 		if cookieResult != nil && cookieResult.CookieHeader != "" {
 			if val, ok := CookieValueFromHeader(cookieResult.CookieHeader, newApiV1RefreshCookieName); ok && strings.TrimSpace(val) != "" {

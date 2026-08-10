@@ -658,7 +658,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
                     {isNewApiV1 && (
                       <input type="text" className={inputClass} value={formData.refresh_cookie} onChange={e => setFormData({ ...formData, refresh_cookie: e.target.value })} placeholder="new_api_refresh Cookie (可选，用于后台续期)" />
                     )}
-                    <input type="number" className={inputClass} value={formData.token_expires_at} onChange={e => setFormData({ ...formData, token_expires_at: e.target.value })} placeholder="token_expires_at (可选，毫秒时间戳)" />
+                    <input type="number" className={inputClass} value={formData.token_expires_at} onChange={e => setFormData({ ...formData, token_expires_at: e.target.value })} placeholder="token_expires_at (可选，JWT 会自动识别)" />
                   </>
                 )}
                 <input type="url" className={inputClass} value={formData.proxy_url} onChange={e => setFormData({ ...formData, proxy_url: e.target.value })} placeholder="代理 URL (可选)" />

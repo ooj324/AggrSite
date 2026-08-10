@@ -88,8 +88,11 @@ func ApplyLoginManagedAuth(cfg map[string]interface{}, res *platform.LoginResult
 
 	expiresAt := platform.NormalizeEpochMillis(res.ExpiresAt)
 	if expiresAt <= 0 {
-		// No expiry reported: assume a short TTL so the refresher runs soon and
-		// replaces this guess with the real value from the refresh response.
+		expiresAt = platform.JwtExpiresAtMillis(res.AccessToken)
+	}
+	if expiresAt <= 0 {
+		// Neither reported nor derivable: assume a short TTL so the refresher runs
+		// soon and replaces this guess with the real value from the refresh response.
 		expiresAt = time.Now().Add(15 * time.Minute).UnixMilli()
 	}
 	platform.SetManagedTokenExpiresAt(cfg, expiresAt)
@@ -158,6 +161,17 @@ func getManagedTokenExpiresAt(extraConfig *string) int64 {
 	return 0
 }
 
+// managedTokenExpiresAt resolves when the current credential dies: the recorded
+// value first, otherwise the exp claim of the credential itself. Managed platforms
+// issue JWT access tokens, so an account imported without an expiry still gets
+// proactive refresh instead of waiting for the first failure.
+func managedTokenExpiresAt(row db.AccountWithSite) int64 {
+	if recorded := getManagedTokenExpiresAt(row.ExtraConfig); recorded > 0 {
+		return recorded
+	}
+	return platform.JwtExpiresAtMillis(row.AccessToken)
+}
+
 func isManagedTokenDue(expiresAt int64, now time.Time) bool {
 	if expiresAt <= 0 {
 		return false
@@ -180,8 +194,7 @@ func refreshManagedSession(row db.AccountWithSite, opt *platform.RequestOption, 
 	}
 
 	if !force {
-		expiresAt := getManagedTokenExpiresAt(row.ExtraConfig)
-		if !isManagedTokenDue(expiresAt, time.Now()) {
+		if !isManagedTokenDue(managedTokenExpiresAt(row), time.Now()) {
 			return row.AccessToken, stringValue(row.ExtraConfig), false, nil
 		}
 	}
@@ -201,7 +214,7 @@ func refreshManagedSession(row db.AccountWithSite, opt *platform.RequestOption, 
 		if latest.AccessToken != row.AccessToken {
 			return latest.AccessToken, latestExtraConfig, false, nil
 		}
-	} else if !isManagedTokenDue(getManagedTokenExpiresAt(latest.ExtraConfig), time.Now()) {
+	} else if !isManagedTokenDue(managedTokenExpiresAt(*latest), time.Now()) {
 		return latest.AccessToken, latestExtraConfig, false, nil
 	}
 
@@ -264,7 +277,7 @@ func ExecuteManagedRefreshPass() {
 	refreshed := 0
 	failed := 0
 	for _, row := range rows {
-		if !isManagedTokenDue(getManagedTokenExpiresAt(row.ExtraConfig), time.Now()) {
+		if !isManagedTokenDue(managedTokenExpiresAt(row), time.Now()) {
 			continue
 		}
 		if _, _, didRefresh, err := EnsureManagedSession(row, requestOptionForAccount(row)); err != nil {

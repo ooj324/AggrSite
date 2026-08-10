@@ -275,20 +275,8 @@ func IsCookieSessionToken(accessToken string) bool {
 
 // TryDecodeJwtUserID attempts to extract user id from a JWT payload.
 func TryDecodeJwtUserID(token string) int64 {
-	token = strings.TrimPrefix(strings.TrimSpace(token), "Bearer ")
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return 0
-	}
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		payloadBytes, err = base64.StdEncoding.DecodeString(parts[1])
-		if err != nil {
-			return 0
-		}
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+	payload := DecodeJwtPayload(token)
+	if payload == nil {
 		return 0
 	}
 	if id, ok := payload["id"].(float64); ok && id > 0 {
@@ -304,6 +292,51 @@ func TryDecodeJwtUserID(token string) int64 {
 			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
 				return n
 			}
+		}
+	}
+	return 0
+}
+
+// DecodeJwtPayload returns the decoded claims of a JWT, or nil when the value is
+// not a JWT. The signature is not verified: claims are only used as hints about a
+// credential we already hold.
+func DecodeJwtPayload(token string) map[string]interface{} {
+	token = strings.TrimPrefix(strings.TrimSpace(stripBearerPrefix(token)), "Bearer ")
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		payloadBytes, err = base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return nil
+		}
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return nil
+	}
+	return payload
+}
+
+// JwtExpiresAtMillis returns the exp claim of a JWT as unix millis, or 0 when the
+// credential is not a JWT or carries no usable exp. Stateless panel auth (new-api
+// forks, sub2api) issues short-lived JWTs, so the credential itself tells us when
+// it dies - no need for the expiry to be configured by hand.
+func JwtExpiresAtMillis(token string) int64 {
+	payload := DecodeJwtPayload(token)
+	if payload == nil {
+		return 0
+	}
+	switch exp := payload["exp"].(type) {
+	case float64:
+		if exp > 0 {
+			return NormalizeEpochMillis(int64(exp))
+		}
+	case string:
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(exp), 10, 64); err == nil && parsed > 0 {
+			return NormalizeEpochMillis(parsed)
 		}
 	}
 	return 0

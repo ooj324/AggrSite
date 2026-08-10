@@ -108,9 +108,17 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		}
 	}
 
-	expiresAt := time.Now().Add(newApiV1FallbackTokenTTL).UnixMilli()
+	// Expiry priority: what the panel reports, then the token's own exp claim, then a
+	// deliberately short guess (the next refresh replaces it with a real value).
+	expiresAt := int64(0)
 	if exp, ok := data["access_expires_at"].(float64); ok && exp > 0 {
 		expiresAt = NormalizeEpochMillis(int64(exp))
+	}
+	if expiresAt <= 0 {
+		expiresAt = JwtExpiresAtMillis(newAccessToken)
+	}
+	if expiresAt <= 0 {
+		expiresAt = time.Now().Add(newApiV1FallbackTokenTTL).UnixMilli()
 	}
 
 	if authNode == nil {

@@ -1,8 +1,10 @@
 package service
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"metapi/aggrsite/db"
+	"metapi/aggrsite/platform"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -89,8 +91,9 @@ func TestForceRefreshManagedSessionWorksWithoutRecordedExpiry(t *testing.T) {
 	}
 }
 
-// Without force the refresher stays passive: no expiry means nothing is known to be due.
-func TestEnsureManagedSessionSkipsWhenExpiryUnknown(t *testing.T) {
+// Without force the refresher stays passive when nothing hints at an expiry:
+// no recorded value and a credential that is not a JWT (opaque session string).
+func TestEnsureManagedSessionSkipsWhenExpiryUndeterminable(t *testing.T) {
 	setupManagedScanTestDB(t)
 
 	calls := 0
@@ -159,4 +162,81 @@ func TestResolveCheckinCredentialPrefersExplicitCredential(t *testing.T) {
 func jsonInt(value int64) string {
 	out, _ := json.Marshal(value)
 	return string(out)
+}
+
+func testAccessTokenExpiringAt(t *testing.T, expiresAt time.Time) string {
+	t.Helper()
+	payload, err := json.Marshal(map[string]interface{}{"sub": "1891", "exp": expiresAt.Unix()})
+	if err != nil {
+		t.Fatalf("marshal claims: %v", err)
+	}
+	return "header." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
+}
+
+// An account imported without tokenExpiresAt must still be refreshed proactively:
+// the JWT credential itself says when it dies.
+func TestEnsureManagedSessionUsesJwtExpiryWhenNoneRecorded(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	calls := 0
+	server := sub2ApiRefreshServer(t, &calls)
+	defer server.Close()
+
+	row := newManagedAccount(t, server.URL, `{"sub2apiAuth":{"refreshToken":"refresh-old"}}`)
+	dueToken := testAccessTokenExpiringAt(t, time.Now().Add(time.Minute))
+	if err := db.UpdateAccount(row.ID, map[string]interface{}{"access_token": dueToken}); err != nil {
+		t.Fatalf("UpdateAccount failed: %v", err)
+	}
+	row.AccessToken = dueToken
+
+	accessToken, _, didRefresh, err := EnsureManagedSession(row, nil)
+	if err != nil {
+		t.Fatalf("EnsureManagedSession failed: %v", err)
+	}
+	if !didRefresh || accessToken != "jwt-refreshed" {
+		t.Fatalf("expected a refresh driven by the JWT exp claim, got token=%q didRefresh=%v", accessToken, didRefresh)
+	}
+	if calls != 1 {
+		t.Fatalf("upstream refresh calls = %d, want 1", calls)
+	}
+}
+
+func TestEnsureManagedSessionLeavesFreshJwtAlone(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	calls := 0
+	server := sub2ApiRefreshServer(t, &calls)
+	defer server.Close()
+
+	row := newManagedAccount(t, server.URL, `{"sub2apiAuth":{"refreshToken":"refresh-old"}}`)
+	freshToken := testAccessTokenExpiringAt(t, time.Now().Add(2*time.Hour))
+	if err := db.UpdateAccount(row.ID, map[string]interface{}{"access_token": freshToken}); err != nil {
+		t.Fatalf("UpdateAccount failed: %v", err)
+	}
+	row.AccessToken = freshToken
+
+	_, _, didRefresh, err := EnsureManagedSession(row, nil)
+	if err != nil {
+		t.Fatalf("EnsureManagedSession failed: %v", err)
+	}
+	if didRefresh || calls != 0 {
+		t.Fatalf("a token far from expiry must not be refreshed (didRefresh=%v calls=%d)", didRefresh, calls)
+	}
+}
+
+func TestManagedTokenExpiresAtPrefersRecordedValue(t *testing.T) {
+	recorded := time.Now().Add(3 * time.Hour).UnixMilli()
+	extraConfig := `{"managedAuth":{"tokenExpiresAt":` + jsonInt(recorded) + `}}`
+
+	row := db.AccountWithSite{}
+	row.AccessToken = testAccessTokenExpiringAt(t, time.Now().Add(time.Minute))
+	row.ExtraConfig = &extraConfig
+	if got := managedTokenExpiresAt(row); got != recorded {
+		t.Fatalf("managedTokenExpiresAt = %d, want the recorded value %d", got, recorded)
+	}
+
+	row.ExtraConfig = nil
+	if got := managedTokenExpiresAt(row); got != platform.JwtExpiresAtMillis(row.AccessToken) || got <= 0 {
+		t.Fatalf("managedTokenExpiresAt should fall back to the JWT exp, got %d", got)
+	}
 }
