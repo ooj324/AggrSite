@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -132,6 +133,73 @@ func TestTurnstileSolver_StandardTaskFlow(t *testing.T) {
 
 	if !createTaskCalled || !getTaskResultCalled {
 		t.Fatalf("expected both createTask and getTaskResult to be called (create=%v, get=%v)", createTaskCalled, getTaskResultCalled)
+	}
+}
+
+func TestTurnstileSolver_FallsBackToSecondInstance(t *testing.T) {
+	firstCalls := 0
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstCalls++
+		http.Error(w, "instance unavailable", http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+
+	secondCalls := 0
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"token": "token-from-second-instance",
+		})
+	}))
+	defer second.Close()
+
+	solver, err := NewTurnstileSolver(TurnstileSolverConfig{
+		Provider: "custom",
+		APIURL:   first.URL + "\n" + second.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewTurnstileSolver failed: %v", err)
+	}
+
+	token, err := solver.SolveTurnstile(context.Background(), "https://example.com", "site-key", nil)
+	if err != nil {
+		t.Fatalf("expected second instance to succeed, got %v", err)
+	}
+	if token != "token-from-second-instance" {
+		t.Fatalf("expected token from second instance, got %q", token)
+	}
+	if firstCalls != 1 || secondCalls != 1 {
+		t.Fatalf("expected both instances to be called once, got first=%d second=%d", firstCalls, secondCalls)
+	}
+}
+
+func TestTurnstileSolver_ReturnsAllInstanceErrors(t *testing.T) {
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "first unavailable", http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "second unavailable", http.StatusBadGateway)
+	}))
+	defer second.Close()
+
+	solver, err := NewTurnstileSolver(TurnstileSolverConfig{
+		Provider: "custom",
+		APIURL:   first.URL + "\r\n\r\n" + second.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewTurnstileSolver failed: %v", err)
+	}
+
+	_, err = solver.SolveTurnstile(context.Background(), "https://example.com", "site-key", nil)
+	if err == nil {
+		t.Fatal("expected all instances to fail")
+	}
+	for _, want := range []string{"all Turnstile solver instances failed", "instance 1", "instance 2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected error to contain %q, got %v", want, err)
+		}
 	}
 }
 

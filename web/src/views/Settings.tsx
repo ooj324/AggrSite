@@ -248,17 +248,17 @@ export default function Settings() {
               </div>
 
               <div>
-                <label className="block text-[13px] font-medium text-textSecondary mb-1.5">自定义 API URL (可选)</label>
+                <label className="block text-[13px] font-medium text-textSecondary mb-1.5">自定义 API URL (可选，可多实例)</label>
                 <p className="text-[12px] text-textMuted mb-2">
-                  留空使用默认服务地址。自建服务可填写如 <code>http://127.0.0.1:5000/solve</code>。
+                  留空使用默认服务地址；多个地址时每行填写一个，失败后会按顺序尝试下一个。
                 </p>
-                <input 
-                  type="text" 
+                <textarea
+                  rows={3}
                   className={inputClass}
                   placeholder={
                     formData.TURNSTILE_PROVIDER === 'capsolver' ? 'https://api.capsolver.com' :
                     formData.TURNSTILE_PROVIDER === '2captcha' ? 'https://api.2captcha.com' :
-                    formData.TURNSTILE_PROVIDER === 'custom' ? 'http://127.0.0.1:5000/solve' :
+                    formData.TURNSTILE_PROVIDER === 'custom' ? 'http://solver-1:5000/solve\nhttp://solver-2:5000/solve' :
                     'https://api.yescaptcha.com'
                   }
                   value={formData.TURNSTILE_API_URL} 
@@ -395,4 +395,3 @@ export default function Settings() {
     </div>
   );
 }
-

@@ -19,15 +19,66 @@ import (
 
 // TurnstileSolverConfig holds configuration for the solver service.
 type TurnstileSolverConfig struct {
-	Provider  string `json:"provider"`  // "yescaptcha", "capsolver", "2captcha", "custom"
-	APIKey    string `json:"api_key"`   // Client key / API key
-	APIURL    string `json:"api_url"`   // Optional custom API endpoint
+	Provider  string `json:"provider"`   // "yescaptcha", "capsolver", "2captcha", "custom"
+	APIKey    string `json:"api_key"`    // Client key / API key
+	APIURL    string `json:"api_url"`    // Optional custom API endpoint
 	AutoSolve bool   `json:"auto_solve"` // Whether auto-solving is enabled
 }
 
 // TurnstileSolver defines the interface for solving Cloudflare Turnstile challenges.
 type TurnstileSolver interface {
 	SolveTurnstile(ctx context.Context, websiteURL, siteKey string, opt *platform.RequestOption) (string, error)
+}
+
+const turnstileSolverAttemptTimeout = 75 * time.Second
+
+type turnstileSolverInstance struct {
+	solver TurnstileSolver
+	index  int
+}
+
+type failoverTurnstileSolver struct {
+	instances []turnstileSolverInstance
+}
+
+func (s *failoverTurnstileSolver) SolveTurnstile(ctx context.Context, websiteURL, siteKey string, opt *platform.RequestOption) (string, error) {
+	var attemptErrors []error
+
+	for i, instance := range s.instances {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+
+		attemptCtx, cancel := context.WithTimeout(ctx, turnstileSolverAttemptTimeout)
+		token, err := instance.solver.SolveTurnstile(attemptCtx, websiteURL, siteKey, opt)
+		cancel()
+
+		if err == nil && strings.TrimSpace(token) != "" {
+			if instance.index > 1 {
+				slog.Info("Turnstile failover instance succeeded", "instance", instance.index)
+			}
+			return token, nil
+		}
+		if err == nil {
+			err = errors.New("solver returned an empty token")
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
+
+		attemptErr := fmt.Errorf("instance %d: %w", instance.index, err)
+		attemptErrors = append(attemptErrors, attemptErr)
+		if i+1 < len(s.instances) {
+			slog.Warn("Turnstile solver instance failed, trying next instance", "instance", instance.index, "err", err)
+		} else {
+			slog.Warn("Turnstile solver instance failed", "instance", instance.index, "err", err)
+		}
+	}
+
+	if len(attemptErrors) == 0 {
+		return "", errors.New("no Turnstile solver instances configured")
+	}
+	return "", fmt.Errorf("all Turnstile solver instances failed: %w", errors.Join(attemptErrors...))
 }
 
 // GetTurnstileSolverConfig loads current configuration from settings table.
@@ -61,13 +112,54 @@ func IsTurnstileSolverConfigured() bool {
 		return false
 	}
 	if cfg.Provider == "custom" || cfg.Provider == "turnstile-solver" {
-		return cfg.APIURL != "" || cfg.APIKey != ""
+		return strings.TrimSpace(cfg.APIURL) != "" || strings.TrimSpace(cfg.APIKey) != ""
 	}
-	return cfg.APIKey != ""
+	return strings.TrimSpace(cfg.APIKey) != ""
 }
 
-// NewTurnstileSolver instantiates the appropriate solver from config.
+// NewTurnstileSolver instantiates one or more solvers from config. Multiple API
+// URLs can be provided one per line and are tried in order until one succeeds.
 func NewTurnstileSolver(cfg TurnstileSolverConfig) (TurnstileSolver, error) {
+	apiURLs := splitTurnstileSolverAPIURLs(cfg.APIURL)
+	if len(apiURLs) == 0 {
+		apiURLs = []string{""}
+	}
+
+	instances := make([]turnstileSolverInstance, 0, len(apiURLs))
+	for i, apiURL := range apiURLs {
+		instanceCfg := cfg
+		instanceCfg.APIURL = apiURL
+		solver, err := newSingleTurnstileSolver(instanceCfg)
+		if err != nil {
+			return nil, fmt.Errorf("Turnstile solver instance %d: %w", i+1, err)
+		}
+		instances = append(instances, turnstileSolverInstance{solver: solver, index: i + 1})
+	}
+
+	return &failoverTurnstileSolver{instances: instances}, nil
+}
+
+func splitTurnstileSolverAPIURLs(raw string) []string {
+	lines := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == '\r'
+	})
+	apiURLs := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if apiURL := strings.TrimSpace(line); apiURL != "" {
+			apiURLs = append(apiURLs, apiURL)
+		}
+	}
+	return apiURLs
+}
+
+func turnstileSolverInstanceCount(cfg TurnstileSolverConfig) int {
+	if count := len(splitTurnstileSolverAPIURLs(cfg.APIURL)); count > 0 {
+		return count
+	}
+	return 1
+}
+
+func newSingleTurnstileSolver(cfg TurnstileSolverConfig) (TurnstileSolver, error) {
 	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
 	if provider == "" {
 		provider = "yescaptcha"
@@ -158,7 +250,8 @@ func SolveTurnstileIfConfigured(websiteURL, siteKey string, opt *platform.Reques
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
+	timeout := turnstileSolverAttemptTimeout * time.Duration(turnstileSolverInstanceCount(cfg))
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	slog.Info("Solving Turnstile challenge", "provider", cfg.Provider, "website_url", websiteURL)
