@@ -305,7 +305,7 @@ func (s *standardTaskSolver) SolveTurnstile(ctx context.Context, websiteURL, sit
 		return "", fmt.Errorf("%s clientKey is missing", s.providerName)
 	}
 
-	client := createHTTPClient(opt)
+	client := createHTTPClient()
 
 	// Step 1: Create Task
 	createURL := s.baseURL + "/createTask"
@@ -458,7 +458,7 @@ type customEndpointSolver struct {
 }
 
 func (c *customEndpointSolver) SolveTurnstile(ctx context.Context, websiteURL, siteKey string, opt *platform.RequestOption) (string, error) {
-	client := createHTTPClient(opt)
+	client := createHTTPClient()
 	trimmedURL := strings.TrimRight(c.apiURL, "/")
 
 	// If user provided a root URL like https://xxx.onrender.com, automatically append /turnstile
@@ -664,20 +664,11 @@ func extractTokenFromCustomResponse(res map[string]interface{}) string {
 	return ""
 }
 
-// createHTTPClient creates an http.Client configured with optional proxy settings.
-func createHTTPClient(opt *platform.RequestOption) *http.Client {
+// createHTTPClient creates a direct HTTP client for solver APIs. Solver traffic
+// intentionally bypasses site, system, and environment proxy configuration.
+func createHTTPClient() *http.Client {
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-	}
-
-	if opt != nil {
-		if opt.ProxyURL != nil && *opt.ProxyURL != "" {
-			if proxy, err := url.Parse(*opt.ProxyURL); err == nil {
-				transport.Proxy = http.ProxyURL(proxy)
-			}
-		} else if opt.UseSystemProxy != nil && !*opt.UseSystemProxy {
-			transport.Proxy = nil
-		}
+		Proxy: nil,
 	}
 
 	return &http.Client{

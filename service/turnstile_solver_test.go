@@ -57,6 +57,17 @@ func TestTurnstileSolver_ConfigAndValidation(t *testing.T) {
 	}
 }
 
+func TestTurnstileSolverHTTPClient_BypassesProxy(t *testing.T) {
+	client := createHTTPClient()
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("expected Turnstile solver HTTP client to bypass all proxies")
+	}
+}
+
 func TestTurnstileSolver_StandardTaskFlow(t *testing.T) {
 	// Mock YesCaptcha / CapSolver server
 	createTaskCalled := false
