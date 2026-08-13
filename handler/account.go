@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"metapi/aggrsite/db"
 	"metapi/aggrsite/platform"
 	"metapi/aggrsite/service"
@@ -11,6 +12,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+// storedNewApiV1RefreshCookie returns the refresh cookie currently persisted in cfg.
+func storedNewApiV1RefreshCookie(cfg map[string]interface{}) (string, bool) {
+	node, _ := cfg[platform.NewApiV1AuthConfigKey].(map[string]interface{})
+	if node == nil {
+		return "", false
+	}
+	value, _ := node[platform.RefreshCookieKey].(string)
+	value = strings.TrimSpace(value)
+	return value, value != ""
+}
 
 func isMaskedTokenValue(token string) bool {
 	return strings.Contains(token, "*") || strings.Contains(token, "•")
@@ -693,6 +705,15 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := fields["refreshCookie"]; ok {
 		if s, isStr := v.(string); isStr {
+			// The refresh cookie rotates upstream on every managed refresh, so replacing a
+			// stored value from a form is only correct when the operator really pasted a
+			// fresh one: a stale echo makes the next refresh look like a replay and can
+			// cost the whole upstream session. Log the replacement so that failure mode
+			// is traceable.
+			if stored, hadStored := storedNewApiV1RefreshCookie(cfg); hadStored && strings.TrimSpace(s) != stored {
+				slog.Info("Replacing stored new-api refresh cookie from account update",
+					"account_id", id, "cleared", strings.TrimSpace(s) == "")
+			}
 			platform.SetNewApiV1RefreshCookie(cfg, s)
 		}
 		delete(fields, "refreshCookie")

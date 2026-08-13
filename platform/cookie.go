@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -325,17 +326,34 @@ func DecodeJwtPayload(token string) map[string]interface{} {
 // forks, sub2api) issues short-lived JWTs, so the credential itself tells us when
 // it dies - no need for the expiry to be configured by hand.
 func JwtExpiresAtMillis(token string) int64 {
+	return jwtClaimMillis(DecodeJwtPayload(token), "exp")
+}
+
+// JwtLifetimeMillis returns how long the credential was issued for (exp - iat), or
+// 0 when either claim is missing. Callers use it to schedule a renewal relative to
+// the credential's own lifetime instead of a fixed lead: new-api access tokens live
+// only 15 minutes, so a lead close to that lifetime would rotate them constantly.
+func JwtLifetimeMillis(token string) int64 {
 	payload := DecodeJwtPayload(token)
+	expiresAt := jwtClaimMillis(payload, "exp")
+	issuedAt := jwtClaimMillis(payload, "iat")
+	if expiresAt <= 0 || issuedAt <= 0 || expiresAt <= issuedAt {
+		return 0
+	}
+	return expiresAt - issuedAt
+}
+
+func jwtClaimMillis(payload map[string]interface{}, name string) int64 {
 	if payload == nil {
 		return 0
 	}
-	switch exp := payload["exp"].(type) {
+	switch value := payload[name].(type) {
 	case float64:
-		if exp > 0 {
-			return NormalizeEpochMillis(int64(exp))
+		if value > 0 {
+			return NormalizeEpochMillis(int64(value))
 		}
 	case string:
-		if parsed, err := strconv.ParseInt(strings.TrimSpace(exp), 10, 64); err == nil && parsed > 0 {
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil && parsed > 0 {
 			return NormalizeEpochMillis(parsed)
 		}
 	}
@@ -722,6 +740,28 @@ type FetchCookieResult struct {
 	CookieHeader string
 }
 
+// HTTPStatusError reports a completed request that answered with a non-2xx status.
+// The Error() text is kept identical to the previous inline formatting so existing
+// message matching keeps working, while callers that care (managed session refresh)
+// can inspect StatusCode to tell rate limiting apart from a dead credential.
+type HTTPStatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+// HTTPStatusFromError returns the upstream status code carried by err, or 0.
+func HTTPStatusFromError(err error) int {
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode
+	}
+	return 0
+}
+
 func truncateBodyForErr(s string) string {
 	if len(s) > 200 {
 		return s[:200] + "..."
@@ -804,10 +844,10 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 					var errData map[string]interface{}
 					if err := json.Unmarshal(respBody, &errData); err == nil {
 						if msg := ExtractMessage(errData); msg != "" {
-							return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
+							return &FetchCookieResult{CookieHeader: currentCookie}, &HTTPStatusError{StatusCode: resp.StatusCode, Body: msg}
 						}
 					}
-					return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncateBodyForErr(string(respBody)))
+					return &FetchCookieResult{CookieHeader: currentCookie}, &HTTPStatusError{StatusCode: resp.StatusCode, Body: truncateBodyForErr(string(respBody))}
 				}
 				return &FetchCookieResult{CookieHeader: currentCookie}, nil
 			}
@@ -817,7 +857,7 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 		if !isShieldChallenge(resp.Header.Get("Content-Type"), string(respBody)) {
 			// Not a challenge, maybe just a server error
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncateBodyForErr(string(respBody)))
+				return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Body: truncateBodyForErr(string(respBody))}
 			}
 			return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("invalid json response (HTTP %d, body snippet: %s)", resp.StatusCode, truncateBodyForErr(string(respBody)))
 		}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // CheckinResult is returned by Checkin calls.
@@ -66,6 +67,13 @@ type RefreshResult struct {
 	AccessToken string
 	ExtraConfig string // Merged or updated extraConfig
 	Message     string
+	// RetryAfter asks the caller to wait at least this long before trying again.
+	// Set when the upstream throttled the refresh endpoint (new-api guards it with
+	// CriticalRateLimit) or reported a concurrent rotation.
+	RetryAfter time.Duration
+	// CredentialDead reports that the refresh credential itself was rejected or
+	// revoked upstream. Retrying cannot help: only a new login can.
+	CredentialDead bool
 }
 
 type RequestOption struct {

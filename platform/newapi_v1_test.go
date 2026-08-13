@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,96 @@ func TestNewApiV1RefreshAuthReportsUpstreamFailure(t *testing.T) {
 	if res == nil || res.Success || res.Message != "refresh token expired" {
 		t.Fatalf("unexpected result: %+v", res)
 	}
+}
+
+// The refresh route is guarded upstream by CriticalRateLimit (20 requests / 20
+// minutes per client IP) and answers auth failures with a code rather than a
+// meaningful message. Both have to be reported back, otherwise the scheduler keeps
+// retrying and holds the limiter saturated for every account on the same IP.
+func TestNewApiV1RefreshAuthClassifiesHTTPFailures(t *testing.T) {
+	cases := []struct {
+		name               string
+		status             int
+		body               string
+		wantRetryAfter     time.Duration
+		wantCredentialDead bool
+	}{
+		{
+			name:           "rate limited",
+			status:         http.StatusTooManyRequests,
+			body:           `{"success":false,"message":"请求过于频繁"}`,
+			wantRetryAfter: newApiV1RateLimitBackoff,
+		},
+		{
+			name:               "session revoked",
+			status:             http.StatusUnauthorized,
+			body:               `{"success":false,"code":"AUTH_SESSION_REVOKED","message":"Unauthorized"}`,
+			wantCredentialDead: true,
+		},
+		{
+			name:               "refresh token rejected",
+			status:             http.StatusUnauthorized,
+			body:               `{"success":false,"code":"AUTH_UNAUTHORIZED","message":"Unauthorized"}`,
+			wantCredentialDead: true,
+		},
+		{
+			name:           "concurrent rotation",
+			status:         http.StatusConflict,
+			body:           `{"success":false,"code":"AUTH_REFRESH_RACE","message":"Conflict"}`,
+			wantRetryAfter: newApiV1RefreshRaceBackoff,
+		},
+		{
+			name:   "transient server error",
+			status: http.StatusBadGateway,
+			body:   `{"success":false,"message":"bad gateway"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			adapter := &NewApiV1Adapter{NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api-v1"}}}
+			res, err := adapter.RefreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil)
+			if err != nil {
+				t.Fatalf("HTTP failures must be reported as a result, not an error: %v", err)
+			}
+			if res == nil || res.Success {
+				t.Fatalf("expected failure, got %+v", res)
+			}
+			if res.RetryAfter != tc.wantRetryAfter {
+				t.Fatalf("RetryAfter = %s, want %s", res.RetryAfter, tc.wantRetryAfter)
+			}
+			if res.CredentialDead != tc.wantCredentialDead {
+				t.Fatalf("CredentialDead = %v, want %v", res.CredentialDead, tc.wantCredentialDead)
+			}
+			if !strings.Contains(res.Message, "refresh request failed") {
+				t.Fatalf("message should carry the upstream failure: %q", res.Message)
+			}
+		})
+	}
+}
+
+func TestJwtLifetimeMillisFromRefreshedToken(t *testing.T) {
+	issuedAt := time.Now().Add(-time.Minute)
+	token := newApiV1TestJwt(t, issuedAt, issuedAt.Add(15*time.Minute))
+	if got := JwtLifetimeMillis(token); got != int64(15*time.Minute/time.Millisecond) {
+		t.Fatalf("JwtLifetimeMillis = %d, want %d", got, int64(15*time.Minute/time.Millisecond))
+	}
+}
+
+func newApiV1TestJwt(t *testing.T, issuedAt, expiresAt time.Time) string {
+	t.Helper()
+	payload, err := json.Marshal(map[string]interface{}{"iat": issuedAt.Unix(), "exp": expiresAt.Unix()})
+	if err != nil {
+		t.Fatalf("marshal claims: %v", err)
+	}
+	return "header." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
 }
 
 func TestNormalizeEpochMillis(t *testing.T) {

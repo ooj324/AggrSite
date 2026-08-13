@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 // A real QuantumNous new-api dashboard access token: 15 minute TTL, user id in sub.
@@ -50,6 +51,24 @@ func TestJwtExpiresAtMillisIgnoresNonJwtCredentials(t *testing.T) {
 	// Seconds and string encodings both normalize to millis.
 	if got := JwtExpiresAtMillis(testJwt(t, map[string]interface{}{"exp": "1786345921"})); got != 1786345921000 {
 		t.Fatalf("string exp = %d", got)
+	}
+}
+
+func TestJwtLifetimeMillis(t *testing.T) {
+	// The sample dashboard token was issued for 15 minutes (exp - iat).
+	if got := JwtLifetimeMillis(sampleNewApiAccessToken); got != int64(15*time.Minute/time.Millisecond) {
+		t.Fatalf("JwtLifetimeMillis = %d, want %d", got, int64(15*time.Minute/time.Millisecond))
+	}
+	for _, credential := range []string{
+		"",
+		"session=abc; new_api_refresh=refresh-value",
+		testJwt(t, map[string]interface{}{"exp": 1786345921}),                    // no iat
+		testJwt(t, map[string]interface{}{"iat": 1786345021}),                    // no exp
+		testJwt(t, map[string]interface{}{"iat": 1786345921, "exp": 1786345021}), // inverted
+	} {
+		if got := JwtLifetimeMillis(credential); got != 0 {
+			t.Fatalf("JwtLifetimeMillis(%q) = %d, want 0", credential, got)
+		}
 	}
 }
 

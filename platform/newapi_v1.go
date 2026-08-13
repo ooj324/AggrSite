@@ -3,6 +3,7 @@ package platform
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -24,6 +25,13 @@ const (
 	// newApiV1FallbackTokenTTL is assumed when the upstream omits access_expires_at.
 	// It is deliberately short: the next refresh reads the real expiry and self-corrects.
 	newApiV1FallbackTokenTTL = 15 * time.Minute
+	// newApiV1RateLimitBackoff matches the upstream CriticalRateLimit window
+	// (20 requests / 20 minutes per client IP) that guards the refresh route.
+	// Retrying inside the window only keeps the limiter saturated.
+	newApiV1RateLimitBackoff = 20 * time.Minute
+	// newApiV1RefreshRaceBackoff covers the upstream replay grace window, during
+	// which a concurrent rotation makes the same refresh token usable again.
+	newApiV1RefreshRaceBackoff = 30 * time.Second
 )
 
 func init() {
@@ -79,7 +87,9 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		opt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("refresh request failed: %w", err)
+		// Classified instead of returned as a bare error: the scheduler has to know
+		// whether waiting helps (throttled) or whether the credential is gone.
+		return newApiV1RefreshFailure(err, res), nil
 	}
 
 	if success, _ := res["success"].(bool); !success {
@@ -87,7 +97,12 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		if message == "" {
 			message = "refresh failed"
 		}
-		return &RefreshResult{Success: false, Message: message}, nil
+		result := &RefreshResult{Success: false, Message: message}
+		if code := newApiV1ErrorCode(res); code != "" {
+			result.Message = message + " (" + code + ")"
+			result.CredentialDead = newApiV1CodeIsFatal(code)
+		}
+		return result, nil
 	}
 
 	data, _ := res["data"].(map[string]interface{})
@@ -100,7 +115,8 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		return &RefreshResult{Success: false, Message: "No access_token in refresh response"}, nil
 	}
 
-	// The refresh token rotates; keep the previous one if the response reuses it.
+	// The refresh token rotates on every successful refresh; keep the previous value
+	// only if the response did not carry a new one.
 	newRefreshCookie := refreshCookie
 	if cookieResult != nil && cookieResult.CookieHeader != "" {
 		if value, ok := CookieValueFromHeader(cookieResult.CookieHeader, newApiV1RefreshCookieName); ok && strings.TrimSpace(value) != "" {
@@ -133,10 +149,60 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		return nil, fmt.Errorf("failed to marshal new extraConfig: %w", err)
 	}
 
+	message := "Refreshed via new-api refresh cookie"
+	if newRefreshCookie == refreshCookie {
+		// Upstream always rotates the refresh token when it answers 200, so an unchanged
+		// cookie means the rotated value never reached us (stripped in transit). The
+		// stored one is now the previous secret and will be rejected as a replay.
+		message += " (no rotated refresh cookie in the response; the next refresh will likely need a new login)"
+	}
+
 	return &RefreshResult{
 		Success:     true,
 		AccessToken: newAccessToken,
 		ExtraConfig: string(newExtraConfig),
-		Message:     "Refreshed via new-api refresh cookie",
+		Message:     message,
 	}, nil
+}
+
+// newApiV1RefreshFailure turns a transport/HTTP failure into a classified result.
+// Upstream answers refresh errors with {"success":false,"code":"AUTH_..."} and a
+// generic status text, so the code - not the message - carries the meaning.
+func newApiV1RefreshFailure(err error, res map[string]interface{}) *RefreshResult {
+	result := &RefreshResult{Success: false, Message: "refresh request failed: " + err.Error()}
+	code := newApiV1ErrorCode(res)
+	if code != "" {
+		result.Message += " (" + code + ")"
+	}
+
+	switch status := HTTPStatusFromError(err); {
+	case status == http.StatusTooManyRequests:
+		result.RetryAfter = newApiV1RateLimitBackoff
+	case status == http.StatusConflict, code == "AUTH_REFRESH_RACE":
+		// A parallel refresh already rotated the token; inside the upstream replay
+		// window the very same cookie still works, so retry soon rather than giving up.
+		result.RetryAfter = newApiV1RefreshRaceBackoff
+	case status == http.StatusUnauthorized, status == http.StatusForbidden, newApiV1CodeIsFatal(code):
+		result.CredentialDead = true
+	}
+	return result
+}
+
+func newApiV1ErrorCode(res map[string]interface{}) string {
+	if res == nil {
+		return ""
+	}
+	code, _ := res["code"].(string)
+	return strings.TrimSpace(code)
+}
+
+// newApiV1CodeIsFatal reports codes that mean the refresh cookie will never work
+// again: the session was revoked (including upstream refresh-reuse detection) or
+// the presented token is not recognised at all.
+func newApiV1CodeIsFatal(code string) bool {
+	switch strings.ToUpper(code) {
+	case "AUTH_SESSION_REVOKED", "AUTH_UNAUTHORIZED", "AUTH_TOKEN_EXPIRED", "AUTH_SESSION_MISMATCH", "AUTH_USER_DISABLED":
+		return true
+	}
+	return false
 }

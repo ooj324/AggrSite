@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
 import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon, RefreshCw } from 'lucide-react';
@@ -426,6 +426,16 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
+  // The managed refresh credential and its expiry rotate on the server every few
+  // minutes, so the values this form was loaded with go stale while it is open.
+  // Resubmitting them would overwrite a rotated credential with an old one, which
+  // upstream (new-api) treats as a replayed refresh token. Remember what was loaded
+  // and only send these fields when the operator actually edited them.
+  const loadedManagedAuth = useRef({
+    refresh_token: (accountConfig.sub2apiAuth?.refreshToken || '').trim(),
+    refresh_cookie: (accountConfig.newApiV1Auth?.refreshCookie || '').trim(),
+    token_expires_at: (accountConfig.managedAuth?.tokenExpiresAt ?? accountConfig.sub2apiAuth?.tokenExpiresAt)?.toString() || '',
+  });
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; tokenType?: string; needsUserId?: boolean; shieldBlocked?: boolean; message?: string; modelCount?: number; models?: string[] } | null>(null);
 
   const parsedApiKeys = mode === 'apikey' && formData.access_token ? formData.access_token.split(/[\n, ]+/).map((k: string) => k.trim()).filter(Boolean) : [];
@@ -544,7 +554,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
         }
       } else {
         // Token mode
-        const payload = {
+        const payload: Record<string, unknown> = {
           site_id: Number(formData.site_id),
           username,
           access_token: accessToken,
@@ -558,10 +568,17 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           useSystemProxy: formData.use_system_proxy,
           checkin_credential: checkinCredential,
           skipModelFetch: formData.skip_model_fetch,
-          refreshToken,
-          refreshCookie,
-          tokenExpiresAt: formData.token_expires_at ? Number(formData.token_expires_at) : null,
         };
+        // Omitting an untouched field leaves whatever the refresher stored in place.
+        if (!account || refreshToken !== loadedManagedAuth.current.refresh_token) {
+          payload.refreshToken = refreshToken;
+        }
+        if (!account || refreshCookie !== loadedManagedAuth.current.refresh_cookie) {
+          payload.refreshCookie = refreshCookie;
+        }
+        if (!account || formData.token_expires_at !== loadedManagedAuth.current.token_expires_at) {
+          payload.tokenExpiresAt = formData.token_expires_at ? Number(formData.token_expires_at) : null;
+        }
 
         if (account) {
           if (isTokenChanged && mode === 'session') {
