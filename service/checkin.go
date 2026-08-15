@@ -91,6 +91,15 @@ type ExternalCheckinConfig struct {
 	Body       string `json:"body"`
 }
 
+// extractSiteKeyForRow returns the Turnstile site key for an account, checking
+// the site-level field first, then falling back to extra_config JSON.
+func extractSiteKeyForRow(row db.AccountWithSite) string {
+	if row.SiteTurnstileSiteKey != nil && strings.TrimSpace(*row.SiteTurnstileSiteKey) != "" {
+		return strings.TrimSpace(*row.SiteTurnstileSiteKey)
+	}
+	return ExtractSiteKeyFromExtraConfig(row.ExtraConfig)
+}
+
 func originFromURL(rawURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
@@ -253,8 +262,27 @@ func tryAgentRouterLoginCheckin(row db.AccountWithSite, adapter platform.Adapter
 		if loginResult != nil && loginResult.Message != "" {
 			msg = loginResult.Message
 		}
+		// If Turnstile is required, try to solve and re-login once
+		if AnalyzeCheckinFailure(msg).Code == "TURNSTILE_REQUIRED" {
+			if siteKey := extractSiteKeyForRow(row); siteKey != "" && IsTurnstileSolverConfigured() {
+				slog.Info("Turnstile required during AgentRouter login, attempting solver", "account_id", row.ID)
+				if solvedToken, solveErr := SolveTurnstileIfConfigured(row.SiteURL, siteKey, opt); solveErr == nil && solvedToken != "" {
+					opt.TurnstileToken = &solvedToken
+					loginResult, err = adapter.Login(row.SiteURL, username, password, opt)
+					if err == nil && loginResult != nil && loginResult.Success && loginResult.AccessToken != "" {
+						goto loginSuccess
+					}
+					if loginResult != nil && loginResult.Message != "" {
+						msg = loginResult.Message
+					}
+				} else if solveErr != nil {
+					slog.Warn("Turnstile solver failed during AgentRouter login", "account_id", row.ID, "err", solveErr)
+				}
+			}
+		}
 		return &platform.CheckinResult{Success: false, Message: msg}, ""
 	}
+loginSuccess:
 
 	updates := map[string]interface{}{
 		"access_token": loginResult.AccessToken,
@@ -406,12 +434,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 
 	// If Turnstile is required, attempt to solve it via TurnstileSolver if configured
 	if turnstileRequired && !alreadyCheckedIn && !unsupported {
-		siteKey := ""
-		if row.SiteTurnstileSiteKey != nil && strings.TrimSpace(*row.SiteTurnstileSiteKey) != "" {
-			siteKey = strings.TrimSpace(*row.SiteTurnstileSiteKey)
-		} else {
-			siteKey = ExtractSiteKeyFromExtraConfig(row.ExtraConfig)
-		}
+		siteKey := extractSiteKeyForRow(*row)
 
 		if siteKey != "" && IsTurnstileSolverConfigured() {
 			slog.Info("Attempting Turnstile solver for account", "account_id", accountID, "site_name", row.SiteName, "site_key", siteKey)
@@ -596,9 +619,29 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 	slog.Info("Attempting auto-relogin via username/password", "account_id", row.ID)
 	loginResult, err := adapter.Login(row.SiteURL, username, password, opt)
 	if err != nil || loginResult == nil || !loginResult.Success || loginResult.AccessToken == "" {
-		slog.Warn("Auto-relogin failed", "account_id", row.ID, "err", err, "message", loginResult.Message)
+		// If Turnstile is required, try to solve and re-login once
+		loginMsg := ""
+		if loginResult != nil {
+			loginMsg = loginResult.Message
+		}
+		if AnalyzeCheckinFailure(loginMsg).Code == "TURNSTILE_REQUIRED" {
+			if siteKey := extractSiteKeyForRow(row); siteKey != "" && IsTurnstileSolverConfigured() {
+				slog.Info("Turnstile required during auto-relogin, attempting solver", "account_id", row.ID)
+				if solvedToken, solveErr := SolveTurnstileIfConfigured(row.SiteURL, siteKey, opt); solveErr == nil && solvedToken != "" {
+					opt.TurnstileToken = &solvedToken
+					loginResult, err = adapter.Login(row.SiteURL, username, password, opt)
+					if err == nil && loginResult != nil && loginResult.Success && loginResult.AccessToken != "" {
+						goto reloginSuccess
+					}
+				} else if solveErr != nil {
+					slog.Warn("Turnstile solver failed during auto-relogin", "account_id", row.ID, "err", solveErr)
+				}
+			}
+		}
+		slog.Warn("Auto-relogin failed", "account_id", row.ID, "err", err, "message", loginMsg)
 		return ""
 	}
+reloginSuccess:
 
 	slog.Info("Auto-relogin via Login successful, updating access token", "account_id", row.ID)
 	updates := map[string]interface{}{

@@ -192,6 +192,10 @@ func (a *AgentRouterAdapter) Login(baseURL, username, password string, opt *Requ
 		"username": username,
 		"password": password,
 	}
+	if opt != nil && opt.TurnstileToken != nil && *opt.TurnstileToken != "" {
+		body["turnstile"] = *opt.TurnstileToken
+		body["cf-turnstile-response"] = *opt.TurnstileToken
+	}
 
 	var res map[string]interface{}
 	cookieResult, err := FetchJSONWithCookieRetry(url, "POST", "", map[string]string{

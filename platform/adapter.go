@@ -509,6 +509,10 @@ func (b *BaseAdapter) LoginWithCookieFallback(baseURL, username, password string
 		"username": username,
 		"password": password,
 	}
+	if opt != nil && opt.TurnstileToken != nil && *opt.TurnstileToken != "" {
+		body["turnstile"] = *opt.TurnstileToken
+		body["cf-turnstile-response"] = *opt.TurnstileToken
+	}
 
 	var res map[string]interface{}
 	cookieResult, err := FetchJSONWithCookieRetry(url, "POST", "", map[string]string{
