@@ -382,7 +382,9 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	// external checkin path would keep using the stale token.
 	if IsManagedSessionPlatform(row.SitePlatform) {
 		if refreshedAccessToken, refreshedExtraConfig, _, err := EnsureManagedSession(*row, opt); err != nil {
-			slog.Warn("Managed session pre-refresh failed before checkin", "account_id", accountID, "platform", row.SitePlatform, "err", err)
+			if !isManagedRefreshDeferred(err) {
+				slog.Warn("Managed session pre-refresh failed before checkin", "account_id", accountID, "platform", row.SitePlatform, "err", err)
+			}
 		} else {
 			row.AccessToken = refreshedAccessToken
 			if refreshedExtraConfig != "" {
@@ -577,7 +579,19 @@ func tryAutoRelogin(row db.AccountWithSite, adapter platform.Adapter, opt *platf
 			return refreshedAccessToken
 		}
 		if err != nil {
+			if isManagedRefreshDeferred(err) {
+				// A per-account backoff or shared site budget deliberately delayed the
+				// refresh. Do not turn that delay into a password login that consumes
+				// the same critical-route budget.
+				return ""
+			}
 			slog.Warn("Managed session RefreshAuth failed", "account_id", row.ID, "platform", row.SitePlatform, "err", err)
+			if !isManagedRefreshCredentialDead(err) {
+				// Network errors and upstream throttling affect Login as well. Only a
+				// definitively rejected refresh credential justifies spending another
+				// critical-route request on password login.
+				return ""
+			}
 		}
 		// Fall through to username/password relogin: platforms such as new-api-v1
 		// support it, and it is the only way back once the refresh credential is gone.

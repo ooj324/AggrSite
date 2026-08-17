@@ -224,19 +224,20 @@ func TestEnsureManagedSessionLeavesFreshJwtAlone(t *testing.T) {
 	}
 }
 
-func TestManagedTokenExpiresAtPrefersRecordedValue(t *testing.T) {
+func TestManagedTokenExpiresAtBindsExpiryToCurrentJWT(t *testing.T) {
 	recorded := time.Now().Add(3 * time.Hour).UnixMilli()
 	extraConfig := `{"managedAuth":{"tokenExpiresAt":` + jsonInt(recorded) + `}}`
 
 	row := db.AccountWithSite{}
 	row.AccessToken = testAccessTokenExpiringAt(t, time.Now().Add(time.Minute))
 	row.ExtraConfig = &extraConfig
-	if got := managedTokenExpiresAt(row); got != recorded {
-		t.Fatalf("managedTokenExpiresAt = %d, want the recorded value %d", got, recorded)
+	jwtExpiry := platform.JwtExpiresAtMillis(row.AccessToken)
+	if got := managedTokenExpiresAt(row); got != jwtExpiry {
+		t.Fatalf("managedTokenExpiresAt = %d, want current JWT expiry %d (recorded value %d belongs to an older token)", got, jwtExpiry, recorded)
 	}
 
-	row.ExtraConfig = nil
-	if got := managedTokenExpiresAt(row); got != platform.JwtExpiresAtMillis(row.AccessToken) || got <= 0 {
-		t.Fatalf("managedTokenExpiresAt should fall back to the JWT exp, got %d", got)
+	row.AccessToken = "opaque-session"
+	if got := managedTokenExpiresAt(row); got != recorded {
+		t.Fatalf("opaque credentials should still use the recorded expiry, got %d want %d", got, recorded)
 	}
 }

@@ -3,9 +3,15 @@ package platform
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	sub2APIRateLimitBackoff = time.Minute
+	sub2APIFallbackTokenTTL = 15 * time.Minute
 )
 
 // Sub2ApiAdapter: JWT auth, no login/checkin; balance from /api/v1/auth/me.
@@ -100,11 +106,81 @@ func (a *Sub2ApiAdapter) Login(_ string, _ string, _ string, _ *RequestOption) (
 	return &LoginResult{Success: false, Message: "Sub2API uses JWT authentication; login is not supported"}, nil
 }
 
-func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
+func sub2RefreshReason(body map[string]interface{}) string {
+	if body == nil {
+		return ""
+	}
+	if reason, ok := body["reason"].(string); ok {
+		return strings.ToUpper(strings.TrimSpace(reason))
+	}
+	if errObj, ok := body["error"].(map[string]interface{}); ok {
+		for _, key := range []string{"reason", "code"} {
+			if reason, ok := errObj[key].(string); ok {
+				return strings.ToUpper(strings.TrimSpace(reason))
+			}
+		}
+	}
+	return ""
+}
+
+func sub2RefreshReasonIsFatal(reason string) bool {
+	switch strings.ToUpper(strings.TrimSpace(reason)) {
+	case "REFRESH_TOKEN_INVALID", "REFRESH_TOKEN_EXPIRED", "REFRESH_TOKEN_REUSED", "TOKEN_REVOKED", "SESSION_BINDING_MISMATCH":
+		return true
+	}
+	return false
+}
+
+func sub2RefreshFailure(err error, body map[string]interface{}) *RefreshResult {
+	message := ExtractMessage(body)
+	if message == "" && err != nil {
+		message = err.Error()
+	}
+	if message == "" {
+		message = "Sub2API refresh failed"
+	}
+
+	reason := sub2RefreshReason(body)
+	if reason != "" && !strings.Contains(strings.ToUpper(message), reason) {
+		message += " (" + reason + ")"
+	}
+	result := &RefreshResult{Success: false, Message: message}
+
+	status := HTTPStatusFromError(err)
+	if status == 0 {
+		if code, ok := parseSub2Code(body["code"]); ok {
+			status = code
+		}
+	}
+
+	if status == http.StatusTooManyRequests {
+		result.RetryAfter = RetryAfterFromError(err)
+		if result.RetryAfter <= 0 {
+			result.RetryAfter = sub2APIRateLimitBackoff
+		}
+		return result
+	}
+	if sub2RefreshReasonIsFatal(reason) {
+		result.CredentialDead = true
+		return result
+	}
+
+	// Except for middleware rate limiting, a failed one-time exchange has an
+	// ambiguous outcome: the server may have consumed the old token before the
+	// response was lost or a later step failed. Automatic retry would submit a
+	// known-possibly-used token, so require a fresh login instead.
+	result.CredentialDead = true
+	if !strings.Contains(strings.ToLower(result.Message), "re-login") {
+		result.Message += "; automatic retry disabled because Sub2API refresh tokens are one-time credentials; re-login required"
+	}
+	return result
+}
+
+func (a *Sub2ApiAdapter) RefreshAuth(baseURL, _ string, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
 	cfg := map[string]interface{}{}
 	if strings.TrimSpace(extraConfig) != "" {
 		if err := json.Unmarshal([]byte(extraConfig), &cfg); err != nil {
-			return &RefreshResult{Success: false, Message: "Invalid extraConfig format"}, nil
+			return &RefreshResult{Success: false, Message: "Invalid extraConfig format", CredentialDead: true}, nil
 		}
 		if cfg == nil {
 			cfg = map[string]interface{}{}
@@ -113,61 +189,75 @@ func (a *Sub2ApiAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, o
 
 	sub2apiAuth, ok := cfg[Sub2APIAuthConfigKey].(map[string]interface{})
 	if !ok || sub2apiAuth == nil {
-		return &RefreshResult{Success: false, Message: "No sub2apiAuth found in extraConfig"}, nil
+		return &RefreshResult{Success: false, Message: "No sub2apiAuth found in extraConfig", CredentialDead: true}, nil
 	}
 
 	refreshToken, _ := sub2apiAuth[RefreshTokenKey].(string)
+	refreshToken = strings.TrimSpace(refreshToken)
 	if refreshToken == "" {
-		return &RefreshResult{Success: false, Message: "No refreshToken found in sub2apiAuth"}, nil
+		return &RefreshResult{Success: false, Message: "No refreshToken found in sub2apiAuth", CredentialDead: true}, nil
 	}
 
 	base := normalizeSub2BaseURL(baseURL)
 	url := fmt.Sprintf("%s/api/v1/auth/refresh", base)
 
-	headers := map[string]string{}
-	token := stripBearerPrefix(accessToken)
-	if token != "" {
-		headers["Authorization"] = "Bearer " + token
-	}
-
 	body := map[string]string{
 		"refresh_token": refreshToken,
 	}
 
-	fetchRefresh := func(headers map[string]string) (map[string]interface{}, error) {
-		var res map[string]interface{}
-		if err := a.FetchJSON(url, "POST", headers, body, &res, opt); err != nil {
-			return nil, err
-		}
-		return res, nil
-	}
-
-	res, err := fetchRefresh(headers)
-	if err != nil && token != "" {
-		res, err = fetchRefresh(nil)
-	}
+	// Refresh tokens are one-time credentials upstream. Never retry this request
+	// with/without Authorization: if the first response was lost after the server
+	// rotated the token, submitting the old token again can only destroy recovery.
+	var res map[string]interface{}
+	_, err := fetchJSONOnce(url, "POST", "", nil, body, &res, opt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch refresh: %w", err)
+		return sub2RefreshFailure(err, res), nil
 	}
 
 	dataRaw, err := parseSub2Envelope(res, "/api/v1/auth/refresh")
 	if err != nil {
-		return nil, err
+		return sub2RefreshFailure(err, res), nil
 	}
 	data, _ := dataRaw.(map[string]interface{})
 	if data == nil {
-		return nil, fmt.Errorf("no data in refresh response")
+		return &RefreshResult{
+			Success:        false,
+			Message:        "Sub2API accepted the refresh token but returned no token data; re-login required",
+			CredentialDead: true,
+		}, nil
 	}
 
 	newAccessToken, _ := data["access_token"].(string)
 	newRefreshToken, _ := data["refresh_token"].(string)
 	expiresIn, _ := data["expires_in"].(float64)
+	newAccessToken = strings.TrimSpace(newAccessToken)
+	newRefreshToken = strings.TrimSpace(newRefreshToken)
 
-	if newAccessToken == "" || newRefreshToken == "" || expiresIn <= 0 {
-		return nil, fmt.Errorf("invalid token data in refresh response")
+	if newAccessToken == "" || newRefreshToken == "" {
+		return &RefreshResult{
+			Success:        false,
+			Message:        "Sub2API rotated the session but returned incomplete token data; re-login required",
+			CredentialDead: true,
+		}, nil
+	}
+	if newRefreshToken == refreshToken {
+		return &RefreshResult{
+			Success:        false,
+			Message:        "Sub2API refresh response did not rotate the one-time refresh token; re-login required",
+			CredentialDead: true,
+		}, nil
 	}
 
-	tokenExpiresAt := time.Now().UnixMilli() + int64(expiresIn*1000)
+	tokenExpiresAt := int64(0)
+	if expiresIn > 0 {
+		tokenExpiresAt = time.Now().UnixMilli() + int64(expiresIn*1000)
+	}
+	if tokenExpiresAt <= 0 {
+		tokenExpiresAt = JwtExpiresAtMillis(newAccessToken)
+	}
+	if tokenExpiresAt <= 0 {
+		tokenExpiresAt = time.Now().Add(sub2APIFallbackTokenTTL).UnixMilli()
+	}
 
 	sub2apiAuth[RefreshTokenKey] = newRefreshToken
 	cfg[Sub2APIAuthConfigKey] = sub2apiAuth

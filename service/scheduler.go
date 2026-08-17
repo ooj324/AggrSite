@@ -93,6 +93,8 @@ func StartScheduler() {
 		cron.WithLocation(time.Local),
 		cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)),
 	)
+	checkinJobID = 0
+	balanceJobID = 0
 
 	// Determine effective crons
 	activeCheckinCron = getCronSetting("checkin_cron", config.C.CheckinCron)
@@ -169,8 +171,11 @@ func StopScheduler() {
 	defer schedulerMu.Unlock()
 	if scheduler != nil {
 		scheduler.Stop()
+		scheduler = nil
 		slog.Info("Scheduler stopped")
 	}
+	checkinJobID = 0
+	balanceJobID = 0
 	StopManagedRefreshScheduler()
 }
 

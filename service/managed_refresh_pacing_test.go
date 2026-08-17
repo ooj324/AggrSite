@@ -7,6 +7,7 @@ import (
 	"metapi/aggrsite/platform"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -154,8 +155,8 @@ func TestForceRefreshIsCollapsedRightAfterASuccessfulRefresh(t *testing.T) {
 	row.AccessToken = refreshed
 
 	token, _, didRefresh, err := ForceRefreshManagedSession(row, nil)
-	if err != nil {
-		t.Fatalf("ForceRefreshManagedSession failed: %v", err)
+	if err == nil || !isManagedRefreshDeferred(err) {
+		t.Fatalf("ForceRefreshManagedSession should report the collapsed retry as deferred: %v", err)
 	}
 	if didRefresh {
 		t.Fatal("a credential refreshed seconds ago must not be rotated again")
@@ -165,5 +166,208 @@ func TestForceRefreshIsCollapsedRightAfterASuccessfulRefresh(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("upstream refresh calls = %d, want 1", calls)
+	}
+}
+
+func TestForceRefreshReturnsCredentialPersistedByAnotherWorker(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	calls := 0
+	server := sub2ApiRefreshServer(t, &calls)
+	defer server.Close()
+
+	dueAt := time.Now().Add(time.Minute).UnixMilli()
+	staleRow := newManagedAccount(t, server.URL, `{"sub2apiAuth":{"refreshToken":"refresh-old"},"managedAuth":{"tokenExpiresAt":`+
+		jsonInt(dueAt)+`}}`)
+
+	refreshed, _, didRefresh, err := EnsureManagedSession(staleRow, nil)
+	if err != nil || !didRefresh {
+		t.Fatalf("expected the first worker to refresh, didRefresh=%v err=%v", didRefresh, err)
+	}
+
+	token, _, didRefresh, err := ForceRefreshManagedSession(staleRow, nil)
+	if err != nil {
+		t.Fatalf("a stale caller should receive the already-persisted credential: %v", err)
+	}
+	if didRefresh {
+		t.Fatal("the stale caller must not rotate the credential again")
+	}
+	if token != refreshed {
+		t.Fatalf("returned token = %q, want %q", token, refreshed)
+	}
+	if calls != 1 {
+		t.Fatalf("upstream refresh calls = %d, want 1", calls)
+	}
+}
+
+func TestPermanentRefreshFailureSurvivesBackoffForAutoRelogin(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"code":401,"reason":"REFRESH_TOKEN_INVALID","message":"invalid refresh token"}`))
+	}))
+	defer server.Close()
+
+	dueAt := time.Now().Add(time.Minute).UnixMilli()
+	row := newManagedAccount(t, server.URL, `{"sub2apiAuth":{"refreshToken":"refresh-old"},"managedAuth":{"tokenExpiresAt":`+
+		jsonInt(dueAt)+`}}`)
+
+	if _, _, _, err := EnsureManagedSession(row, nil); err == nil || !isManagedRefreshCredentialDead(err) {
+		t.Fatalf("first permanent failure should be classified as dead: %v", err)
+	}
+	if _, _, _, err := ForceRefreshManagedSession(row, nil); err == nil || !isManagedRefreshCredentialDead(err) {
+		t.Fatalf("forced recovery must retain the permanent classification during backoff: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("dead refresh credential was submitted again during backoff: calls=%d", calls)
+	}
+}
+
+func TestManagedRefreshPersistenceFailureIsCredentialDead(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	calls := 0
+	server := sub2ApiRefreshServer(t, &calls)
+	defer server.Close()
+
+	row := newManagedAccount(t, server.URL, `{"sub2apiAuth":{"refreshToken":"refresh-old"}}`)
+	if _, err := db.Exec(`CREATE TRIGGER reject_managed_refresh BEFORE UPDATE ON accounts BEGIN SELECT RAISE(FAIL, 'write rejected'); END`); err != nil {
+		t.Fatalf("create update trigger: %v", err)
+	}
+
+	if _, _, _, err := ForceRefreshManagedSession(row, nil); err == nil || !isManagedRefreshCredentialDead(err) {
+		t.Fatalf("losing a rotated credential during persistence must require recovery: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("upstream refresh calls = %d, want 1", calls)
+	}
+}
+
+func TestManagedRefreshStateFingerprintIncludesRefreshCredential(t *testing.T) {
+	row := db.AccountWithSite{}
+	row.AccessToken = "same-access"
+	row.SitePlatform = "sub2api"
+	row.SiteURL = "https://sub2.example"
+	oldConfig := `{"sub2apiAuth":{"refreshToken":"refresh-old"}}`
+	row.ExtraConfig = &oldConfig
+	oldFingerprint := managedCredentialFingerprint(row)
+
+	state := &managedRefreshState{}
+	state.syncCredential(oldFingerprint)
+	state.recordFailure(time.Now(), nil)
+	if !state.throttled(time.Now()) {
+		t.Fatal("the failed credential should be backed off")
+	}
+
+	newConfig := `{"sub2apiAuth":{"refreshToken":"refresh-new"}}`
+	row.ExtraConfig = &newConfig
+	state.syncCredential(managedCredentialFingerprint(row))
+	if state.throttled(time.Now()) {
+		t.Fatal("changing only the refresh credential must clear the old backoff")
+	}
+}
+
+func TestManagedRefreshScopeTracksSystemProxyChanges(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	useSystemProxy := true
+	row := db.AccountWithSite{}
+	row.SitePlatform = "new-api-v1"
+	row.SiteURL = "https://new-api.example"
+	row.SiteUseSystemProxy = &useSystemProxy
+	opt := requestOptionForAccount(row)
+
+	if err := db.UpsertSetting("system_proxy_url", "http://127.0.0.1:7890"); err != nil {
+		t.Fatalf("set first system proxy: %v", err)
+	}
+	firstScope := managedRefreshSiteScope(row, opt)
+	firstFingerprint := managedCredentialFingerprint(row)
+
+	if err := db.UpsertSetting("system_proxy_url", "http://127.0.0.1:7891"); err != nil {
+		t.Fatalf("set second system proxy: %v", err)
+	}
+	if secondScope := managedRefreshSiteScope(row, opt); secondScope == firstScope {
+		t.Fatal("changing the actual system proxy route must create a new site pacing scope")
+	}
+	if secondFingerprint := managedCredentialFingerprint(row); secondFingerprint == firstFingerprint {
+		t.Fatal("changing the actual system proxy route must clear the account backoff fingerprint")
+	}
+}
+
+func TestManagedRefreshPacesAccountsSharingASite(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	calls := 0
+	server := sub2ApiRefreshServer(t, &calls)
+	defer server.Close()
+
+	siteID, err := db.CreateSite(db.CreateSiteInput{Name: "shared-sub2", URL: server.URL, Platform: "sub2api", Status: "active"})
+	if err != nil {
+		t.Fatalf("CreateSite failed: %v", err)
+	}
+	newAccount := func(username string) db.AccountWithSite {
+		t.Helper()
+		accountID, createErr := db.CreateAccount(db.CreateAccountInput{
+			SiteID:         siteID,
+			Username:       username,
+			AccessToken:    "jwt-" + username,
+			Status:         "active",
+			CheckinEnabled: true,
+		})
+		if createErr != nil {
+			t.Fatalf("CreateAccount(%s) failed: %v", username, createErr)
+		}
+		extraConfig := `{"sub2apiAuth":{"refreshToken":"refresh-` + username + `"},"managedAuth":{"tokenExpiresAt":` + jsonInt(time.Now().Add(time.Minute).UnixMilli()) + `}}`
+		if updateErr := db.UpdateAccount(accountID, map[string]interface{}{"extra_config": extraConfig}); updateErr != nil {
+			t.Fatalf("UpdateAccount(%s) failed: %v", username, updateErr)
+		}
+		row, getErr := db.GetAccountWithSite(accountID)
+		if getErr != nil {
+			t.Fatalf("GetAccountWithSite(%s) failed: %v", username, getErr)
+		}
+		return *row
+	}
+
+	first := newAccount("one")
+	second := newAccount("two")
+	if _, _, didRefresh, err := EnsureManagedSession(first, nil); err != nil || !didRefresh {
+		t.Fatalf("first shared-site account should refresh, didRefresh=%v err=%v", didRefresh, err)
+	}
+	if _, _, didRefresh, err := EnsureManagedSession(second, nil); err == nil || didRefresh || !isManagedRefreshDeferred(err) {
+		t.Fatalf("second account should be deferred by the shared site budget, didRefresh=%v err=%v", didRefresh, err)
+	}
+	if calls != 1 {
+		t.Fatalf("shared-site refresh calls = %d, want 1", calls)
+	}
+}
+
+func TestManagedRefreshSchedulerWakesForNextSharedSiteSlot(t *testing.T) {
+	setupManagedScanTestDB(t)
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"access_token":"jwt-refreshed","refresh_token":"refresh-next","expires_in":3600}}`))
+	}))
+	defer server.Close()
+
+	dueAt := time.Now().Add(time.Minute).UnixMilli()
+	extraConfig := `{"sub2apiAuth":{"refreshToken":"refresh-old"},"managedAuth":{"tokenExpiresAt":` + jsonInt(dueAt) + `}}`
+	_ = newManagedAccount(t, server.URL, extraConfig)
+	_ = newManagedAccount(t, server.URL, extraConfig)
+
+	StartManagedRefreshScheduler()
+	t.Cleanup(StopManagedRefreshScheduler)
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("deferred shared-site account was not refreshed in its 2-second slot: calls=%d", got)
 	}
 }

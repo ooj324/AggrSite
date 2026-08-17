@@ -30,8 +30,10 @@ const (
 	// Retrying inside the window only keeps the limiter saturated.
 	newApiV1RateLimitBackoff = 20 * time.Minute
 	// newApiV1RefreshRaceBackoff covers the upstream replay grace window, during
-	// which a concurrent rotation makes the same refresh token usable again.
-	newApiV1RefreshRaceBackoff = 30 * time.Second
+	// which a concurrent rotation makes the same refresh token usable again. The
+	// retry must happen well inside that window; waiting for the full 30 seconds
+	// risks turning a recoverable race into refresh-token reuse revocation.
+	newApiV1RefreshRaceBackoff = 2 * time.Second
 )
 
 func init() {
@@ -42,10 +44,14 @@ func init() {
 // POST /api/user/auth/refresh. The refresh cookie rotates on every call, so the
 // updated value is written back into extraConfig together with the new expiry.
 func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
+	return a.refreshAuth(baseURL, accessToken, extraConfig, opt, true)
+}
+
+func (a *NewApiV1Adapter) refreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption, allowImmediateRecovery bool) (*RefreshResult, error) {
 	cfg := map[string]interface{}{}
 	if strings.TrimSpace(extraConfig) != "" {
 		if err := json.Unmarshal([]byte(extraConfig), &cfg); err != nil {
-			return &RefreshResult{Success: false, Message: "Invalid extraConfig format"}, nil
+			return &RefreshResult{Success: false, Message: "Invalid extraConfig format", CredentialDead: true}, nil
 		}
 		if cfg == nil {
 			cfg = map[string]interface{}{}
@@ -65,7 +71,7 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		}
 	}
 	if refreshCookie == "" {
-		return &RefreshResult{Success: false, Message: "No refresh cookie found; re-login required"}, nil
+		return &RefreshResult{Success: false, Message: "No refresh cookie found; re-login required", CredentialDead: true}, nil
 	}
 
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -87,6 +93,49 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		opt,
 	)
 	if err != nil {
+		if !allowImmediateRecovery && HTTPStatusFromError(err) == 0 {
+			// This call was already the one allowed replay-window recovery attempt.
+			// A second transport/response ambiguity may have rotated the cookie again;
+			// there is no credential we can safely persist or submit a third time.
+			return &RefreshResult{
+				Success:        false,
+				Message:        "new-api refresh recovery had an uncertain outcome; re-login required",
+				CredentialDead: true,
+			}, nil
+		}
+		if allowImmediateRecovery && strings.EqualFold(newApiV1ErrorCode(res), "AUTH_REFRESH_RACE") {
+			// Another process/browser won the rotation. The old cookie has a
+			// 30-second replay grace period that returns the winner's deterministic
+			// next secret, so recover once immediately without relying on scheduler
+			// timing near the edge of the grace window.
+			recovered, recoveryErr := a.refreshAuth(baseURL, accessToken, extraConfig, opt, false)
+			if recoveryErr != nil {
+				return nil, recoveryErr
+			}
+			if recovered != nil {
+				return recovered, nil
+			}
+		}
+		if allowImmediateRecovery && HTTPStatusFromError(err) == 0 {
+			// A lost/invalid response may have arrived after upstream rotated the
+			// cookie. Retry once immediately, inside the 30-second replay window,
+			// where the old cookie deterministically recovers the winner's secret.
+			recovered, recoveryErr := a.refreshAuth(baseURL, accessToken, extraConfig, opt, false)
+			if recoveryErr == nil && recovered != nil && recovered.Success {
+				return recovered, nil
+			}
+			if recovered == nil {
+				message := "new-api refresh recovery failed"
+				if recoveryErr != nil {
+					message += ": " + recoveryErr.Error()
+				}
+				recovered = &RefreshResult{Success: false, Message: message}
+			}
+			recovered.CredentialDead = true
+			recovered.RetryAfter = 0
+			recovered.Message += "; refresh outcome is uncertain and automatic replay is no longer safe; re-login required"
+			return recovered, nil
+		}
 		// Classified instead of returned as a bare error: the scheduler has to know
 		// whether waiting helps (throttled) or whether the credential is gone.
 		return newApiV1RefreshFailure(err, res), nil
@@ -97,31 +146,46 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		if message == "" {
 			message = "refresh failed"
 		}
-		result := &RefreshResult{Success: false, Message: message}
-		if code := newApiV1ErrorCode(res); code != "" {
-			result.Message = message + " (" + code + ")"
-			result.CredentialDead = newApiV1CodeIsFatal(code)
-		}
-		return result, nil
+		return newApiV1ClassifiedFailure(message, newApiV1ErrorCode(res), 0, 0), nil
 	}
 
 	data, _ := res["data"].(map[string]interface{})
 	if data == nil {
-		return &RefreshResult{Success: false, Message: "No data in refresh response"}, nil
+		return &RefreshResult{Success: false, Message: "No data in successful refresh response; re-login required", CredentialDead: true}, nil
 	}
 	newAccessToken, _ := data["access_token"].(string)
 	newAccessToken = strings.TrimSpace(newAccessToken)
 	if newAccessToken == "" {
-		return &RefreshResult{Success: false, Message: "No access_token in refresh response"}, nil
+		return &RefreshResult{Success: false, Message: "No access_token in successful refresh response; re-login required", CredentialDead: true}, nil
 	}
 
-	// The refresh token rotates on every successful refresh; keep the previous value
-	// only if the response did not carry a new one.
-	newRefreshCookie := refreshCookie
-	if cookieResult != nil && cookieResult.CookieHeader != "" {
-		if value, ok := CookieValueFromHeader(cookieResult.CookieHeader, newApiV1RefreshCookieName); ok && strings.TrimSpace(value) != "" {
-			newRefreshCookie = strings.TrimSpace(value)
+	// A successful upstream refresh always rotates this cookie. CookieHeader also
+	// contains the value sent with the request, so only raw Set-Cookie response
+	// values prove that the rotated secret reached us.
+	newRefreshCookie, rotated := newApiV1RotatedRefreshCookie(cookieResult, refreshCookie)
+	if !rotated {
+		if allowImmediateRecovery {
+			recovered, recoveryErr := a.refreshAuth(baseURL, accessToken, extraConfig, opt, false)
+			if recoveryErr == nil && recovered != nil && recovered.Success {
+				return recovered, nil
+			}
+			if recovered == nil {
+				message := "new-api rotated-cookie recovery failed"
+				if recoveryErr != nil {
+					message += ": " + recoveryErr.Error()
+				}
+				recovered = &RefreshResult{Success: false, Message: message}
+			}
+			recovered.CredentialDead = true
+			recovered.RetryAfter = 0
+			recovered.Message += "; the rotated cookie could not be recovered; re-login required"
+			return recovered, nil
 		}
+		return &RefreshResult{
+			Success:        false,
+			Message:        "Upstream refreshed the access token but did not return a new refresh cookie; re-login required",
+			CredentialDead: true,
+		}, nil
 	}
 
 	// Expiry priority: what the panel reports, then the token's own exp claim, then a
@@ -149,41 +213,77 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 		return nil, fmt.Errorf("failed to marshal new extraConfig: %w", err)
 	}
 
-	message := "Refreshed via new-api refresh cookie"
-	if newRefreshCookie == refreshCookie {
-		// Upstream always rotates the refresh token when it answers 200, so an unchanged
-		// cookie means the rotated value never reached us (stripped in transit). The
-		// stored one is now the previous secret and will be rejected as a replay.
-		message += " (no rotated refresh cookie in the response; the next refresh will likely need a new login)"
-	}
-
 	return &RefreshResult{
 		Success:     true,
 		AccessToken: newAccessToken,
 		ExtraConfig: string(newExtraConfig),
-		Message:     message,
+		Message:     "Refreshed via new-api refresh cookie",
 	}, nil
+}
+
+func newApiV1RotatedRefreshCookie(result *FetchCookieResult, previous string) (string, bool) {
+	if result == nil {
+		return "", false
+	}
+	var latest string
+	found := false
+	for _, raw := range result.SetCookies {
+		if value, ok := CookieValueFromHeader(raw, newApiV1RefreshCookieName); ok {
+			latest = strings.TrimSpace(value)
+			found = true
+		}
+	}
+	return latest, found && latest != "" && latest != strings.TrimSpace(previous)
 }
 
 // newApiV1RefreshFailure turns a transport/HTTP failure into a classified result.
 // Upstream answers refresh errors with {"success":false,"code":"AUTH_..."} and a
 // generic status text, so the code - not the message - carries the meaning.
 func newApiV1RefreshFailure(err error, res map[string]interface{}) *RefreshResult {
-	result := &RefreshResult{Success: false, Message: "refresh request failed: " + err.Error()}
 	code := newApiV1ErrorCode(res)
+	message := "refresh request failed: " + err.Error()
 	if code != "" {
-		result.Message += " (" + code + ")"
+		message += " (" + code + ")"
+	}
+	return newApiV1ClassifiedFailure(message, code, HTTPStatusFromError(err), RetryAfterFromError(err))
+}
+
+func newApiV1ClassifiedFailure(message, code string, status int, retryHint time.Duration) *RefreshResult {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code != "" && !strings.Contains(strings.ToUpper(message), code) {
+		message += " (" + code + ")"
+	}
+	result := &RefreshResult{Success: false, Message: message}
+
+	// Structured upstream codes are authoritative. In particular, 403 can mean
+	// an Origin/reverse-proxy configuration error rather than a dead credential,
+	// while 409 can mean either a recoverable race or a fatal session mismatch.
+	switch {
+	case code == "AUTH_REFRESH_RACE":
+		result.RetryAfter = newApiV1RefreshRaceBackoff
+		return result
+	case newApiV1CodeIsFatal(code):
+		result.CredentialDead = true
+		return result
+	case code == "AUTH_ORIGIN_FORBIDDEN":
+		return result
 	}
 
-	switch status := HTTPStatusFromError(err); {
+	switch {
 	case status == http.StatusTooManyRequests:
-		result.RetryAfter = newApiV1RateLimitBackoff
-	case status == http.StatusConflict, code == "AUTH_REFRESH_RACE":
-		// A parallel refresh already rotated the token; inside the upstream replay
-		// window the very same cookie still works, so retry soon rather than giving up.
+		result.RetryAfter = retryHint
+		if result.RetryAfter <= 0 {
+			result.RetryAfter = newApiV1RateLimitBackoff
+		}
+	case status == http.StatusConflict:
+		// Limited fallback for older upstreams that did not return an AUTH_* code.
 		result.RetryAfter = newApiV1RefreshRaceBackoff
-	case status == http.StatusUnauthorized, status == http.StatusForbidden, newApiV1CodeIsFatal(code):
+	case status == http.StatusUnauthorized:
 		result.CredentialDead = true
+	case status == http.StatusForbidden:
+		// Refresh-cookie rejection is reported as 401 upstream. An unstructured
+		// 403 is more likely an origin guard, WAF, or reverse-proxy policy and is
+		// not proof that password login is required.
 	}
 	return result
 }

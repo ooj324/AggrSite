@@ -738,6 +738,10 @@ func mergeSetCookiePairs(cookieHeader string, setCookies []string) string {
 
 type FetchCookieResult struct {
 	CookieHeader string
+	// SetCookies contains the raw Set-Cookie values observed by the retry loop.
+	// CookieHeader alone cannot tell whether a rotating cookie was actually
+	// returned, because it also contains the cookie sent with the request.
+	SetCookies []string
 }
 
 // HTTPStatusError reports a completed request that answered with a non-2xx status.
@@ -747,6 +751,7 @@ type FetchCookieResult struct {
 type HTTPStatusError struct {
 	StatusCode int
 	Body       string
+	RetryAfter time.Duration
 }
 
 func (e *HTTPStatusError) Error() string {
@@ -762,6 +767,48 @@ func HTTPStatusFromError(err error) int {
 	return 0
 }
 
+// RetryAfterFromError returns the upstream Retry-After hint carried by err.
+func RetryAfterFromError(err error) time.Duration {
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.RetryAfter
+	}
+	return 0
+}
+
+func parseRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		const maxDurationSeconds = int64((1<<63 - 1) / int64(time.Second))
+		if seconds <= 0 || seconds > maxDurationSeconds {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return 0
+	}
+	delay := when.Sub(now)
+	if delay <= 0 {
+		return 0
+	}
+	return delay
+}
+
+func httpStatusError(resp *http.Response, body string) *HTTPStatusError {
+	return &HTTPStatusError{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()),
+	}
+}
+
 func truncateBodyForErr(s string) string {
 	if len(s) > 200 {
 		return s[:200] + "..."
@@ -769,11 +816,19 @@ func truncateBodyForErr(s string) string {
 	return s
 }
 
-// FetchJSONWithCookieRetry executes an HTTP request, collects and merges Set-Cookie headers across retries,
-// automatically solves Aliyun WAF shield challenges (acw_sc__v2), and unmarshals the JSON response.
-func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (*FetchCookieResult, error) {
+func fetchJSONWithCookieAttempts(reqURL, method string, cookieHeader string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption, maxAttempts int) (*FetchCookieResult, error) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
 	currentCookie := cookieHeader
-	for attempt := 0; attempt < 3; attempt++ {
+	var receivedSetCookies []string
+	result := func() *FetchCookieResult {
+		return &FetchCookieResult{
+			CookieHeader: currentCookie,
+			SetCookies:   append([]string(nil), receivedSetCookies...),
+		}
+	}
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		var bodyReader io.Reader
 		if body != nil {
 			payload, err := json.Marshal(body)
@@ -796,6 +851,15 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 		for k, v := range extraHeaders {
 			setRequestHeader(req, k, v)
 		}
+		if maxAttempts == 1 {
+			// net/http treats POST requests carrying either header as replayable on
+			// some transport failures. A one-time refresh credential must never opt
+			// into that behavior through site-level custom headers. The Sub2API
+			// refresh route is public and must not inherit a site-wide bearer token.
+			req.Header.Del("Authorization")
+			req.Header.Del("Idempotency-Key")
+			req.Header.Del("X-Idempotency-Key")
+		}
 		if req.Header.Get("User-Agent") == "" {
 			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
 		}
@@ -806,10 +870,19 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 			req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 		}
 
+		checkRedirect := preserveHeadersRedirect
+		if maxAttempts == 1 {
+			// A 307/308 redirect replays the original method and body. Strict
+			// one-shot exchanges must surface the redirect instead of submitting a
+			// rotating credential to a second URL.
+			checkRedirect = func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+		}
 		client := &http.Client{
 			Timeout:       30 * time.Second,
 			Transport:     buildTransport(opt),
-			CheckRedirect: preserveHeadersRedirect,
+			CheckRedirect: checkRedirect,
 		}
 
 		resp, err := client.Do(req)
@@ -832,11 +905,12 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 		// Collect Set-Cookie headers from the final response.
 		cookieBeforeSetCookie := currentCookie
 		setCookies := resp.Header.Values("Set-Cookie")
+		receivedSetCookies = append(receivedSetCookies, setCookies...)
 		currentCookie = mergeSetCookiePairs(currentCookie, setCookies)
 
 		// Try to parse JSON first, but never treat non-2xx JSON as success.
 		if out == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return &FetchCookieResult{CookieHeader: currentCookie}, nil
+			return result(), nil
 		}
 		if out != nil {
 			if jsonErr := json.Unmarshal(respBody, out); jsonErr == nil {
@@ -844,12 +918,12 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 					var errData map[string]interface{}
 					if err := json.Unmarshal(respBody, &errData); err == nil {
 						if msg := ExtractMessage(errData); msg != "" {
-							return &FetchCookieResult{CookieHeader: currentCookie}, &HTTPStatusError{StatusCode: resp.StatusCode, Body: msg}
+							return result(), httpStatusError(resp, msg)
 						}
 					}
-					return &FetchCookieResult{CookieHeader: currentCookie}, &HTTPStatusError{StatusCode: resp.StatusCode, Body: truncateBodyForErr(string(respBody))}
+					return result(), httpStatusError(resp, truncateBodyForErr(string(respBody)))
 				}
-				return &FetchCookieResult{CookieHeader: currentCookie}, nil
+				return result(), nil
 			}
 		}
 
@@ -857,9 +931,9 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 		if !isShieldChallenge(resp.Header.Get("Content-Type"), string(respBody)) {
 			// Not a challenge, maybe just a server error
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Body: truncateBodyForErr(string(respBody))}
+				return result(), httpStatusError(resp, truncateBodyForErr(string(respBody)))
 			}
-			return &FetchCookieResult{CookieHeader: currentCookie}, fmt.Errorf("invalid json response (HTTP %d, body snippet: %s)", resp.StatusCode, truncateBodyForErr(string(respBody)))
+			return result(), fmt.Errorf("invalid json response (HTTP %d, body snippet: %s)", resp.StatusCode, truncateBodyForErr(string(respBody)))
 		}
 
 		acwScV2 := solveNewApiAcwScV2(string(respBody))
@@ -875,6 +949,21 @@ func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraH
 	}
 
 	return nil, fmt.Errorf("exceeded max shield bypass attempts")
+}
+
+// FetchJSONWithCookieRetry executes an HTTP request, collects and merges
+// Set-Cookie headers across retries, automatically solves Aliyun WAF shield
+// challenges (acw_sc__v2), and unmarshals the JSON response.
+func FetchJSONWithCookieRetry(reqURL, method string, cookieHeader string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (*FetchCookieResult, error) {
+	return fetchJSONWithCookieAttempts(reqURL, method, cookieHeader, extraHeaders, body, out, opt, 3)
+}
+
+// fetchJSONOnce is reserved for non-replayable requests such as Sub2API's
+// one-time refresh token exchange. It deliberately does not retry a shield
+// challenge because the caller cannot know whether the upstream consumed the
+// request before the response was interrupted.
+func fetchJSONOnce(reqURL, method string, cookieHeader string, extraHeaders map[string]string, body interface{}, out interface{}, opt *RequestOption) (*FetchCookieResult, error) {
+	return fetchJSONWithCookieAttempts(reqURL, method, cookieHeader, extraHeaders, body, out, opt, 1)
 }
 
 // FetchJSONWithCookie retains the simple signature for places that don't need retry logic.

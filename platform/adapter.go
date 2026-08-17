@@ -71,8 +71,9 @@ type RefreshResult struct {
 	// Set when the upstream throttled the refresh endpoint (new-api guards it with
 	// CriticalRateLimit) or reported a concurrent rotation.
 	RetryAfter time.Duration
-	// CredentialDead reports that the refresh credential itself was rejected or
-	// revoked upstream. Retrying cannot help: only a new login can.
+	// CredentialDead reports that the refresh credential was rejected/revoked or
+	// that a one-time rotation had an uncertain outcome and is unsafe to replay.
+	// Retrying cannot help safely: a new login is required.
 	CredentialDead bool
 }
 
@@ -141,34 +142,58 @@ func (b *BaseAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt 
 	return &RefreshResult{Success: false, Message: "RefreshAuth is not supported by " + b.Name}, nil
 }
 
+func resolveRequestProxy(opt *RequestOption) (string, *url.URL) {
+	if opt == nil {
+		return "environment", nil
+	}
+
+	if opt.ProxyURL != nil && *opt.ProxyURL != "" {
+		proxy, err := url.Parse(*opt.ProxyURL)
+		if err != nil {
+			return "environment", nil
+		}
+		return "proxy:" + proxy.String(), proxy
+	}
+	if opt.UseSystemProxy != nil && *opt.UseSystemProxy {
+		systemProxy := config.C.SystemProxyURL
+		if dbSetting, err := db.GetSetting("system_proxy_url"); err == nil && dbSetting.Value != nil && *dbSetting.Value != "" {
+			systemProxy = strings.Trim(*dbSetting.Value, `"`)
+		}
+		if systemProxy == "" {
+			return "environment", nil
+		}
+		proxy, err := url.Parse(systemProxy)
+		if err != nil {
+			return "environment", nil
+		}
+		return "proxy:" + proxy.String(), proxy
+	}
+	if opt.UseSystemProxy != nil && !*opt.UseSystemProxy {
+		return "direct", nil
+	}
+	return "environment", nil
+}
+
+// RequestRouteFingerprint describes the proxy route buildTransport will use.
+// Managed refresh pacing uses it to share an upstream IP budget only between
+// requests that actually leave through the same configured route.
+func RequestRouteFingerprint(opt *RequestOption) string {
+	route, _ := resolveRequestProxy(opt)
+	return route
+}
+
 // buildTransport creates an http.Transport with proxy settings from opt.
 func buildTransport(opt *RequestOption) *http.Transport {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment, // default
 	}
 
-	if opt == nil {
-		return transport
-	}
-
-	if opt.ProxyURL != nil && *opt.ProxyURL != "" {
-		proxy, err := url.Parse(*opt.ProxyURL)
-		if err == nil {
-			transport.Proxy = http.ProxyURL(proxy)
-		}
-	} else if opt.UseSystemProxy != nil && *opt.UseSystemProxy {
-		systemProxy := config.C.SystemProxyURL
-		if dbSetting, err := db.GetSetting("system_proxy_url"); err == nil && dbSetting.Value != nil && *dbSetting.Value != "" {
-			systemProxy = strings.Trim(*dbSetting.Value, `"`)
-		}
-		if systemProxy != "" {
-			proxy, err := url.Parse(systemProxy)
-			if err == nil {
-				transport.Proxy = http.ProxyURL(proxy)
-			}
-		}
-	} else if opt.UseSystemProxy != nil && !*opt.UseSystemProxy {
-		transport.Proxy = nil // explicit no proxy
+	route, proxy := resolveRequestProxy(opt)
+	switch {
+	case proxy != nil:
+		transport.Proxy = http.ProxyURL(proxy)
+	case route == "direct":
+		transport.Proxy = nil
 	}
 
 	return transport

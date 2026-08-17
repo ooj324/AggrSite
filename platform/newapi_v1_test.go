@@ -93,6 +93,7 @@ func TestNewApiV1RefreshAuthRotatesCookieAndStoresCanonicalExpiry(t *testing.T) 
 
 func TestNewApiV1RefreshAuthFallsBackToCookieJarCredential(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Set-Cookie", "new_api_refresh=rotated-from-jar; Path=/api/user/auth; HttpOnly")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-new"}}`))
 	}))
@@ -114,6 +115,117 @@ func TestNewApiV1RefreshAuthFallsBackToCookieJarCredential(t *testing.T) {
 	managed, _ := cfg["managedAuth"].(map[string]interface{})
 	if managed == nil || int64(managed["tokenExpiresAt"].(float64)) <= time.Now().UnixMilli() {
 		t.Fatalf("expected a fallback expiry in the future: %#v", cfg)
+	}
+	authNode, _ := cfg["newApiV1Auth"].(map[string]interface{})
+	if authNode == nil || authNode["refreshCookie"] != "rotated-from-jar" {
+		t.Fatalf("rotated cookie-jar credential was not stored: %#v", cfg)
+	}
+}
+
+func TestNewApiV1RefreshAuthRejectsSuccessWithoutRotatedCookie(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-new"}}`))
+	}))
+	defer server.Close()
+
+	adapter := &NewApiV1Adapter{NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api-v1"}}}
+	res, err := adapter.RefreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil)
+	if err != nil {
+		t.Fatalf("RefreshAuth returned error: %v", err)
+	}
+	if res == nil || res.Success || !res.CredentialDead {
+		t.Fatalf("a successful rotation without Set-Cookie must require re-login, got %+v", res)
+	}
+	if !strings.Contains(strings.ToLower(res.Message), "new refresh cookie") {
+		t.Fatalf("unexpected message: %q", res.Message)
+	}
+}
+
+func TestNewApiV1RefreshAuthRecoversMissingCookieInsideReplayWindow(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 2 {
+			w.Header().Add("Set-Cookie", "new_api_refresh=winner-cookie; Path=/api/user/auth; HttpOnly")
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-recovered"}}`))
+	}))
+	defer server.Close()
+
+	adapter := &NewApiV1Adapter{NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api-v1"}}}
+	res, err := adapter.RefreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil)
+	if err != nil {
+		t.Fatalf("RefreshAuth returned error: %v", err)
+	}
+	if res == nil || !res.Success || res.AccessToken != "jwt-recovered" {
+		t.Fatalf("expected replay-window recovery, got %+v", res)
+	}
+	if calls != 2 {
+		t.Fatalf("recovery calls = %d, want 2", calls)
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(res.ExtraConfig), &cfg); err != nil {
+		t.Fatalf("ExtraConfig is not valid JSON: %v", err)
+	}
+	authNode, _ := cfg["newApiV1Auth"].(map[string]interface{})
+	if authNode == nil || authNode["refreshCookie"] != "winner-cookie" {
+		t.Fatalf("winner refresh cookie was not recovered: %#v", cfg)
+	}
+}
+
+func TestNewApiV1RefreshAuthRecoversRefreshRaceImmediately(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"success":false,"code":"AUTH_REFRESH_RACE","message":"Conflict"}`))
+			return
+		}
+		w.Header().Add("Set-Cookie", "new_api_refresh=winner-cookie; Path=/api/user/auth; HttpOnly")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-recovered"}}`))
+	}))
+	defer server.Close()
+
+	adapter := &NewApiV1Adapter{NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api-v1"}}}
+	res, err := adapter.RefreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil)
+	if err != nil {
+		t.Fatalf("RefreshAuth returned error: %v", err)
+	}
+	if res == nil || !res.Success || res.AccessToken != "jwt-recovered" {
+		t.Fatalf("expected immediate replay-window recovery, got %+v", res)
+	}
+	if calls != 2 {
+		t.Fatalf("refresh race recovery calls = %d, want 2", calls)
+	}
+}
+
+func TestNewApiV1RecoveryDoesNotReplayASecondUncertainOutcome(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "hijacking unsupported", http.StatusInternalServerError)
+			return
+		}
+		conn, _, err := hijacker.Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	adapter := &NewApiV1Adapter{NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api-v1"}}}
+	res, err := adapter.refreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil, false)
+	if err != nil {
+		t.Fatalf("refreshAuth returned error: %v", err)
+	}
+	if res == nil || res.Success || !res.CredentialDead {
+		t.Fatalf("a second uncertain recovery must stop automatic replay, got %+v", res)
 	}
 }
 
@@ -157,6 +269,7 @@ func TestNewApiV1RefreshAuthClassifiesHTTPFailures(t *testing.T) {
 		name               string
 		status             int
 		body               string
+		retryAfterHeader   string
 		wantRetryAfter     time.Duration
 		wantCredentialDead bool
 	}{
@@ -165,6 +278,13 @@ func TestNewApiV1RefreshAuthClassifiesHTTPFailures(t *testing.T) {
 			status:         http.StatusTooManyRequests,
 			body:           `{"success":false,"message":"请求过于频繁"}`,
 			wantRetryAfter: newApiV1RateLimitBackoff,
+		},
+		{
+			name:             "rate limited honors retry after",
+			status:           http.StatusTooManyRequests,
+			body:             `{"success":false,"message":"请求过于频繁"}`,
+			retryAfterHeader: "17",
+			wantRetryAfter:   17 * time.Second,
 		},
 		{
 			name:               "session revoked",
@@ -185,6 +305,22 @@ func TestNewApiV1RefreshAuthClassifiesHTTPFailures(t *testing.T) {
 			wantRetryAfter: newApiV1RefreshRaceBackoff,
 		},
 		{
+			name:   "origin configuration error is not a dead credential",
+			status: http.StatusForbidden,
+			body:   `{"success":false,"code":"AUTH_ORIGIN_FORBIDDEN","message":"request origin is not allowed"}`,
+		},
+		{
+			name:   "unstructured forbidden is not proof of a dead credential",
+			status: http.StatusForbidden,
+			body:   `{"success":false,"message":"forbidden by reverse proxy"}`,
+		},
+		{
+			name:               "session mismatch is fatal despite conflict status",
+			status:             http.StatusConflict,
+			body:               `{"success":false,"code":"AUTH_SESSION_MISMATCH","message":"Conflict"}`,
+			wantCredentialDead: true,
+		},
+		{
 			name:   "transient server error",
 			status: http.StatusBadGateway,
 			body:   `{"success":false,"message":"bad gateway"}`,
@@ -195,6 +331,9 @@ func TestNewApiV1RefreshAuthClassifiesHTTPFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
+				if tc.retryAfterHeader != "" {
+					w.Header().Set("Retry-After", tc.retryAfterHeader)
+				}
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.body))
 			}))

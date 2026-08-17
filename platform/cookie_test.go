@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeCookieHeaderStripsSetCookieAttributes(t *testing.T) {
@@ -96,6 +97,23 @@ func TestFetchJSONAppliesCustomHeadersWithoutOverridingExplicitAuth(t *testing.T
 	}
 }
 
+func TestRequestRouteFingerprintMatchesTransportFallbacks(t *testing.T) {
+	invalidProxy := "http://[invalid"
+	if got := RequestRouteFingerprint(&RequestOption{ProxyURL: &invalidProxy}); got != "environment" {
+		t.Fatalf("invalid proxy route = %q, want environment fallback", got)
+	}
+
+	direct := false
+	if got := RequestRouteFingerprint(&RequestOption{UseSystemProxy: &direct}); got != "direct" {
+		t.Fatalf("explicit direct route = %q", got)
+	}
+
+	proxyURL := "http://127.0.0.1:7890"
+	if got := RequestRouteFingerprint(&RequestOption{ProxyURL: &proxyURL}); got != "proxy:"+proxyURL {
+		t.Fatalf("explicit proxy route = %q", got)
+	}
+}
+
 func TestFetchJSONWithCookieRetryReturnsHTTPErrorForNon2xxJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -111,6 +129,37 @@ func TestFetchJSONWithCookieRetryReturnsHTTPErrorForNon2xxJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "HTTP 403: missing Origin") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchJSONWithCookieRetryPreservesRetryAfterAndSetCookies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "13")
+		w.Header().Add("Set-Cookie", "rotating=value-next; Path=/; HttpOnly")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"success":false,"message":"slow down"}`))
+	}))
+	defer server.Close()
+
+	var res map[string]interface{}
+	cookieResult, err := FetchJSONWithCookieRetry(server.URL, "POST", "rotating=value-old", nil, nil, &res, nil)
+	if err == nil {
+		t.Fatal("expected HTTP error")
+	}
+	if got := RetryAfterFromError(err); got != 13*time.Second {
+		t.Fatalf("Retry-After = %s, want 13s", got)
+	}
+	if cookieResult == nil || len(cookieResult.SetCookies) != 1 || !strings.Contains(cookieResult.SetCookies[0], "rotating=value-next") {
+		t.Fatalf("rotating Set-Cookie was not preserved: %#v", cookieResult)
+	}
+}
+
+func TestParseRetryAfterAcceptsHTTPDate(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
+	value := now.Add(45 * time.Second).Format(http.TimeFormat)
+	if got := parseRetryAfter(value, now); got != 45*time.Second {
+		t.Fatalf("HTTP-date Retry-After = %s, want 45s", got)
 	}
 }
 
