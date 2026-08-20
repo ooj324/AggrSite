@@ -83,7 +83,7 @@ func (a *NewApiV1Adapter) refreshAuth(baseURL, accessToken, extraConfig string, 
 	}
 
 	var res map[string]interface{}
-	cookieResult, err := FetchJSONWithCookieRetry(
+	cookieResult, err := fetchJSONOnce(
 		base+newApiV1RefreshPath,
 		"POST",
 		newApiV1RefreshCookieName+"="+refreshCookie,
