@@ -43,11 +43,14 @@ func init() {
 // RefreshAuth exchanges the stored refresh cookie for a new access token via
 // POST /api/user/auth/refresh. The refresh cookie rotates on every call, so the
 // updated value is written back into extraConfig together with the new expiry.
+//
+// The rotating refresh cookie is a one-time credential. This method makes exactly
+// one HTTP request; if the response is missing the rotated Set-Cookie or the
+// request fails, the attempt is classified and returned to the managed-session
+// scheduler for backoff-based retry. No automatic replay is attempted — replaying
+// a possibly-consumed one-time cookie risks triggering upstream refresh-reuse
+// detection (AUTH_SESSION_REVOKED), which permanently kills the session.
 func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
-	return a.refreshAuth(baseURL, accessToken, extraConfig, opt, true)
-}
-
-func (a *NewApiV1Adapter) refreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption, allowImmediateRecovery bool) (*RefreshResult, error) {
 	cfg := map[string]interface{}{}
 	if strings.TrimSpace(extraConfig) != "" {
 		if err := json.Unmarshal([]byte(extraConfig), &cfg); err != nil {
@@ -93,51 +96,8 @@ func (a *NewApiV1Adapter) refreshAuth(baseURL, accessToken, extraConfig string, 
 		opt,
 	)
 	if err != nil {
-		if !allowImmediateRecovery && HTTPStatusFromError(err) == 0 {
-			// This call was already the one allowed replay-window recovery attempt.
-			// A second transport/response ambiguity may have rotated the cookie again;
-			// there is no credential we can safely persist or submit a third time.
-			return &RefreshResult{
-				Success:        false,
-				Message:        "new-api refresh recovery had an uncertain outcome; re-login required",
-				CredentialDead: true,
-			}, nil
-		}
-		if allowImmediateRecovery && strings.EqualFold(newApiV1ErrorCode(res), "AUTH_REFRESH_RACE") {
-			// Another process/browser won the rotation. The old cookie has a
-			// 30-second replay grace period that returns the winner's deterministic
-			// next secret, so recover once immediately without relying on scheduler
-			// timing near the edge of the grace window.
-			recovered, recoveryErr := a.refreshAuth(baseURL, accessToken, extraConfig, opt, false)
-			if recoveryErr != nil {
-				return nil, recoveryErr
-			}
-			if recovered != nil {
-				return recovered, nil
-			}
-		}
-		if allowImmediateRecovery && HTTPStatusFromError(err) == 0 {
-			// A lost/invalid response may have arrived after upstream rotated the
-			// cookie. Retry once immediately, inside the 30-second replay window,
-			// where the old cookie deterministically recovers the winner's secret.
-			recovered, recoveryErr := a.refreshAuth(baseURL, accessToken, extraConfig, opt, false)
-			if recoveryErr == nil && recovered != nil && recovered.Success {
-				return recovered, nil
-			}
-			if recovered == nil {
-				message := "new-api refresh recovery failed"
-				if recoveryErr != nil {
-					message += ": " + recoveryErr.Error()
-				}
-				recovered = &RefreshResult{Success: false, Message: message}
-			}
-			recovered.CredentialDead = true
-			recovered.RetryAfter = 0
-			recovered.Message += "; refresh outcome is uncertain and automatic replay is no longer safe; re-login required"
-			return recovered, nil
-		}
-		// Classified instead of returned as a bare error: the scheduler has to know
-		// whether waiting helps (throttled) or whether the credential is gone.
+		// Classify the failure so the scheduler knows whether waiting helps
+		// (throttled) or whether the credential is gone (revoked/expired).
 		return newApiV1RefreshFailure(err, res), nil
 	}
 
@@ -164,27 +124,15 @@ func (a *NewApiV1Adapter) refreshAuth(baseURL, accessToken, extraConfig string, 
 	// values prove that the rotated secret reached us.
 	newRefreshCookie, rotated := newApiV1RotatedRefreshCookie(cookieResult, refreshCookie)
 	if !rotated {
-		if allowImmediateRecovery {
-			recovered, recoveryErr := a.refreshAuth(baseURL, accessToken, extraConfig, opt, false)
-			if recoveryErr == nil && recovered != nil && recovered.Success {
-				return recovered, nil
-			}
-			if recovered == nil {
-				message := "new-api rotated-cookie recovery failed"
-				if recoveryErr != nil {
-					message += ": " + recoveryErr.Error()
-				}
-				recovered = &RefreshResult{Success: false, Message: message}
-			}
-			recovered.CredentialDead = true
-			recovered.RetryAfter = 0
-			recovered.Message += "; the rotated cookie could not be recovered; re-login required"
-			return recovered, nil
-		}
+		// The upstream accepted and rotated the cookie but the new value did not
+		// reach us (proxy stripped Set-Cookie, CDN cached the response, etc.).
+		// Do NOT mark CredentialDead: the old cookie may still be within its
+		// upstream replay grace window and the scheduler's exponential backoff
+		// will retry before the window closes. Marking it dead would force a
+		// re-login for what may be a transient proxy issue.
 		return &RefreshResult{
-			Success:        false,
-			Message:        "Upstream refreshed the access token but did not return a new refresh cookie; re-login required",
-			CredentialDead: true,
+			Success: false,
+			Message: "Upstream refreshed the access token but the rotated refresh cookie was not received; will retry",
 		}, nil
 	}
 
