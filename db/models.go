@@ -931,17 +931,39 @@ const accountWithSiteQuery = `
 	INNER JOIN sites s ON a.site_id = s.id
 `
 
+// ListCheckinableAccounts returns accounts with checkin enabled whose status is
+// active or expired. Expired accounts are included because "expired" is set
+// automatically by a failed checkin or balance refresh, not by the user: excluding
+// them would make a single auth failure permanently drop the account from the
+// scheduler, with no path back for platforms without managed session refresh.
+// Only 'disabled' (explicit user intent) stays excluded.
 func ListCheckinableAccounts() ([]AccountWithSite, error) {
 	var rows []AccountWithSite
 	if driverName == "postgres" {
 		err := Select(&rows, accountWithSiteQuery+`
-			WHERE a.checkin_enabled = true AND a.status = 'active'
+			WHERE a.checkin_enabled = true
+			  AND COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
 			ORDER BY a.id ASC
 		`)
 		return rows, err
 	}
 	err := Select(&rows, accountWithSiteQuery+`
-		WHERE a.checkin_enabled = 1 AND a.status = 'active'
+		WHERE a.checkin_enabled = 1
+		  AND COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
+		ORDER BY a.id ASC
+	`)
+	return rows, err
+}
+
+// ListBalanceRefreshableAccounts returns accounts whose balance the scheduler should
+// refresh: status active or expired, for the same reason ListCheckinableAccounts keeps
+// expired rows — a successful refresh flips the account back to active, so excluding
+// them would strand every account that failed auth once. Site status is not filtered
+// here because RefreshBalance skips disabled sites per account.
+func ListBalanceRefreshableAccounts() ([]AccountWithSite, error) {
+	var rows []AccountWithSite
+	err := Select(&rows, accountWithSiteQuery+`
+		WHERE COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
 		ORDER BY a.id ASC
 	`)
 	return rows, err
