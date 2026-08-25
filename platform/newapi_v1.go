@@ -124,15 +124,17 @@ func (a *NewApiV1Adapter) RefreshAuth(baseURL, accessToken, extraConfig string, 
 	// values prove that the rotated secret reached us.
 	newRefreshCookie, rotated := newApiV1RotatedRefreshCookie(cookieResult, refreshCookie)
 	if !rotated {
-		// The upstream accepted and rotated the cookie but the new value did not
-		// reach us (proxy stripped Set-Cookie, CDN cached the response, etc.).
-		// Do NOT mark CredentialDead: the old cookie may still be within its
-		// upstream replay grace window and the scheduler's exponential backoff
-		// will retry before the window closes. Marking it dead would force a
-		// re-login for what may be a transient proxy issue.
+		// The upstream 200 + success:true proves it consumed the old cookie and
+		// rotated to a new value internally. Since Set-Cookie did not reach us
+		// (proxy/CDN stripped it, etc.), the old cookie is dead. The scheduler's
+		// minimum backoff (2 min) always exceeds the upstream's 30-second replay
+		// grace window, so retrying with the consumed cookie is guaranteed to
+		// trigger AUTH_SESSION_REVOKED. Mark the credential dead so autoRelogin
+		// can attempt a password login to establish a fresh session.
 		return &RefreshResult{
-			Success: false,
-			Message: "Upstream refreshed the access token but the rotated refresh cookie was not received; will retry",
+			Success:        false,
+			Message:        "Upstream refreshed the access token but the rotated refresh cookie was not received; re-login required",
+			CredentialDead: true,
 		}, nil
 	}
 

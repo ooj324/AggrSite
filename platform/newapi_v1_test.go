@@ -137,12 +137,12 @@ func TestNewApiV1RefreshAuthRejectsSuccessWithoutRotatedCookie(t *testing.T) {
 	if res == nil || res.Success {
 		t.Fatalf("a successful rotation without Set-Cookie must fail, got %+v", res)
 	}
-	// Missing Set-Cookie is NOT marked as CredentialDead: the old cookie may still
-	// be within its upstream replay grace window, and the scheduler's exponential
-	// backoff will retry. Marking it dead would force a re-login for a transient
-	// proxy issue.
-	if res.CredentialDead {
-		t.Fatalf("missing Set-Cookie should NOT be marked as CredentialDead, got %+v", res)
+	// The upstream 200 + success:true proves it consumed the old cookie. Since the
+	// rotated value didn't reach us, the old cookie is dead. The scheduler's minimum
+	// backoff (2 min) exceeds the upstream's 30-second grace window, so retrying
+	// with the consumed cookie would trigger AUTH_SESSION_REVOKED. Must be dead.
+	if !res.CredentialDead {
+		t.Fatalf("missing Set-Cookie MUST be marked as CredentialDead (upstream consumed the old cookie), got %+v", res)
 	}
 	if !strings.Contains(strings.ToLower(res.Message), "rotated refresh cookie") {
 		t.Fatalf("unexpected message: %q", res.Message)
