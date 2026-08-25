@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"metapi/aggrsite/db"
 	"strings"
 	"time"
 )
@@ -35,6 +36,19 @@ func mergeRuntimeHealth(extraConfig *string, state, reason, source string) strin
 	return mergeAccountExtraConfig(extraConfig, map[string]interface{}{
 		"runtimeHealth": buildRuntimeHealth(state, reason, source),
 	})
+}
+
+// freshRuntimeHealth re-reads extra_config from the database before merging the
+// runtimeHealth update. This prevents a stale in-memory snapshot from overwriting
+// concurrent updates (e.g. a background scheduler refresh that rotated the
+// refresh cookie while a long-running checkin or balance operation was in flight).
+// If the fresh read fails, the provided fallback snapshot is used instead.
+func freshRuntimeHealth(accountID int64, fallback *string, state, reason, source string) string {
+	fresh := fallback
+	if row, err := db.GetAccount(accountID); err == nil && row != nil && row.ExtraConfig != nil {
+		fresh = row.ExtraConfig
+	}
+	return mergeRuntimeHealth(fresh, state, reason, source)
 }
 
 func isApiKeyAccount(accessToken string, apiToken *string, extraConfig *string) bool {

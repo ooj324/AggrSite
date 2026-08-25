@@ -134,29 +134,23 @@ func TestNewApiV1RefreshAuthRejectsSuccessWithoutRotatedCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshAuth returned error: %v", err)
 	}
-	if res == nil || res.Success {
-		t.Fatalf("a successful rotation without Set-Cookie must fail, got %+v", res)
+	if res == nil || res.Success || !res.CredentialDead {
+		t.Fatalf("a successful rotation without Set-Cookie must require re-login, got %+v", res)
 	}
-	// The upstream 200 + success:true proves it consumed the old cookie. Since the
-	// rotated value didn't reach us, the old cookie is dead. The scheduler's minimum
-	// backoff (2 min) exceeds the upstream's 30-second grace window, so retrying
-	// with the consumed cookie would trigger AUTH_SESSION_REVOKED. Must be dead.
-	if !res.CredentialDead {
-		t.Fatalf("missing Set-Cookie MUST be marked as CredentialDead (upstream consumed the old cookie), got %+v", res)
-	}
-	if !strings.Contains(strings.ToLower(res.Message), "rotated refresh cookie") {
+	if !strings.Contains(strings.ToLower(res.Message), "new refresh cookie") {
 		t.Fatalf("unexpected message: %q", res.Message)
 	}
 }
 
-// RefreshAuth must make exactly one HTTP request and never replay the cookie.
-// If the Set-Cookie is missing, it should fail without retrying.
-func TestNewApiV1RefreshAuthDoesNotReplayOnMissingCookie(t *testing.T) {
+func TestNewApiV1RefreshAuthRecoversMissingCookieInsideReplayWindow(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-new"}}`))
+		if calls == 2 {
+			w.Header().Add("Set-Cookie", "new_api_refresh=winner-cookie; Path=/api/user/auth; HttpOnly")
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-recovered"}}`))
 	}))
 	defer server.Close()
 
@@ -165,23 +159,34 @@ func TestNewApiV1RefreshAuthDoesNotReplayOnMissingCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshAuth returned error: %v", err)
 	}
-	if res == nil || res.Success {
-		t.Fatalf("missing Set-Cookie must fail, got %+v", res)
+	if res == nil || !res.Success || res.AccessToken != "jwt-recovered" {
+		t.Fatalf("expected replay-window recovery, got %+v", res)
 	}
-	if calls != 1 {
-		t.Fatalf("RefreshAuth must make exactly 1 HTTP request, got %d", calls)
+	if calls != 2 {
+		t.Fatalf("recovery calls = %d, want 2", calls)
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(res.ExtraConfig), &cfg); err != nil {
+		t.Fatalf("ExtraConfig is not valid JSON: %v", err)
+	}
+	authNode, _ := cfg["newApiV1Auth"].(map[string]interface{})
+	if authNode == nil || authNode["refreshCookie"] != "winner-cookie" {
+		t.Fatalf("winner refresh cookie was not recovered: %#v", cfg)
 	}
 }
 
-// AUTH_REFRESH_RACE is classified with a short RetryAfter so the scheduler
-// retries quickly instead of replaying the cookie inline.
-func TestNewApiV1RefreshAuthClassifiesRefreshRaceWithoutReplay(t *testing.T) {
+func TestNewApiV1RefreshAuthRecoversRefreshRaceImmediately(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"success":false,"code":"AUTH_REFRESH_RACE","message":"Conflict"}`))
+		if calls == 1 {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"success":false,"code":"AUTH_REFRESH_RACE","message":"Conflict"}`))
+			return
+		}
+		w.Header().Add("Set-Cookie", "new_api_refresh=winner-cookie; Path=/api/user/auth; HttpOnly")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"access_token":"jwt-recovered"}}`))
 	}))
 	defer server.Close()
 
@@ -190,27 +195,16 @@ func TestNewApiV1RefreshAuthClassifiesRefreshRaceWithoutReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshAuth returned error: %v", err)
 	}
-	if res == nil || res.Success {
-		t.Fatalf("AUTH_REFRESH_RACE must fail, got %+v", res)
+	if res == nil || !res.Success || res.AccessToken != "jwt-recovered" {
+		t.Fatalf("expected immediate replay-window recovery, got %+v", res)
 	}
-	if calls != 1 {
-		t.Fatalf("RefreshAuth must not replay the cookie, got %d calls", calls)
-	}
-	if res.RetryAfter != newApiV1RefreshRaceBackoff {
-		t.Fatalf("RetryAfter = %s, want %s", res.RetryAfter, newApiV1RefreshRaceBackoff)
-	}
-	if res.CredentialDead {
-		t.Fatalf("AUTH_REFRESH_RACE is not a dead credential")
+	if calls != 2 {
+		t.Fatalf("refresh race recovery calls = %d, want 2", calls)
 	}
 }
 
-// Transport errors (connection reset, timeout) are classified as failures
-// without replaying the cookie — the outcome is uncertain and replay risks
-// triggering upstream refresh-reuse detection.
-func TestNewApiV1TransportErrorDoesNotReplay(t *testing.T) {
-	calls := 0
+func TestNewApiV1RecoveryDoesNotReplayASecondUncertainOutcome(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "hijacking unsupported", http.StatusInternalServerError)
@@ -226,15 +220,12 @@ func TestNewApiV1TransportErrorDoesNotReplay(t *testing.T) {
 	defer server.Close()
 
 	adapter := &NewApiV1Adapter{NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api-v1"}}}
-	res, err := adapter.RefreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil)
+	res, err := adapter.refreshAuth(server.URL, "jwt-old", `{"newApiV1Auth":{"refreshCookie":"old"}}`, nil, false)
 	if err != nil {
-		t.Fatalf("RefreshAuth returned error: %v", err)
+		t.Fatalf("refreshAuth returned error: %v", err)
 	}
-	if res == nil || res.Success {
-		t.Fatalf("transport error must fail, got %+v", res)
-	}
-	if calls != 1 {
-		t.Fatalf("RefreshAuth must not replay after transport error, got %d calls", calls)
+	if res == nil || res.Success || !res.CredentialDead {
+		t.Fatalf("a second uncertain recovery must stop automatic replay, got %+v", res)
 	}
 }
 

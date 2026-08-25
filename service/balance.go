@@ -29,7 +29,7 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 	}
 
 	if row.SiteStatus == "disabled" {
-		extraConfig := mergeRuntimeHealth(row.ExtraConfig, "disabled", "站点已禁用", "balance")
+		extraConfig := freshRuntimeHealth(accountID, row.ExtraConfig, "disabled", "站点已禁用", "balance")
 		_ = db.UpdateAccount(accountID, map[string]interface{}{"extra_config": extraConfig})
 		info := &platform.BalanceInfo{
 			Balance: valueOrZero(row.Balance),
@@ -85,7 +85,7 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		if isAgentRouterPlatform(row.SitePlatform) && failure.Code == "CLOUDFLARE_CHALLENGE" {
 			reason := "AgentRouter balance endpoint is shielded; skipped balance refresh"
 			_ = db.UpdateAccount(accountID, map[string]interface{}{
-				"extra_config": mergeRuntimeHealth(row.ExtraConfig, "degraded", reason, "balance"),
+				"extra_config": freshRuntimeHealth(accountID, row.ExtraConfig, "degraded", reason, "balance"),
 			})
 			info := &platform.BalanceInfo{
 				Balance: valueOrZero(row.Balance),
@@ -97,7 +97,7 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 
 		slog.Warn("Balance refresh failed completely", "account_id", accountID, "err", err)
 		statusUpdate := map[string]interface{}{
-			"extra_config": mergeRuntimeHealth(row.ExtraConfig, "unhealthy", err.Error(), "balance"),
+			"extra_config": freshRuntimeHealth(accountID, row.ExtraConfig, "unhealthy", err.Error(), "balance"),
 		}
 		if failure.Code == "TOKEN_EXPIRED" {
 			statusUpdate["status"] = "expired"
@@ -112,7 +112,7 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 		"balance_used":         info.Used,
 		"quota":                info.Quota,
 		"last_balance_refresh": db.TimeNow(),
-		"extra_config":         mergeRuntimeHealth(row.ExtraConfig, "healthy", "余额刷新成功", "balance"),
+		"extra_config":         freshRuntimeHealth(accountID, row.ExtraConfig, "healthy", "余额刷新成功", "balance"),
 	}
 	if row.Status != nil && *row.Status == "expired" {
 		updates["status"] = "active"

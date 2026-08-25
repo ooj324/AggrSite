@@ -319,7 +319,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	// Skip disabled sites
 	if row.SiteStatus == "disabled" {
 		_ = db.UpdateAccount(accountID, map[string]interface{}{
-			"extra_config": mergeRuntimeHealth(row.ExtraConfig, "disabled", "站点已禁用", "checkin"),
+			"extra_config": freshRuntimeHealth(accountID, row.ExtraConfig, "disabled", "站点已禁用", "checkin"),
 		})
 		_ = db.InsertCheckinLog(accountID, "skipped", "site disabled", "")
 		slog.Info("Checkin skipped: site disabled", "account_id", accountID)
@@ -330,7 +330,7 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	if adapter == nil {
 		msg := "unsupported platform: " + row.SitePlatform
 		_ = db.UpdateAccount(accountID, map[string]interface{}{
-			"extra_config": mergeRuntimeHealth(row.ExtraConfig, "unhealthy", msg, "checkin"),
+			"extra_config": freshRuntimeHealth(accountID, row.ExtraConfig, "unhealthy", msg, "checkin"),
 		})
 		_ = db.InsertCheckinLog(accountID, "skipped", msg, "")
 		return &CheckinAccountResult{Success: false, Status: "skipped", Message: msg}, nil
@@ -544,12 +544,12 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		if healthReason == "" {
 			healthReason = "签到成功"
 		}
-		updates["extra_config"] = mergeRuntimeHealth(row.ExtraConfig, healthState, healthReason, "checkin")
+		updates["extra_config"] = freshRuntimeHealth(accountID, row.ExtraConfig, healthState, healthReason, "checkin")
 		if row.Status != nil && *row.Status == "expired" && status == "success" {
 			updates["status"] = "active"
 		}
 	} else {
-		updates["extra_config"] = mergeRuntimeHealth(row.ExtraConfig, "unhealthy", result.Message, "checkin")
+		updates["extra_config"] = freshRuntimeHealth(accountID, row.ExtraConfig, "unhealthy", result.Message, "checkin")
 		if AnalyzeCheckinFailure(result.Message).Code == "TOKEN_EXPIRED" {
 			updates["status"] = "expired"
 		}
