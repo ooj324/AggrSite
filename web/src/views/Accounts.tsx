@@ -411,7 +411,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     site_id: account?.site_id || (sites[0]?.id ?? 0),
     username: account?.username || '',
     password: '',
-    access_token: accountConfig.credentialMode === 'apikey' ? (account?.api_token || account?.access_token || '') : (account?.access_token || ''),
+    access_token: account?.access_token || '',
     api_token: account?.api_token || '',
     platform_user_id: accountConfig.platformUserId || '',
     status: account?.status || 'active',
@@ -438,7 +438,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   });
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; tokenType?: string; needsUserId?: boolean; shieldBlocked?: boolean; message?: string; modelCount?: number; models?: string[] } | null>(null);
 
-  const parsedApiKeys = mode === 'apikey' && formData.access_token ? formData.access_token.split(/[\n, ]+/).map((k: string) => k.trim()).filter(Boolean) : [];
+  const parsedApiKeys = mode === 'apikey' && formData.api_token ? formData.api_token.split(/[\n, ]+/).map((k: string) => k.trim()).filter(Boolean) : [];
   const isBatchApiKeyInput = mode === 'apikey' && parsedApiKeys.length > 1;
   const currentSite = sites.find((s: Site) => s.id === formData.site_id);
   const isSub2Api = currentSite?.platform === 'sub2api';
@@ -454,8 +454,8 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
   }, [loginSupported, mode]);
 
   const handleVerify = async () => {
-    const accessToken = formData.access_token.trim();
-    if (!accessToken) {
+    const tokenToVerify = mode === 'apikey' ? formData.api_token.trim() : formData.access_token.trim();
+    if (!tokenToVerify) {
       showAlert('请先输入 Token');
       return;
     }
@@ -468,7 +468,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     try {
       const res = await api.post('/api/accounts/verify-token', {
         siteId: Number(formData.site_id),
-        accessToken,
+        accessToken: tokenToVerify,
         platformUserId: formData.platform_user_id ? Number(formData.platform_user_id) : undefined,
         credentialMode: mode,
       });
@@ -518,11 +518,11 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     const refreshCookie = formData.refresh_cookie.trim();
     
     const savedCredential = account
-      ? (mode === 'apikey' ? (account.api_token || account.access_token || '') : (account.access_token || '')).trim()
+      ? (mode === 'apikey' ? (account.api_token || '') : (account.access_token || '')).trim()
       : '';
-    const isTokenChanged = !!account && accessToken !== savedCredential;
+    const isTokenChanged = !!account && (mode === 'apikey' ? apiToken : accessToken) !== savedCredential;
     
-    if (mode !== 'login' && !accessToken) {
+    if (mode !== 'login' && !(mode === 'apikey' ? apiToken : accessToken)) {
       showAlert('请先输入 Token');
       return;
     }
@@ -558,7 +558,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           site_id: Number(formData.site_id),
           username,
           access_token: accessToken,
-          accessTokens: isBatchApiKeyInput ? parsedApiKeys : undefined,
+          apiTokens: isBatchApiKeyInput ? parsedApiKeys : undefined,
           api_token: apiToken,
           checkin_enabled: formData.checkin_enabled,
           status: formData.status,
@@ -659,7 +659,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
                 {mode === 'session' ? (
                   <textarea required className={`${inputClass} min-h-[96px] resize-y col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴 Session Access Token、Cookie 或 Set-Cookie" />
                 ) : (
-                  <textarea required className={`${inputClass} min-h-[80px] resize-y col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder={account ? "API Key" : "粘贴 API Key (支持换行/逗号批量粘贴)"} />
+                  <textarea required className={`${inputClass} min-h-[80px] resize-y col-span-1 sm:col-span-2`} value={formData.api_token} onChange={e => { setFormData({ ...formData, api_token: e.target.value }); setVerifyResult(null); }} placeholder={account ? "API Key" : "粘贴 API Key (支持换行/逗号批量粘贴)"} />
                 )}
                 
                 {mode === 'session' && (

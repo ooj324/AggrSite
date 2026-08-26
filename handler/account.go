@@ -374,6 +374,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		db.CreateAccountInput
 		AccessTokens      []string `json:"accessTokens"`
+		ApiTokens         []string `json:"apiTokens"`
 		SkipModelFetch    *bool    `json:"skipModelFetch"`
 		ProxyURL          *string  `json:"proxyUrl"`
 		UseSystemProxy    *bool    `json:"useSystemProxy"`
@@ -405,8 +406,17 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	input.AccessTokens = trimmedAccessTokens
 
-	if input.AccessToken == "" && input.ApiToken == "" && len(input.AccessTokens) == 0 {
-		fail(w, http.StatusBadRequest, "access_token, api_token or accessTokens is required")
+	trimmedApiTokens := input.ApiTokens[:0]
+	for i := range input.ApiTokens {
+		token := strings.TrimSpace(input.ApiTokens[i])
+		if token != "" {
+			trimmedApiTokens = append(trimmedApiTokens, token)
+		}
+	}
+	input.ApiTokens = trimmedApiTokens
+
+	if input.AccessToken == "" && input.ApiToken == "" && len(input.AccessTokens) == 0 && len(input.ApiTokens) == 0 {
+		fail(w, http.StatusBadRequest, "access_token, api_token, accessTokens or apiTokens is required")
 		return
 	}
 
@@ -430,17 +440,24 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Batch Processing
-	if len(input.AccessTokens) > 0 {
+	if len(input.AccessTokens) > 0 || len(input.ApiTokens) > 0 {
 		var createdCount int
 		var failedCount int
 		var items []map[string]interface{}
 
-		for _, token := range input.AccessTokens {
+		batchTokens := input.AccessTokens
+		isBatchApiKeys := false
+		if input.CredentialMode == "apikey" && len(input.ApiTokens) > 0 {
+			batchTokens = input.ApiTokens
+			isBatchApiKeys = true
+		}
+
+		for _, token := range batchTokens {
 			if strings.TrimSpace(token) == "" {
 				continue
 			}
 			cloneInput := input.CreateAccountInput
-			if input.CredentialMode == "apikey" {
+			if isBatchApiKeys {
 				cloneInput.AccessToken = ""
 				cloneInput.ApiToken = token
 			} else {
@@ -516,13 +533,6 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	if input.Username != "" {
 		usernameDetected = true
-	}
-
-	if input.CredentialMode == "apikey" {
-		if input.ApiToken == "" {
-			input.ApiToken = input.AccessToken
-		}
-		input.AccessToken = ""
 	}
 
 	id, err := db.CreateAccount(input.CreateAccountInput)
@@ -748,13 +758,6 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	if cfgModified {
 		bs, _ := json.Marshal(cfg)
 		fields["extra_config"] = string(bs)
-	}
-
-	if mode, _ := cfg["credentialMode"].(string); mode == "apikey" {
-		if token, ok := fields["access_token"].(string); ok && strings.TrimSpace(token) != "" {
-			fields["api_token"] = strings.TrimSpace(token)
-		}
-		fields["access_token"] = ""
 	}
 
 	if err := db.UpdateAccount(id, fields); err != nil {
