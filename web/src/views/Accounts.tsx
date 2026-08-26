@@ -487,7 +487,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
         if (result.tokenType === 'apikey') {
           showAlert(`API Key 验证成功! 共识别到 ${result.modelCount} 个可用模型`);
         } else {
-          showAlert(`Session 验证成功! ${result.userInfo?.username ? '用户名: ' + result.userInfo.username : ''}`);
+          showAlert(`站点访问令牌验证成功! ${result.userInfo?.username ? '用户名: ' + result.userInfo.username : ''}`);
         }
       } else if (result.message) {
         showAlert(`验证失败: ${result.message}`);
@@ -625,14 +625,14 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
             onClick={() => { setMode('session'); setVerifyResult(null); }}
             className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'session' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
           >
-            Session 令牌
+            站点访问令牌
           </button>
           <button
             type="button"
             onClick={() => { setMode('apikey'); setVerifyResult(null); }}
             className={`flex-1 py-1.5 text-[13px] font-medium rounded-lg transition-all ${mode === 'apikey' ? 'bg-surface text-primary shadow-sm font-semibold' : 'text-textMuted hover:text-textPrimary bg-transparent'}`}
           >
-            API Key
+            模型 API Key
           </button>
         </div>
 
@@ -657,13 +657,13 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
             ) : (
               <>
                 {mode === 'session' ? (
-                  <textarea required className={`${inputClass} min-h-[96px] resize-y col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴 Session Access Token、Cookie 或 Set-Cookie" />
+                  <textarea required className={`${inputClass} min-h-[96px] resize-y col-span-1 sm:col-span-2`} value={formData.access_token} onChange={e => { setFormData({ ...formData, access_token: e.target.value }); setVerifyResult(null); }} placeholder="粘贴站点的访问令牌 (Access Token) 或 Session Cookie" />
                 ) : (
-                  <textarea required className={`${inputClass} min-h-[80px] resize-y col-span-1 sm:col-span-2`} value={formData.api_token} onChange={e => { setFormData({ ...formData, api_token: e.target.value }); setVerifyResult(null); }} placeholder={account ? "API Key" : "粘贴 API Key (支持换行/逗号批量粘贴)"} />
+                  <textarea required className={`${inputClass} min-h-[80px] resize-y col-span-1 sm:col-span-2`} value={formData.api_token} onChange={e => { setFormData({ ...formData, api_token: e.target.value }); setVerifyResult(null); }} placeholder={account ? "模型 API Key" : "粘贴模型 API Key，通常以 sk- 开头 (支持换行/逗号批量粘贴)"} />
                 )}
                 
                 {mode === 'session' && (
-                  <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({ ...formData, api_token: e.target.value })} placeholder="API Token (可选，验证可自动获取)" />
+                  <input type="text" className={inputClass} value={formData.api_token} onChange={e => setFormData({ ...formData, api_token: e.target.value })} placeholder="模型 API Key (可选，验证成功时系统会尝试自动获取)" />
                 )}
                 
                 <input type="text" inputMode="numeric" className={inputClass} value={formData.platform_user_id} onChange={e => { setFormData({ ...formData, platform_user_id: e.target.value.replace(/\D/g, '') }); setVerifyResult(null); }} placeholder="用户 ID (可选，部分站点需要)" />
@@ -707,7 +707,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
           )}
           {verifyResult && verifyResult.success && verifyResult.tokenType === "session" && (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-lg text-[13px] border border-blue-200 dark:border-blue-800">
-              <div className="font-semibold mb-1">Session 验证成功</div>
+              <div className="font-semibold mb-1">站点访问令牌验证成功</div>
             </div>
           )}
           {verifyResult && !verifyResult.success && verifyResult.needsUserId && (
@@ -727,7 +727,7 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
             <p className="text-[12px] text-textMuted mt-[-8px]">{account ? '重新登录后将更新 Token 及签到状态。密码将被加密存储。' : '密码用于自动刷新令牌。它将被加密存储。'}</p>
           )}
           {!loginSupported && (
-            <p className="text-[12px] text-textMuted mt-[-8px]">当前平台不支持账号密码登录，请使用 Session 令牌或 API Key。</p>
+            <p className="text-[12px] text-textMuted mt-[-8px]">当前平台不支持账号密码登录，请使用 站点访问令牌 或 模型 API Key。</p>
           )}
 
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mt-2">
