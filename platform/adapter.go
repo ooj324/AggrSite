@@ -126,6 +126,7 @@ type Adapter interface {
 	GetModels(baseURL, accessToken string, platformUserID int64, opt *RequestOption) ([]string, error)
 	VerifyToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (*VerifyTokenResult, error)
 	RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error)
+	GenerateDashboardAccessToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error)
 }
 
 // BaseAdapter provides shared HTTP helpers.
@@ -140,6 +141,38 @@ func (b *BaseAdapter) PlatformName() string {
 // RefreshAuth default implementation: returns not supported.
 func (b *BaseAdapter) RefreshAuth(baseURL, accessToken, extraConfig string, opt *RequestOption) (*RefreshResult, error) {
 	return &RefreshResult{Success: false, Message: "RefreshAuth is not supported by " + b.Name}, nil
+}
+
+// GenerateDashboardAccessToken default implementation: calls GET /api/user/token.
+func (b *BaseAdapter) GenerateDashboardAccessToken(baseURL, accessToken string, platformUserID int64, opt *RequestOption) (string, error) {
+	url := fmt.Sprintf("%s/api/user/token", baseURL)
+	var res map[string]interface{}
+	
+	if IsCookieSessionToken(accessToken) {
+		usedCookie, err := fetchJSONWithSessionCookie(url, "GET", accessToken, platformUserID, nil, nil, &res, opt)
+		if usedCookie && err != nil {
+			return "", err
+		} else if !usedCookie {
+			headers := AuthHeaders(accessToken, platformUserID)
+			if err := b.FetchJSON(url, "GET", headers, nil, &res, opt); err != nil {
+				return "", err
+			}
+		}
+	} else {
+		headers := AuthHeaders(accessToken, platformUserID)
+		if err := b.FetchJSON(url, "GET", headers, nil, &res, opt); err != nil {
+			return "", err
+		}
+	}
+
+	success, _ := res["success"].(bool)
+	if !success {
+		return "", fmt.Errorf("generate access token failed: %s", ExtractMessage(res))
+	}
+	if data, ok := res["data"].(string); ok && strings.TrimSpace(data) != "" {
+		return strings.TrimSpace(data), nil
+	}
+	return "", fmt.Errorf("no access token in response")
 }
 
 func resolveRequestProxy(opt *RequestOption) (string, *url.URL) {

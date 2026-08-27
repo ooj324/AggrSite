@@ -234,6 +234,83 @@ func VerifyToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func GenerateDashboardAccessToken(w http.ResponseWriter, r *http.Request) {
+	id, valid := parseID(r)
+	if !valid {
+		fail(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	account, err := db.GetAccount(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "account not found")
+		return
+	}
+	site, err := db.GetSite(account.SiteID)
+	if err != nil {
+		fail(w, http.StatusNotFound, "site not found")
+		return
+	}
+
+	ad := platform.GetAdapter(site.Platform)
+	if ad == nil {
+		fail(w, http.StatusBadRequest, "unknown platform")
+		return
+	}
+
+	var cfg map[string]interface{}
+	if account.ExtraConfig != nil && *account.ExtraConfig != "" {
+		json.Unmarshal([]byte(*account.ExtraConfig), &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+
+	platformUserID := int64(0)
+	if existingID, ok := cfg["platformUserId"].(float64); ok {
+		platformUserID = int64(existingID)
+	}
+
+	opt := getRequestOption(site)
+
+	newPAT, err := ad.GenerateDashboardAccessToken(site.URL, account.AccessToken, platformUserID, opt)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	updates := map[string]interface{}{
+		"access_token": newPAT,
+	}
+
+	// Clean up cookie-specific extraConfig
+	cfgModified := false
+	if _, ok := cfg[platform.RefreshCookieKey]; ok {
+		delete(cfg, platform.RefreshCookieKey)
+		cfgModified = true
+	}
+	// Note: in new-api fork, refresh cookie is stored under newApiV1AuthConfigKey
+	if node, ok := cfg[platform.NewApiV1AuthConfigKey].(map[string]interface{}); ok {
+		if _, has := node[platform.RefreshCookieKey]; has {
+			delete(node, platform.RefreshCookieKey)
+			cfg[platform.NewApiV1AuthConfigKey] = node
+			cfgModified = true
+		}
+	}
+	
+	if cfgModified {
+		cfgBytes, _ := json.Marshal(cfg)
+		updates["extra_config"] = string(cfgBytes)
+	}
+
+	if err := db.UpdateAccount(id, updates); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	ok(w, map[string]interface{}{"success": true, "access_token": newPAT})
+}
+
 func RebindSession(w http.ResponseWriter, r *http.Request) {
 	id, valid := parseID(r)
 	if !valid {

@@ -44,8 +44,7 @@ func MountRoutes(r chi.Router) {
 		r.Put("/api/accounts/{id}", UpdateAccount)
 		r.Delete("/api/accounts/{id}", DeleteAccount)
 		r.Post("/api/accounts/{id}/rebind-session", RebindSession)
-
-		// Account Tokens
+		r.Post("/api/accounts/{id}/generate-access-token", GenerateDashboardAccessToken)
 		r.Get("/api/accounts/{id}/tokens", ListAccountTokens)
 		r.Post("/api/accounts/{id}/tokens", CreateAccountToken)
 		r.Delete("/api/account-tokens/{id}", DeleteAccountToken)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon, RefreshCw, Key } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
 import { useAlert } from '../components/AlertProvider';
@@ -21,6 +21,13 @@ const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
   if (account?.api_token) return 'apikey';
   if (typeof account?.access_token === 'string' && account.access_token.trim()) return 'session';
   return 'apikey';
+};
+
+const isCookieBased = (account: any) => {
+  const cfg = parseAccountExtraConfig(account);
+  if (cfg.newApiV1Auth?.refreshCookie) return true;
+  if (typeof account?.access_token === 'string' && account.access_token.toLowerCase().includes('session=')) return true;
+  return false;
 };
 
 const resolveRuntimeHealth = (account: any) => parseAccountExtraConfig(account)?.runtimeHealth || null;
@@ -74,7 +81,7 @@ export default function Accounts() {
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [rebindMode, setRebindMode] = useState(false);
-  const [actionLoading, setActionLoading] = useState<{ id: number; type: 'checkin' | 'refresh' | 'toggle-checkin' } | null>(null);
+  const [actionLoading, setActionLoading] = useState<{ id: number; type: 'checkin' | 'refresh' | 'toggle-checkin' | 'generate-token' } | null>(null);
 
   // Selection & Batch
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -116,13 +123,36 @@ export default function Accounts() {
     if (action === 'delete') {
       if (!confirm(`确定要删除选中的 ${selectedIds.length} 个账号吗？`)) return;
     }
+    if (action === 'generate-token') {
+      if (!confirm(`换取后将为选中的账号生成长效访问令牌 (PAT) 并替换掉 Cookie。是否继续？`)) return;
+    }
 
     setBatchLoading(true);
     try {
-      const res = await api.post('/api/accounts/batch', { ids: selectedIds, action });
-      const data = res as any;
-      if (data.failedItems && data.failedItems.length > 0) {
-        showAlert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+      if (['checkin', 'refresh', 'generate-token'].includes(action)) {
+         let failedItems = [];
+         let successCount = 0;
+         for (const id of selectedIds) {
+           try {
+              if (action === 'checkin') await api.post(`/api/checkin/${id}`);
+              if (action === 'refresh') await api.post(`/api/balance/refresh/${id}`);
+              if (action === 'generate-token') await api.post(`/api/accounts/${id}/generate-access-token`);
+              successCount++;
+           } catch (e: any) {
+              failedItems.push({ id, message: e.message || e.toString() });
+           }
+         }
+         if (failedItems.length > 0) {
+           showAlert(`成功 ${successCount} 个，失败 ${failedItems.length} 个:\n` + failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+         } else {
+           showAlert(`成功操作 ${successCount} 个账号`);
+         }
+      } else {
+        const res = await api.post('/api/accounts/batch', { ids: selectedIds, action });
+        const data = res as any;
+        if (data.failedItems && data.failedItems.length > 0) {
+          showAlert(`部分操作失败:\n` + data.failedItems.map((f: any) => `ID ${f.id}: ${f.message}`).join('\n'));
+        }
       }
       setSelectedIds([]);
       loadData();
@@ -149,7 +179,7 @@ export default function Accounts() {
     }
   };
 
-  const handleAction = async (id: number, type: 'checkin' | 'refresh' | 'toggle-checkin' | 'rebind') => {
+  const handleAction = async (id: number, type: 'checkin' | 'refresh' | 'toggle-checkin' | 'rebind' | 'generate-token') => {
     if (type === 'rebind') {
       const target = accounts.find(a => a.id === id);
       if (target) {
@@ -159,11 +189,21 @@ export default function Accounts() {
       }
       return;
     }
+    
+    if (type === 'generate-token') {
+      if (!window.confirm("换取后将生成面板的长效访问令牌 (PAT) 并替换掉 Cookie，一劳永逸。是否继续？")) {
+        return;
+      }
+    }
 
     setActionLoading({ id, type });
     try {
       if (type === 'checkin') await api.post(`/api/checkin/${id}`);
       if (type === 'refresh') await api.post(`/api/balance/refresh/${id}`);
+      if (type === 'generate-token') {
+        await api.post(`/api/accounts/${id}/generate-access-token`);
+        showAlert('成功生成长期访问令牌');
+      }
       if (type === 'toggle-checkin') {
         const acc = accounts.find(a => a.id === id);
         if (acc) {
@@ -202,6 +242,10 @@ export default function Accounts() {
             已选择 {selectedIds.length} 个账号
           </div>
           <div className="flex items-center gap-2">
+            <button disabled={batchLoading} onClick={() => handleBatchAction('refresh')} className={btnSecondaryClass}>刷新余额</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('checkin')} className={btnSecondaryClass}>签到</button>
+            <button disabled={batchLoading} onClick={() => handleBatchAction('generate-token')} className={btnSecondaryClass}>获取访问令牌</button>
+            <div className="w-[1px] h-4 bg-primary/20 mx-1" />
             <button disabled={batchLoading} onClick={() => handleBatchAction('enable')} className={btnSecondaryClass}>启用</button>
             <button disabled={batchLoading} onClick={() => handleBatchAction('disable')} className={btnSecondaryClass}>禁用</button>
             <div className="w-[1px] h-4 bg-primary/20 mx-1" />
@@ -251,6 +295,7 @@ export default function Accounts() {
                     const isToggleLoading = isRowLoading && actionLoading?.type === 'toggle-checkin';
                     const isCheckinLoading = isRowLoading && actionLoading?.type === 'checkin';
                     const isRefreshLoading = isRowLoading && actionLoading?.type === 'refresh';
+                    const isGenTokenLoading = isRowLoading && actionLoading?.type === 'generate-token';
                     return (
                     <tr key={acc.id} className={`group animate-slide-up ${selectedIds.includes(acc.id) ? '!bg-primary/5' : ''}`}>
                       <td className="text-center">
@@ -355,6 +400,11 @@ export default function Accounts() {
                           <button onClick={() => handleAction(acc.id, 'rebind')} disabled={isRowLoading} className="p-1.5 text-primary hover:text-primaryHover hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50" title="换绑">
                             <LinkIcon size={16} />
                           </button>
+                          {isCookieBased(acc) && (
+                            <button onClick={() => handleAction(acc.id, 'generate-token')} disabled={isRowLoading} className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30 rounded-md transition-colors disabled:opacity-50" title="将 Cookie 换取为永久访问令牌">
+                              {isGenTokenLoading ? <span className="w-4 h-4 border-2 border-purple-400/20 border-t-purple-400 rounded-full animate-spin inline-block align-middle" /> : <Key size={16} />}
+                            </button>
+                          )}
                           <div className="w-[1px] h-3 bg-border mx-0.5" />
                           <button onClick={() => openEdit(acc)} className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors" title="编辑">
                             <Edit2 size={16} />
