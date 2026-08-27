@@ -310,8 +310,18 @@ export default function Accounts() {
                           {acc.username || `Account #${acc.id}`}
                         </div>
                         <div className="flex gap-1 mt-1">
-                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium ${resolveAccountCredentialMode(acc) === "apikey" ? "bg-warningSoft text-warning" : "bg-infoSoft text-info"}`}>
-                            {resolveAccountCredentialMode(acc) === "apikey" ? "API Key" : "Session"}
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium ${
+                            resolveAccountCredentialMode(acc) === "apikey" 
+                              ? "bg-warningSoft text-warning" 
+                              : isCookieBased(acc)
+                                ? "bg-infoSoft text-info"
+                                : "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
+                          }`}>
+                            {resolveAccountCredentialMode(acc) === "apikey" 
+                              ? "API Key" 
+                              : isCookieBased(acc)
+                                ? "Cookie"
+                                : "访问令牌"}
                           </span>
                           {parseAccountExtraConfig(acc)?.proxyUrl && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400">
