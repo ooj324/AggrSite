@@ -281,9 +281,9 @@ func IsCookieSessionToken(accessToken string) bool {
 		return false
 	}
 
-	// 访问令牌 (Access Token) 通常是固定长度的 Base64 字符串（如 32 个字符）。
-	// 如果不包含 ';'，且 '=' 只出现在末尾（作为 Base64 补位），且长度较短，则必定是访问令牌。
-	if !strings.Contains(raw, ";") && len(raw) < 80 {
+	// 根据实际使用情况，访问令牌 (PAT) 的长度通常不超过 32 个字符。
+	// 如果符合这个长度限制，且等号（如果有的话）只出现在补位处，则判定为访问令牌。
+	if !strings.Contains(raw, ";") && len(raw) < 33 {
 		eqIdx := strings.Index(raw, "=")
 		if eqIdx < 0 || strings.Trim(raw[eqIdx:], "=") == "" {
 			return false

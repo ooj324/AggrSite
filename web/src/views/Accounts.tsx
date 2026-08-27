@@ -33,6 +33,15 @@ const isCookieBased = (account: any) => {
   if (token.toLowerCase().includes('session=')) return true;
   if (token.includes(';')) return true;
   
+  // 根据实际使用情况，访问令牌 (PAT) 的长度通常不超过 32 个字符。
+  // 如果符合这个长度限制，并且等号（如果有）只出现在末尾，那就是访问令牌，不是 Cookie。
+  if (token.length < 33) {
+    const eqIdx = token.indexOf('=');
+    if (eqIdx < 0 || token.substring(eqIdx).replace(/=/g, '') === '') {
+      return false;
+    }
+  }
+  
   const eqIdx = token.indexOf('=');
   if (eqIdx > 0 && token.substring(eqIdx).replace(/=/g, '') !== '') return true;
   
