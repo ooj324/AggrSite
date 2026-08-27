@@ -576,6 +576,18 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 			if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
 				platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
 			}
+
+			// 自动清理：如果用户手动更新了 Access Token，且它明显不再是 Cookie 而是 PAT，则自动清除残留的刷新凭据。
+			if input.AccessToken != "" && !platform.IsCookieSessionToken(input.AccessToken) {
+				platform.ClearNewApiV1RefreshCookie(cfg)
+				if node, ok := cfg[platform.Sub2APIAuthConfigKey].(map[string]interface{}); ok && node != nil {
+					delete(node, platform.RefreshTokenKey)
+					if len(node) == 0 {
+						delete(cfg, platform.Sub2APIAuthConfigKey)
+					}
+				}
+			}
+
 			bs, _ := json.Marshal(cfg)
 			db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
 
@@ -646,6 +658,18 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	if input.TokenExpiresAt != nil && *input.TokenExpiresAt > 0 {
 		platform.SetManagedTokenExpiresAt(cfg, platform.NormalizeEpochMillis(*input.TokenExpiresAt))
 	}
+
+	// 自动清理：如果用户手动更新了 Access Token，且它明显不再是 Cookie 而是 PAT，则自动清除残留的刷新凭据。
+	if input.AccessToken != "" && !platform.IsCookieSessionToken(input.AccessToken) {
+		platform.ClearNewApiV1RefreshCookie(cfg)
+		if node, ok := cfg[platform.Sub2APIAuthConfigKey].(map[string]interface{}); ok && node != nil {
+			delete(node, platform.RefreshTokenKey)
+			if len(node) == 0 {
+				delete(cfg, platform.Sub2APIAuthConfigKey)
+			}
+		}
+	}
+
 	bs, _ := json.Marshal(cfg)
 	db.UpdateAccount(id, map[string]interface{}{"extra_config": string(bs)})
 
