@@ -87,6 +87,12 @@ func parseCookiePairsFromSingle(raw string) []cookiePair {
 
 		name := strings.TrimSpace(part[:eq])
 		value := strings.TrimSpace(part[eq+1:])
+		
+		// If the value is empty or just '=', it's likely base64 padding, not a real cookie
+		if value == "" || strings.Trim(value, "=") == "" {
+			continue
+		}
+
 		if !isLikelyCookieName(name) {
 			continue
 		}
