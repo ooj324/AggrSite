@@ -277,6 +277,19 @@ func BuildCookieCandidates(accessToken string) []string {
 // IsCookieSessionToken returns true if the access token looks like a cookie.
 func IsCookieSessionToken(accessToken string) bool {
 	raw := strings.TrimSpace(stripBearerPrefix(accessToken))
+	if raw == "" {
+		return false
+	}
+
+	// 访问令牌 (Access Token) 通常是固定长度的 Base64 字符串（如 32 个字符）。
+	// 如果不包含 ';'，且 '=' 只出现在末尾（作为 Base64 补位），且长度较短，则必定是访问令牌。
+	if !strings.Contains(raw, ";") && len(raw) < 80 {
+		eqIdx := strings.Index(raw, "=")
+		if eqIdx < 0 || strings.Trim(raw[eqIdx:], "=") == "" {
+			return false
+		}
+	}
+
 	return normalizeCookieHeader(raw) != "" || looksLikeSecureCookieSessionValue(raw)
 }
 
