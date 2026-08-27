@@ -26,7 +26,18 @@ const resolveAccountCredentialMode = (account: any): 'session' | 'apikey' => {
 const isCookieBased = (account: any) => {
   const cfg = parseAccountExtraConfig(account);
   if (cfg.newApiV1Auth?.refreshCookie) return true;
-  if (typeof account?.access_token === 'string' && account.access_token.toLowerCase().includes('session=')) return true;
+  
+  const token = typeof account?.access_token === 'string' ? account.access_token.trim() : '';
+  if (!token) return false;
+  
+  if (token.toLowerCase().includes('session=')) return true;
+  if (token.includes(';')) return true;
+  
+  const eqIdx = token.indexOf('=');
+  if (eqIdx > 0 && token.substring(eqIdx).replace(/=/g, '') !== '') return true;
+  
+  if (token.length >= 80) return true;
+  
   return false;
 };
 
