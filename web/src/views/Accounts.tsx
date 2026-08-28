@@ -335,7 +335,7 @@ export default function Accounts() {
                               ? "bg-warningSoft text-warning" 
                               : isCookieBased(acc)
                                 ? "bg-infoSoft text-info"
-                                : "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400"
+                                : "bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400"
                           }`}>
                             {resolveAccountCredentialMode(acc) === "apikey" 
                               ? "API Key" 
