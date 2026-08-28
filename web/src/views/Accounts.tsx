@@ -430,7 +430,7 @@ export default function Accounts() {
                           <button onClick={() => handleAction(acc.id, 'rebind')} disabled={isRowLoading} className="p-1.5 text-primary hover:text-primaryHover hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50" title="换绑">
                             <LinkIcon size={16} />
                           </button>
-                          {isCookieBased(acc) && (
+                          {isCookieBased(acc) && /^new-api(-v\d+)?$/i.test(acc.site_platform?.trim() || '') && (
                             <button onClick={() => handleAction(acc.id, 'generate-token')} disabled={isRowLoading} className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/30 rounded-md transition-colors disabled:opacity-50" title="将 Cookie 换取为永久访问令牌">
                               {isGenTokenLoading ? <span className="w-4 h-4 border-2 border-purple-400/20 border-t-purple-400 rounded-full animate-spin inline-block align-middle" /> : <Key size={16} />}
                             </button>
