@@ -613,8 +613,12 @@ function AccountModal({ account, isRebind, sites, onClose, onSaved }: any) {
     }
 
     if (account && isTokenChanged && !verifyResult?.success && mode !== 'login') {
-      showAlert('检测到 Token 修改，请先点击验证 Token 成功后再保存');
-      return;
+      // 允许跳过验证强制保存：Token 可能暂时无法验证（站点维护、反爬拦截等），
+      // 后端保存时也不会强制校验，交由用户自行确认。
+      const forceSave = window.confirm(
+        '检测到 Token 修改，但未验证或验证失败。\n\n建议先点击「验证 Token」确认有效性。\n是否跳过验证并强制保存？'
+      );
+      if (!forceSave) return;
     }
 
     setLoading(true);
