@@ -24,7 +24,7 @@ func RefreshBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := service.RefreshBalance(accountID)
+	result, err := service.RefreshBalance(accountID, service.RefreshBalanceOption{Force: true})
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return

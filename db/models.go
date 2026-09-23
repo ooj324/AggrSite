@@ -12,6 +12,37 @@ func TimeNow() string {
 	return time.Now().Local().Format("2006-01-02T15:04:05")
 }
 
+// dbTimeLayouts lists the timestamp string layouts we may read back from the
+// active database. SQLite returns the exact string written by TimeNow, while
+// Postgres formats its TIMESTAMP column via time.Time (space separator, optional
+// fractional seconds / zone). Layouts without a zone are interpreted in the
+// local location to match how TimeNow writes them.
+var dbTimeLayouts = []string{
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+	"2006-01-02 15:04:05.999999",
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02 15:04:05Z07:00",
+	"2006-01-02 15:04:05.999999Z07:00",
+}
+
+// ParseDBTime parses a timestamp string read from the database, trying the
+// known driver-specific layouts. Zone-less layouts are parsed in the local
+// location so comparisons against time.Now() are correct regardless of the
+// server timezone.
+func ParseDBTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range dbTimeLayouts {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 func nilIfEmpty(s string) interface{} {
 	if s == "" {
 		return nil
@@ -966,7 +997,22 @@ func ListBalanceRefreshableAccounts() ([]AccountWithSite, error) {
 		WHERE COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
 		ORDER BY a.id ASC
 	`)
-	return rows, err
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []AccountWithSite
+	for _, r := range rows {
+		if r.LastBalanceRefresh != nil {
+			if t, ok := ParseDBTime(*r.LastBalanceRefresh); ok {
+				if time.Since(t) < 3*time.Minute {
+					continue
+				}
+			}
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered, nil
 }
 
 func GetAccountWithSite(accountID int64) (*AccountWithSite, error) {

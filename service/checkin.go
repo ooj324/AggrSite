@@ -8,6 +8,7 @@ import (
 	"metapi/aggrsite/platform"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ---- Helpers ----
@@ -505,7 +506,10 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 	directSuccess := result.Success && !alreadyCheckedIn && !unsupported && !turnstileRequired
 	var refreshedBalance *BalanceResult
 	if effectiveSuccess && !unsupported && !turnstileRequired {
-		refreshedBalance, _ = RefreshBalance(accountID)
+		refreshedBalance, err = RefreshBalance(accountID, RefreshBalanceOption{SkipRelogin: true, Force: true})
+		if err != nil {
+			slog.Warn("CheckinAccount: balance refresh after checkin failed", "account_id", accountID, "err", err)
+		}
 	}
 
 	// Reward inference if success but no explicit reward. Use the persisted balance
@@ -716,17 +720,30 @@ func CheckinAll() ([]CheckinAllResult, error) {
 	}
 
 	var results []CheckinAllResult
+	siteAccounts := make(map[int64][]db.AccountWithSite)
 	for _, row := range rows {
-		r, _ := CheckinAccount(row.ID)
-		if r == nil {
-			r = &CheckinAccountResult{Success: false, Status: "failed", Message: "internal error"}
+		siteAccounts[row.SiteID] = append(siteAccounts[row.SiteID], row)
+	}
+
+	for _, siteRows := range siteAccounts {
+		for i, row := range siteRows {
+			if i > 0 {
+				time.Sleep(500 * time.Millisecond)
+			}
+			r, err := CheckinAccount(row.ID)
+			if err != nil {
+				slog.Warn("CheckinAll: checkin failed", "account_id", row.ID, "err", err)
+			}
+			if r == nil {
+				r = &CheckinAccountResult{Success: false, Status: "failed", Message: "internal error"}
+			}
+			results = append(results, CheckinAllResult{
+				AccountID: row.ID,
+				Username:  nullStr(row.Username),
+				Site:      row.SiteName,
+				Result:    r,
+			})
 		}
-		results = append(results, CheckinAllResult{
-			AccountID: row.ID,
-			Username:  nullStr(row.Username),
-			Site:      row.SiteName,
-			Result:    r,
-		})
 	}
 
 	return results, nil

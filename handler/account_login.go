@@ -205,7 +205,7 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 		_, _ = db.CreateAccountToken(accountID, "default", preferredToken)
 	}
 
-	_, _ = service.RefreshBalance(accountID)
+	_, _ = service.RefreshBalance(accountID, service.RefreshBalanceOption{Force: true})
 
 	account, _ := db.GetAccount(accountID)
 	ok(w, map[string]interface{}{

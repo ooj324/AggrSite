@@ -7,6 +7,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // NewApiAdapter handles new-api compatible platforms,
@@ -18,6 +20,91 @@ type NewApiAdapter struct {
 func init() {
 	Register(&NewApiAdapter{BaseAdapter: BaseAdapter{Name: "new-api"}})
 }
+
+// ---- Resolved user-id cache ----
+//
+// discoverUserId is the single most expensive step for cookie-session accounts:
+// it can probe up to len(BuildUserIDProbeCandidates) x len(BuildCookieCandidates)
+// combinations, and it is invoked separately by Checkin, GetBalance,
+// GetApiTokens and GetModels. Within one scheduled run a single account would
+// therefore re-run the whole probe matrix several times (e.g. Checkin then the
+// RefreshBalance that follows a successful checkin).
+//
+// The resolved id is stable for a given (baseURL, token) pair, so we memoize it.
+// The cache key embeds the token, which means a relogin (new token) naturally
+// misses the cache instead of reusing a stale id.
+const resolvedUserIDCacheTTL = time.Hour
+
+type resolvedUserIDEntry struct {
+	userID    int64
+	expiresAt time.Time
+}
+
+var (
+	resolvedUserIDCacheMu     sync.Mutex
+	resolvedUserIDCache       = map[string]resolvedUserIDEntry{}
+	resolvedUserIDCleanupOnce sync.Once
+)
+
+// startResolvedUserIDCleanup launches a background goroutine that periodically
+// removes expired entries from the cache, preventing unbounded memory growth
+// when many distinct (baseURL, token) pairs are seen over time.
+func startResolvedUserIDCleanup() {
+	resolvedUserIDCleanupOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(10 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				resolvedUserIDCacheMu.Lock()
+				now := time.Now()
+				for k, entry := range resolvedUserIDCache {
+					if now.After(entry.expiresAt) {
+						delete(resolvedUserIDCache, k)
+					}
+				}
+				resolvedUserIDCacheMu.Unlock()
+			}
+		}()
+	})
+}
+
+func resolvedUserIDCacheKey(baseURL, accessToken string) string {
+	return strings.TrimRight(baseURL, "/") + "\x00" + accessToken
+}
+
+func lookupResolvedUserID(baseURL, accessToken string) (int64, bool) {
+	startResolvedUserIDCleanup()
+	key := resolvedUserIDCacheKey(baseURL, accessToken)
+	resolvedUserIDCacheMu.Lock()
+	defer resolvedUserIDCacheMu.Unlock()
+	entry, ok := resolvedUserIDCache[key]
+	if !ok {
+		return 0, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(resolvedUserIDCache, key)
+		return 0, false
+	}
+	return entry.userID, true
+}
+
+func storeResolvedUserID(baseURL, accessToken string, userID int64) {
+	if userID <= 0 {
+		return
+	}
+	key := resolvedUserIDCacheKey(baseURL, accessToken)
+	resolvedUserIDCacheMu.Lock()
+	resolvedUserIDCache[key] = resolvedUserIDEntry{userID: userID, expiresAt: time.Now().Add(resolvedUserIDCacheTTL)}
+	resolvedUserIDCacheMu.Unlock()
+}
+
+// maxCookieVariantsPerProbe bounds how many cookie header variants we try per
+// candidate user id. Every candidate id is always probed with the primary
+// (first) cookie candidate so a real id is never starved by the budget; the
+// remaining cookie variants are only tried up to this many times total, which
+// keeps the worst-case fan-out at roughly len(candidateIDs) + this budget
+// instead of the full candidate x cookie cartesian product.
+const maxCookieVariantsPerProbe = 8
 
 func (a *NewApiAdapter) Login(baseURL, username, password string, opt *RequestOption) (*LoginResult, error) {
 	return a.LoginWithCookieFallback(baseURL, username, password, opt)
@@ -68,6 +155,21 @@ func (a *NewApiAdapter) discoverUserId(baseURL, accessToken string, platformUser
 		return platformUserID
 	}
 
+	// Reuse a previously resolved id for this (baseURL, token) pair to avoid
+	// re-running the full probe matrix on every Checkin/GetBalance/GetApiTokens
+	// call within a scheduled run.
+	if cached, ok := lookupResolvedUserID(baseURL, accessToken); ok {
+		return cached
+	}
+
+	id := a.probeUserId(baseURL, accessToken, opt)
+	storeResolvedUserID(baseURL, accessToken, id)
+	return id
+}
+
+// probeUserId runs the actual discovery probes. Callers should prefer
+// discoverUserId, which memoizes the result.
+func (a *NewApiAdapter) probeUserId(baseURL, accessToken string, opt *RequestOption) int64 {
 	isCookie := IsCookieSessionToken(accessToken)
 
 	if !isCookie {
@@ -115,9 +217,19 @@ func (a *NewApiAdapter) discoverUserId(baseURL, accessToken string, platformUser
 		}
 	}
 
-	// 4. Try probing candidate IDs (including Gob/Regex extracted IDs)
+	// 4. Try probing candidate IDs (including Gob/Regex extracted IDs).
+	// Every candidate id is probed with the primary cookie so a real id is never
+	// starved; extra cookie variants share a bounded budget (maxCookieVariantsPerProbe).
+	cookies := BuildCookieCandidates(accessToken)
+	extraCookieBudget := maxCookieVariantsPerProbe
 	for _, id := range BuildUserIDProbeCandidates(accessToken) {
-		for _, cookie := range BuildCookieCandidates(accessToken) {
+		for ci, cookie := range cookies {
+			if ci > 0 {
+				if extraCookieBudget <= 0 {
+					break
+				}
+				extraCookieBudget--
+			}
 			var res map[string]interface{}
 			url := fmt.Sprintf("%s/api/user/self", baseURL)
 			_, err := FetchJSONWithCookieRetry(url, "GET", cookie, CookieUserIDHeaders(id), nil, &res, opt)
@@ -239,10 +351,18 @@ func (a *NewApiAdapter) tryCookieCheckin(baseURL, accessToken string, userID int
 // that differs from currentUserID. Mirrors TS probeAlternateUserIdByCookie.
 func (a *NewApiAdapter) probeAlternateCookieUserId(baseURL, accessToken string, currentUserID int64, opt *RequestOption) int64 {
 	candidates := BuildUserIDProbeCandidates(accessToken)
-	for _, cookie := range BuildCookieCandidates(accessToken) {
-		for _, id := range candidates {
-			if id == currentUserID {
-				continue
+	cookies := BuildCookieCandidates(accessToken)
+	extraCookieBudget := maxCookieVariantsPerProbe
+	for _, id := range candidates {
+		if id == currentUserID {
+			continue
+		}
+		for ci, cookie := range cookies {
+			if ci > 0 {
+				if extraCookieBudget <= 0 {
+					break
+				}
+				extraCookieBudget--
 			}
 			var res map[string]interface{}
 			url := fmt.Sprintf("%s/api/user/self", baseURL)
@@ -309,6 +429,10 @@ func (a *NewApiAdapter) Checkin(baseURL, accessToken string, platformUserID int6
 	alternateUserID := a.probeAlternateCookieUserId(baseURL, accessToken, resolvedUserID, opt)
 	if alternateUserID > 0 {
 		if result, errMsg := a.tryCookieCheckin(baseURL, accessToken, alternateUserID, opt); result != nil {
+			// The alternate id is the one that actually works for this token;
+			// cache it so the follow-up RefreshBalance reuses it instead of
+			// re-running the probe matrix.
+			storeResolvedUserID(baseURL, accessToken, alternateUserID)
 			return result, nil
 		} else if errMsg != "" {
 			firstFailureMessage = errMsg

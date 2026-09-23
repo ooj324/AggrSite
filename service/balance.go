@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"metapi/aggrsite/db"
 	"metapi/aggrsite/platform"
+	"time"
 )
 
 type BalanceResult struct {
@@ -22,7 +23,20 @@ func valueOrZero(v *float64) float64 {
 	return *v
 }
 
-func RefreshBalance(accountID int64) (*BalanceResult, error) {
+const balanceRefreshCooldown = 3 * time.Minute
+
+type RefreshBalanceOption struct {
+	SkipRelogin bool
+	// Force bypasses the recently-refreshed cooldown. Use it for user-initiated
+	// refreshes (manual button, post-login, post-edit) where stale data is
+	// surprising; scheduled/batch refreshes leave it false to honor the cooldown.
+	Force bool
+}
+
+func RefreshBalance(accountID int64, opts RefreshBalanceOption) (*BalanceResult, error) {
+	skipRelogin := opts.SkipRelogin
+	force := opts.Force
+
 	row, err := db.GetAccountWithSite(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("account not found: %w", err)
@@ -37,6 +51,19 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 			Quota:   valueOrZero(row.Quota),
 		}
 		return &BalanceResult{Success: true, Balance: info, Skipped: true, Reason: "site_disabled"}, nil
+	}
+
+	if !force && row.LastBalanceRefresh != nil {
+		if t, ok := db.ParseDBTime(*row.LastBalanceRefresh); ok {
+			if time.Since(t) < balanceRefreshCooldown {
+				info := &platform.BalanceInfo{
+					Balance: valueOrZero(row.Balance),
+					Used:    valueOrZero(row.BalanceUsed),
+					Quota:   valueOrZero(row.Quota),
+				}
+				return &BalanceResult{Success: true, Balance: info, Skipped: true, Reason: "recently_refreshed"}, nil
+			}
+		}
 	}
 
 	if isApiKeyAccount(row.AccessToken, row.ApiToken, row.ExtraConfig) {
@@ -72,11 +99,15 @@ func RefreshBalance(accountID int64) (*BalanceResult, error) {
 
 	info, err := adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
 	if err != nil {
-		slog.Warn("Balance refresh failed, attempting auto-relogin", "account_id", accountID, "err", err)
-		if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
-			row.AccessToken = refreshedAccessToken
-			// Retry balance
-			info, err = adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
+		if skipRelogin {
+			slog.Warn("Balance refresh failed, skipping auto-relogin as requested", "account_id", accountID, "err", err)
+		} else {
+			slog.Warn("Balance refresh failed, attempting auto-relogin", "account_id", accountID, "err", err)
+			if refreshedAccessToken := tryAutoRelogin(*row, adapter, opt); refreshedAccessToken != "" {
+				row.AccessToken = refreshedAccessToken
+				// Retry balance
+				info, err = adapter.GetBalance(row.SiteURL, row.AccessToken, platformUserID, opt)
+			}
 		}
 	}
 
@@ -139,17 +170,30 @@ func RefreshAllBalances() ([]RefreshAllResult, error) {
 	}
 
 	var results []RefreshAllResult
+	siteAccounts := make(map[int64][]db.AccountWithSite)
 	for _, row := range accounts {
-		r, _ := RefreshBalance(row.ID)
-		if r == nil {
-			r = &BalanceResult{Success: false, Message: "internal error"}
+		siteAccounts[row.SiteID] = append(siteAccounts[row.SiteID], row)
+	}
+
+	for _, rows := range siteAccounts {
+		for i, row := range rows {
+			if i > 0 {
+				time.Sleep(200 * time.Millisecond)
+			}
+			r, err := RefreshBalance(row.ID, RefreshBalanceOption{})
+			if err != nil {
+				slog.Warn("RefreshAllBalances: refresh failed", "account_id", row.ID, "err", err)
+			}
+			if r == nil {
+				r = &BalanceResult{Success: false, Message: "internal error"}
+			}
+			results = append(results, RefreshAllResult{
+				AccountID: row.ID,
+				Username:  nullStr(row.Username),
+				Site:      row.SiteName,
+				Result:    r,
+			})
 		}
-		results = append(results, RefreshAllResult{
-			AccountID: row.ID,
-			Username:  nullStr(row.Username),
-			Site:      row.SiteName,
-			Result:    r,
-		})
 	}
 
 	return results, nil

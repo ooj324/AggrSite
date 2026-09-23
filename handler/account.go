@@ -683,7 +683,7 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 		// sync balance
 		if input.CredentialMode != "apikey" && activeAccessToken != "" {
-			service.RefreshBalance(id)
+			service.RefreshBalance(id, service.RefreshBalanceOption{Force: true})
 			if account, err := db.GetAccount(id); err == nil {
 				activeAccessToken = account.AccessToken
 			}
