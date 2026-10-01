@@ -84,7 +84,7 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input.Value = strings.TrimSpace(input.Value)
-	if isSchedulerSettingKey(key) {
+	if isCronSettingKey(key) {
 		if err := service.ValidateCronExpr(input.Value); err != nil {
 			fail(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
 			return
@@ -103,8 +103,13 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]interface{}{"key": key, "value": input.Value})
 }
 
-func isSchedulerSettingKey(key string) bool {
+func isCronSettingKey(key string) bool {
 	return key == "checkin_cron" || key == "balance_refresh_cron"
+}
+
+func isSchedulerSettingKey(key string) bool {
+	return key == "checkin_cron" || key == "balance_refresh_cron" ||
+		key == "checkin_window_start" || key == "checkin_window_end"
 }
 
 func TestTurnstileSolver(w http.ResponseWriter, r *http.Request) {

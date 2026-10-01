@@ -123,6 +123,7 @@ export interface SchedulerStatus {
   running: boolean;
   checkin_cron: string;
   next_checkin: string;
+  pending_checkins: number;
   balance_refresh_cron: string;
   next_balance_refresh: string;
   managed_refresh_running?: boolean;

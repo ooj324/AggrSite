@@ -14,6 +14,8 @@ export default function Settings() {
 
   const [formData, setFormData] = useState({
     CHECKIN_CRON: '',
+    CHECKIN_WINDOW_START: '7',
+    CHECKIN_WINDOW_END: '23',
     BALANCE_REFRESH_CRON: '',
     SYSTEM_PROXY_URL: '',
     TURNSTILE_PROVIDER: 'yescaptcha',
@@ -28,6 +30,8 @@ export default function Settings() {
       const [
         schedRes,
         checkinSet,
+        winStartSet,
+        winEndSet,
         balanceSet,
         proxySet,
         tsProvider,
@@ -37,6 +41,8 @@ export default function Settings() {
       ] = await Promise.all([
         api.get('/api/scheduler/status'),
         api.get('/api/settings/checkin_cron').catch(() => ({ value: '' })),
+        api.get('/api/settings/checkin_window_start').catch(() => ({ value: '' })),
+        api.get('/api/settings/checkin_window_end').catch(() => ({ value: '' })),
         api.get('/api/settings/balance_refresh_cron').catch(() => ({ value: '' })),
         api.get('/api/settings/system_proxy_url').catch(() => ({ value: '' })),
         api.get('/api/settings/turnstile_solver_provider').catch(() => ({ value: 'yescaptcha' })),
@@ -50,6 +56,8 @@ export default function Settings() {
       
       setFormData({
         CHECKIN_CRON: (checkinSet as any)?.value || statusData.checkin_cron || '',
+        CHECKIN_WINDOW_START: (winStartSet as any)?.value || '7',
+        CHECKIN_WINDOW_END: (winEndSet as any)?.value || '23',
         BALANCE_REFRESH_CRON: (balanceSet as any)?.value || statusData.balance_refresh_cron || '',
         SYSTEM_PROXY_URL: (proxySet as any)?.value || '',
         TURNSTILE_PROVIDER: (tsProvider as any)?.value || 'yescaptcha',
@@ -75,6 +83,8 @@ export default function Settings() {
     try {
       await Promise.all([
         api.put('/api/settings/checkin_cron', { value: formData.CHECKIN_CRON }),
+        api.put('/api/settings/checkin_window_start', { value: formData.CHECKIN_WINDOW_START }),
+        api.put('/api/settings/checkin_window_end', { value: formData.CHECKIN_WINDOW_END }),
         api.put('/api/settings/balance_refresh_cron', { value: formData.BALANCE_REFRESH_CRON }),
         api.put('/api/settings/system_proxy_url', { value: formData.SYSTEM_PROXY_URL }),
         api.put('/api/settings/turnstile_solver_provider', { value: formData.TURNSTILE_PROVIDER }),
@@ -154,7 +164,7 @@ export default function Settings() {
 
               <div>
                 <label className="block text-[13px] font-medium text-textSecondary mb-1.5">签到 Cron 表达式</label>
-                <p className="text-[12px] text-textMuted mb-2">控制自动签到的运行频率。留空表示禁用。当前调度时区：{status?.timezone || 'Local'}。</p>
+                <p className="text-[12px] text-textMuted mb-2">控制自动签到的触发频率。每次触发后，各账号会在下次触发前的时间窗口内随机延迟执行，模拟人工行为。留空表示禁用。时区：{status?.timezone || 'Local'}。</p>
                 <input 
                   type="text" 
                   className={inputClass}
@@ -163,8 +173,36 @@ export default function Settings() {
                   onChange={e => setFormData({...formData, CHECKIN_CRON: e.target.value})} 
                 />
                 {status?.next_checkin && (
-                  <p className="text-[12px] text-success mt-2">下一次运行: {new Date(status.next_checkin).toLocaleString()}</p>
+                  <p className="text-[12px] text-success mt-2">
+                    下一次触发: {new Date(status.next_checkin).toLocaleString()}
+                    {(status?.pending_checkins ?? 0) > 0 && (
+                      <span className="ml-2 text-primary">（{status.pending_checkins} 个签到待执行）</span>
+                    )}
+                  </p>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-[13px] font-medium text-textSecondary mb-1.5">签到执行时间窗口</label>
+                <p className="text-[12px] text-textMuted mb-2">限制签到只在此时间段内执行（24小时制）。超出范围的随机延迟将被自动修正。</p>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number" 
+                    min="0" max="23"
+                    className={inputClass + ' !w-20 text-center'}
+                    value={formData.CHECKIN_WINDOW_START} 
+                    onChange={e => setFormData({...formData, CHECKIN_WINDOW_START: e.target.value})} 
+                  />
+                  <span className="text-[13px] text-textMuted">:00 至</span>
+                  <input 
+                    type="number" 
+                    min="1" max="24"
+                    className={inputClass + ' !w-20 text-center'}
+                    value={formData.CHECKIN_WINDOW_END} 
+                    onChange={e => setFormData({...formData, CHECKIN_WINDOW_END: e.target.value})} 
+                  />
+                  <span className="text-[13px] text-textMuted">:00</span>
+                </div>
               </div>
 
               <div>

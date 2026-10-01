@@ -618,20 +618,7 @@ func EnsureSettingsTable() {
 	}
 }
 
-// EnsureSiteExternalCheckinColumns automatically adds extended configuration fields
-// if they don't exist in the sites table. This allows AggrSite to be fully backward-compatible
-// and run independent of the main app's migrations.
-func EnsureSiteExternalCheckinColumns() {
-	if driverName == "postgres" {
-		DB.Exec(`ALTER TABLE sites ALTER COLUMN external_checkin_url TYPE TEXT`)
-	}
-	// ensure the new columns exist (we ignore errors because they might already exist)
-	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_method TEXT`)
-	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_header TEXT`)
-	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_auth_prefix TEXT`)
-	DB.Exec(`ALTER TABLE sites ADD COLUMN external_checkin_body TEXT`)
-	DB.Exec(`ALTER TABLE sites ADD COLUMN turnstile_site_key TEXT`)
-}
+
 
 func ListAccountTokens(accountID int64) ([]AccountToken, error) {
 	var tokens []AccountToken

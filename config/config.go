@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -21,7 +22,9 @@ type Config struct {
 	AuthToken string
 
 	// Checkin
-	CheckinCron string
+	CheckinCron        string
+	CheckinWindowStart int // Earliest hour for checkin (default 7)
+	CheckinWindowEnd   int // Latest hour for checkin (default 23)
 
 	// Balance
 	BalanceRefreshCron string
@@ -50,7 +53,9 @@ func Init() {
 
 		AuthToken: envStr("AUTH_TOKEN", "change-me-admin-token"),
 
-		CheckinCron: envStr("CHECKIN_CRON", "0 8 * * *"),
+		CheckinCron:        envStr("CHECKIN_CRON", "0 8 * * *"),
+		CheckinWindowStart: envInt("CHECKIN_WINDOW_START", 7),
+		CheckinWindowEnd:   envInt("CHECKIN_WINDOW_END", 23),
 
 		BalanceRefreshCron: envStr("BALANCE_REFRESH_CRON", "0 * * * *"),
 
@@ -84,6 +89,18 @@ func envStr(key, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+func envInt(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func envBool(key string, fallback bool) bool {
