@@ -502,6 +502,12 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "site not found")
 		return
 	}
+
+	// Auto-disable accounts created under a disabled site
+	if site.Status == "disabled" {
+		input.Status = "disabled"
+	}
+
 	ad := platform.GetAdapter(site.Platform)
 	if ad == nil {
 		fail(w, http.StatusBadRequest, "unknown platform")

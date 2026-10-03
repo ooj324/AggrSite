@@ -240,6 +240,66 @@ func UpdateAccountsBySite(siteID int64, fields map[string]interface{}) error {
 	return err
 }
 
+// UpdateAccountsBySiteWithStatus batch-updates accounts belonging to a site
+// whose current status matches one of the given statuses. This is used by the
+// cascade logic so that re-enabling a site only recovers accounts that were
+// cascade-disabled rather than ones the user disabled manually.
+func UpdateAccountsBySiteWithStatus(siteID int64, fields map[string]interface{}, currentStatuses []string) error {
+	if len(currentStatuses) == 0 {
+		return UpdateAccountsBySite(siteID, fields)
+	}
+	fields["updated_at"] = TimeNow()
+	query := "UPDATE accounts SET "
+	args := []interface{}{}
+	i := 0
+	for k, v := range fields {
+		safeKey := ""
+		for _, c := range k {
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+				safeKey += string(c)
+			}
+		}
+		if safeKey == "" {
+			continue
+		}
+		if i > 0 {
+			query += ", "
+		}
+		query += safeKey + " = ?"
+		args = append(args, v)
+		i++
+	}
+	if i == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(currentStatuses)), ",")
+	query += " WHERE site_id = ? AND COALESCE(LOWER(TRIM(status)), 'active') IN (" + placeholders + ")"
+	args = append(args, siteID)
+	for _, s := range currentStatuses {
+		args = append(args, s)
+	}
+	_, err := Exec(query, args...)
+	return err
+}
+
+// CountAccountsBySiteWithStatus returns the number of accounts under a site
+// whose current status matches one of the given statuses.
+func CountAccountsBySiteWithStatus(siteID int64, statuses []string) (int64, error) {
+	if len(statuses) == 0 {
+		var count int64
+		_ = Get(&count, `SELECT COUNT(*) FROM accounts WHERE site_id = ?`, siteID)
+		return count, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(statuses)), ",")
+	args := []interface{}{siteID}
+	for _, s := range statuses {
+		args = append(args, s)
+	}
+	var count int64
+	err := Get(&count, `SELECT COUNT(*) FROM accounts WHERE site_id = ? AND COALESCE(LOWER(TRIM(status)), 'active') IN (`+placeholders+`)`, args...)
+	return count, err
+}
+
 // GetSiteBalances returns a map of site_id -> total_balance for all sites.
 func GetSiteBalances() (map[int64]float64, error) {
 	type row struct {
@@ -955,12 +1015,14 @@ const accountWithSiteQuery = `
 // them would make a single auth failure permanently drop the account from the
 // scheduler, with no path back for platforms without managed session refresh.
 // Only 'disabled' (explicit user intent) stays excluded.
+// Accounts on disabled sites are also excluded at the query level.
 func ListCheckinableAccounts() ([]AccountWithSite, error) {
 	var rows []AccountWithSite
 	if driverName == "postgres" {
 		err := Select(&rows, accountWithSiteQuery+`
 			WHERE a.checkin_enabled = true
 			  AND COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
+			  AND COALESCE(NULLIF(LOWER(TRIM(s.status)), ''), 'active') != 'disabled'
 			ORDER BY a.id ASC
 		`)
 		return rows, err
@@ -968,6 +1030,7 @@ func ListCheckinableAccounts() ([]AccountWithSite, error) {
 	err := Select(&rows, accountWithSiteQuery+`
 		WHERE a.checkin_enabled = 1
 		  AND COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
+		  AND COALESCE(NULLIF(LOWER(TRIM(s.status)), ''), 'active') != 'disabled'
 		ORDER BY a.id ASC
 	`)
 	return rows, err
@@ -976,12 +1039,13 @@ func ListCheckinableAccounts() ([]AccountWithSite, error) {
 // ListBalanceRefreshableAccounts returns accounts whose balance the scheduler should
 // refresh: status active or expired, for the same reason ListCheckinableAccounts keeps
 // expired rows — a successful refresh flips the account back to active, so excluding
-// them would strand every account that failed auth once. Site status is not filtered
-// here because RefreshBalance skips disabled sites per account.
+// them would strand every account that failed auth once. Accounts on disabled sites
+// are filtered at the query level to avoid wasted work.
 func ListBalanceRefreshableAccounts() ([]AccountWithSite, error) {
 	var rows []AccountWithSite
 	err := Select(&rows, accountWithSiteQuery+`
 		WHERE COALESCE(NULLIF(LOWER(TRIM(a.status)), ''), 'active') IN ('active', 'expired')
+		  AND COALESCE(NULLIF(LOWER(TRIM(s.status)), ''), 'active') != 'disabled'
 		ORDER BY a.id ASC
 	`)
 	if err != nil {

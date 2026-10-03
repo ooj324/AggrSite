@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Account, Site } from '../api';
-import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon, RefreshCw, Key } from 'lucide-react';
+import { Plus, Edit2, Trash2, CalendarCheck, Link as LinkIcon, RefreshCw, Key, ChevronUp, ChevronDown } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { format } from 'date-fns';
 import { useAlert } from '../components/AlertProvider';
@@ -107,6 +107,13 @@ export default function Accounts() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
 
+  // Filters & Sorting
+  const [filterSiteId, setFilterSiteId] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortField, setSortField] = useState<string>('id');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   const loadData = async () => {
     try {
       const [accRes, sitesRes] = await Promise.all([
@@ -185,7 +192,7 @@ export default function Accounts() {
 
   const toggleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(accounts.map(s => s.id));
+      setSelectedIds(filteredAccounts.map(s => s.id));
     } else {
       setSelectedIds([]);
     }
@@ -247,6 +254,57 @@ export default function Accounts() {
   const btnSecondaryClass = "relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-textPrimary bg-surface border border-border rounded-sm transition-all duration-200 hover:bg-surfaceHover hover:-translate-y-px hover:shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
   const btnDangerClass = "relative inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-danger rounded-sm transition-all duration-200 hover:bg-danger/90 hover:-translate-y-px hover:shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
 
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (field: string) => {
+    if (sortField !== field) return <span className="inline-block w-4" />;
+    return sortDirection === 'asc' ? <ChevronUp size={14} className="inline text-primary" /> : <ChevronDown size={14} className="inline text-primary" />;
+  };
+
+  const filteredAccounts = accounts.filter(acc => {
+    if (filterSiteId !== 'all' && acc.site_id.toString() !== filterSiteId) return false;
+    
+    const runtimeHealth = resolveRuntimeHealth(acc);
+    const runtimeState = runtimeHealth?.state || (acc.status === 'active' ? 'healthy' : 'disabled');
+    
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'healthy' && runtimeState !== 'healthy') return false;
+      if (filterStatus === 'degraded' && runtimeState !== 'degraded') return false;
+      if (filterStatus === 'abnormal' && runtimeState !== 'abnormal') return false;
+      if (filterStatus === 'disabled' && runtimeState !== 'disabled') return false;
+    }
+    
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const usernameMatch = (acc.username || '').toLowerCase().includes(query);
+      const siteNameMatch = (acc.site_name || sites.find(s => s.id === acc.site_id)?.name || '').toLowerCase().includes(query);
+      if (!usernameMatch && !siteNameMatch) return false;
+    }
+    
+    return true;
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortField === 'id') {
+      comparison = a.id - b.id;
+    } else if (sortField === 'username') {
+      comparison = (a.username || '').localeCompare(b.username || '');
+    } else if (sortField === 'balance') {
+      comparison = (a.balance || 0) - (b.balance || 0);
+    } else if (sortField === 'last_checkin_at') {
+      const timeA = a.last_checkin_at ? new Date(a.last_checkin_at).getTime() : 0;
+      const timeB = b.last_checkin_at ? new Date(b.last_checkin_at).getTime() : 0;
+      comparison = timeA - timeB;
+    }
+    return sortDirection === 'asc' ? comparison : -comparison;
+  });
+
   return (
     <div className="animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -254,6 +312,35 @@ export default function Accounts() {
         <button onClick={() => openEdit()} className={btnPrimaryClass}>
           <Plus size={16} /> 添加账户
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="搜索账号/站点..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="px-3 py-1.5 bg-surface border border-border rounded-lg text-[13px] text-textPrimary placeholder:text-textMuted focus:outline-none focus:border-primary w-[200px]"
+        />
+        <select
+          value={filterSiteId}
+          onChange={e => setFilterSiteId(e.target.value)}
+          className="px-3 py-1.5 bg-surface border border-border rounded-lg text-[13px] text-textPrimary focus:outline-none focus:border-primary"
+        >
+          <option value="all">所有站点</option>
+          {sites.map(s => <option key={s.id} value={s.id.toString()}>{s.name}</option>)}
+        </select>
+        <select
+          value={filterStatus}
+          onChange={e => setFilterStatus(e.target.value)}
+          className="px-3 py-1.5 bg-surface border border-border rounded-lg text-[13px] text-textPrimary focus:outline-none focus:border-primary"
+        >
+          <option value="all">所有状态</option>
+          <option value="healthy">正常</option>
+          <option value="degraded">需关注</option>
+          <option value="abnormal">异常</option>
+          <option value="disabled">禁用</option>
+        </select>
       </div>
 
       {selectedIds.length > 0 && (
@@ -289,24 +376,24 @@ export default function Accounts() {
           </div>
         ) : (
           <>
-            {accounts.length > 0 && (
+            {filteredAccounts.length > 0 && (
               <table className="data-table">
                 <thead>
                   <tr>
                     <th className="w-11 text-center">
-                      <input type="checkbox" checked={selectedIds.length === accounts.length && accounts.length > 0} onChange={(e) => toggleSelectAll(e.target.checked)} />
+                      <input type="checkbox" checked={selectedIds.length === filteredAccounts.length && filteredAccounts.length > 0} onChange={(e) => toggleSelectAll(e.target.checked)} />
                     </th>
-                    <th>连接名称</th>
+                    <th className="cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('username')}>连接名称 {renderSortIcon('username')}</th>
                     <th>站点</th>
                     <th>运行健康状态</th>
-                    <th>余额</th>
+                    <th className="cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('balance')}>余额 {renderSortIcon('balance')}</th>
                     <th>已用</th>
-                    <th>签到</th>
+                    <th className="cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('last_checkin_at')}>签到 {renderSortIcon('last_checkin_at')}</th>
                     <th className="text-center w-[220px]">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {accounts.map(acc => {
+                  {filteredAccounts.map(acc => {
                     const runtimeHealth = resolveRuntimeHealth(acc);
                     const runtimeState = runtimeHealth?.state || (acc.status === 'active' ? 'healthy' : 'disabled');
                     const runtimeReason = normalizeRuntimeReason(runtimeHealth?.reason || (acc.status === 'active' ? '正常' : '账号已禁用'));
@@ -449,7 +536,7 @@ export default function Accounts() {
                 </tbody>
               </table>
             )}
-            {accounts.length === 0 && (
+            {filteredAccounts.length === 0 && (
               <div className="flex flex-col items-center justify-center p-16 text-center">
                 <svg className="w-16 h-16 text-textMuted mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />

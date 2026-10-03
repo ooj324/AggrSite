@@ -23,6 +23,16 @@ func AnalyzeCheckinFailure(message string) *FailureReason {
 		}
 	}
 
+	if strings.Contains(msgLower, "account disabled") {
+		return &FailureReason{
+			Code:       "ACCOUNT_DISABLED",
+			Category:   "account",
+			Title:      "账号已禁用",
+			ActionHint: "启用账号后再试",
+			DetailHint: "该账号处于禁用状态，任务会自动跳过。",
+		}
+	}
+
 	if strings.Contains(msgLower, "already checked in") ||
 		strings.Contains(msgLower, "already signed") ||
 		strings.Contains(msgLower, "今天已经签到") ||

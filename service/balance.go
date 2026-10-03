@@ -53,6 +53,18 @@ func RefreshBalance(accountID int64, opts RefreshBalanceOption) (*BalanceResult,
 		return &BalanceResult{Success: true, Balance: info, Skipped: true, Reason: "site_disabled"}, nil
 	}
 
+	// Skip disabled accounts
+	if row.Status != nil && *row.Status == "disabled" {
+		extraConfig := freshRuntimeHealth(accountID, row.ExtraConfig, "disabled", "账号已禁用", "balance")
+		_ = db.UpdateAccount(accountID, map[string]interface{}{"extra_config": extraConfig})
+		info := &platform.BalanceInfo{
+			Balance: valueOrZero(row.Balance),
+			Used:    valueOrZero(row.BalanceUsed),
+			Quota:   valueOrZero(row.Quota),
+		}
+		return &BalanceResult{Success: true, Balance: info, Skipped: true, Reason: "account_disabled"}, nil
+	}
+
 	if !force && row.LastBalanceRefresh != nil {
 		if t, ok := db.ParseDBTime(*row.LastBalanceRefresh); ok {
 			if time.Since(t) < balanceRefreshCooldown {

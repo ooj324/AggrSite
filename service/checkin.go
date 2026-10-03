@@ -327,6 +327,16 @@ func CheckinAccount(accountID int64) (*CheckinAccountResult, error) {
 		return &CheckinAccountResult{Success: true, Status: "skipped", Message: "site disabled"}, nil
 	}
 
+	// Skip disabled accounts
+	if row.Status != nil && *row.Status == "disabled" {
+		_ = db.UpdateAccount(accountID, map[string]interface{}{
+			"extra_config": freshRuntimeHealth(accountID, row.ExtraConfig, "disabled", "账号已禁用", "checkin"),
+		})
+		_ = db.InsertCheckinLog(accountID, "skipped", "account disabled", "")
+		slog.Info("Checkin skipped: account disabled", "account_id", accountID)
+		return &CheckinAccountResult{Success: true, Status: "skipped", Message: "account disabled"}, nil
+	}
+
 	adapter := platform.GetAdapter(row.SitePlatform)
 	if adapter == nil {
 		msg := "unsupported platform: " + row.SitePlatform
