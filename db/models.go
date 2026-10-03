@@ -208,97 +208,10 @@ func DeleteSite(id int64) error {
 	return err
 }
 
-// UpdateAccountsBySite batch-updates all accounts belonging to a site.
-func UpdateAccountsBySite(siteID int64, fields map[string]interface{}) error {
-	fields["updated_at"] = TimeNow()
-	query := "UPDATE accounts SET "
-	args := []interface{}{}
-	i := 0
-	for k, v := range fields {
-		safeKey := ""
-		for _, c := range k {
-			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
-				safeKey += string(c)
-			}
-		}
-		if safeKey == "" {
-			continue
-		}
-		if i > 0 {
-			query += ", "
-		}
-		query += safeKey + " = ?"
-		args = append(args, v)
-		i++
-	}
-	if i == 0 {
-		return nil
-	}
-	query += " WHERE site_id = ?"
-	args = append(args, siteID)
-	_, err := Exec(query, args...)
-	return err
-}
-
-// UpdateAccountsBySiteWithStatus batch-updates accounts belonging to a site
-// whose current status matches one of the given statuses. This is used by the
-// cascade logic so that re-enabling a site only recovers accounts that were
-// cascade-disabled rather than ones the user disabled manually.
-func UpdateAccountsBySiteWithStatus(siteID int64, fields map[string]interface{}, currentStatuses []string) error {
-	if len(currentStatuses) == 0 {
-		return UpdateAccountsBySite(siteID, fields)
-	}
-	fields["updated_at"] = TimeNow()
-	query := "UPDATE accounts SET "
-	args := []interface{}{}
-	i := 0
-	for k, v := range fields {
-		safeKey := ""
-		for _, c := range k {
-			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
-				safeKey += string(c)
-			}
-		}
-		if safeKey == "" {
-			continue
-		}
-		if i > 0 {
-			query += ", "
-		}
-		query += safeKey + " = ?"
-		args = append(args, v)
-		i++
-	}
-	if i == 0 {
-		return nil
-	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(currentStatuses)), ",")
-	query += " WHERE site_id = ? AND COALESCE(LOWER(TRIM(status)), 'active') IN (" + placeholders + ")"
-	args = append(args, siteID)
-	for _, s := range currentStatuses {
-		args = append(args, s)
-	}
-	_, err := Exec(query, args...)
-	return err
-}
-
-// CountAccountsBySiteWithStatus returns the number of accounts under a site
-// whose current status matches one of the given statuses.
-func CountAccountsBySiteWithStatus(siteID int64, statuses []string) (int64, error) {
-	if len(statuses) == 0 {
-		var count int64
-		_ = Get(&count, `SELECT COUNT(*) FROM accounts WHERE site_id = ?`, siteID)
-		return count, nil
-	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(statuses)), ",")
-	args := []interface{}{siteID}
-	for _, s := range statuses {
-		args = append(args, s)
-	}
-	var count int64
-	err := Get(&count, `SELECT COUNT(*) FROM accounts WHERE site_id = ? AND COALESCE(LOWER(TRIM(status)), 'active') IN (`+placeholders+`)`, args...)
-	return count, err
-}
+// Site-status cascades no longer batch-overwrite account.status directly; see
+// archive.go (ArchiveAccountsBySite / RestoreAccountsBySite), which snapshots
+// each account's previous status in extra_config so enable/disable round trips
+// are lossless and never revive manually-disabled accounts.
 
 // GetSiteBalances returns a map of site_id -> total_balance for all sites.
 func GetSiteBalances() (map[int64]float64, error) {
@@ -468,11 +381,17 @@ func DeleteAccount(id int64) error {
 }
 
 // AccountWithSiteName is used for listing accounts with their site info.
+//
+// Display is the canonical account state for the UI (computed by
+// ComputeAccountDisplay in archive.go); Archived flags rows cascade-archived
+// by a site disable. Both are populated by the handler, not the DB scan.
 type AccountWithSiteName struct {
 	Account
-	SiteName     string `db:"site_name" json:"site_name"`
-	SitePlatform string `db:"site_platform" json:"site_platform"`
-	SiteURL      string `db:"site_url" json:"site_url"`
+	SiteName     string         `db:"site_name" json:"site_name"`
+	SitePlatform string         `db:"site_platform" json:"site_platform"`
+	SiteURL      string         `db:"site_url" json:"site_url"`
+	Archived     bool           `db:"-" json:"archived"`
+	Display      AccountDisplay `db:"-" json:"display"`
 }
 
 func ListAccountsWithSites(siteID *int64) ([]AccountWithSiteName, error) {

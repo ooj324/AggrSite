@@ -70,6 +70,16 @@ export interface Site {
   sort_order?: number;
 }
 
+// Canonical account state computed by the backend (db.ComputeAccountDisplay).
+// The UI renders State/Label/Reason as-is; it must not re-derive state from
+// status + extra_config locally.
+export interface AccountDisplay {
+  state: 'healthy' | 'degraded' | 'abnormal' | 'disabled' | 'archived';
+  label: string;
+  reason: string;
+  source?: string;
+}
+
 export interface Account {
   id: number;
   site_id: number;
@@ -83,6 +93,8 @@ export interface Account {
   balance_used: number;
   quota: number;
   status: string;
+  archived?: boolean;
+  display: AccountDisplay;
   checkin_enabled: boolean;
   last_checkin_at: string;
   last_balance_refresh: string;

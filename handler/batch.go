@@ -29,9 +29,10 @@ func BatchAccounts(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch input.Action {
 		case "enable":
-			err = db.UpdateAccount(id, map[string]interface{}{"status": "active"})
+			// User-driven: also clears any site-archive marker so the choice sticks.
+			err = db.SetAccountStatusUserDriven(id, "active")
 		case "disable":
-			err = db.UpdateAccount(id, map[string]interface{}{"status": "disabled"})
+			err = db.SetAccountStatusUserDriven(id, "disabled")
 		case "delete":
 			err = db.DeleteAccount(id)
 		case "checkin":

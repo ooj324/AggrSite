@@ -80,6 +80,11 @@ func clampInt(v, min, max int) int {
 	return v
 }
 
+func parseBoolQuery(r *http.Request, key string) bool {
+	s := r.URL.Query().Get(key)
+	return s == "true" || s == "1"
+}
+
 func queryInt64Ptr(r *http.Request, key string) *int64 {
 	s := r.URL.Query().Get(key)
 	if s == "" {

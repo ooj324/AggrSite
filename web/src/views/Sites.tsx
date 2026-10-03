@@ -69,7 +69,7 @@ export default function Sites() {
   const handleToggleStatus = async (site: Site) => {
     const newStatus = site.status === 'active' ? 'disabled' : 'active';
     if (newStatus === 'disabled') {
-      if (!confirm(`确定要禁用站点 [${site.name}] 吗？\n所有关联的账号将会被一并禁用！`)) return;
+      if (!confirm(`确定要禁用站点 [${site.name}] 吗？\n所有关联账号将被归档隐藏，重新启用站点时自动还原。`)) return;
     }
     try {
       await api.put(`/api/sites/${site.id}`, { status: newStatus });
@@ -84,7 +84,7 @@ export default function Sites() {
     if (action === 'delete') {
       if (!confirm(`确定要删除选中的 ${selectedIds.length} 个站点吗？关联账号也会被一并删除。`)) return;
     } else if (action === 'disable') {
-      if (!confirm(`确定要禁用选中的 ${selectedIds.length} 个站点吗？所有关联的账号将会被一并禁用！`)) return;
+      if (!confirm(`确定要禁用选中的 ${selectedIds.length} 个站点吗？所有关联账号将被归档隐藏，重新启用站点时自动还原。`)) return;
     }
 
     setBatchLoading(true);

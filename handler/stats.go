@@ -8,15 +8,20 @@ import (
 )
 
 func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
+	// Cascade-archived accounts (site disabled) are hidden everywhere else and
+	// must not inflate the dashboard totals either. The marker is a JSON flag in
+	// extra_config; both SQLite and Postgres match the exact serialized form.
+	const notArchived = "COALESCE(extra_config, '') NOT LIKE '%\"archivedBySite\":true%'"
+
 	// Sites and accounts
 	var sitesCount, accountsCount int
 	db.DB.Get(&sitesCount, "SELECT COUNT(*) FROM sites")
-	db.DB.Get(&accountsCount, "SELECT COUNT(*) FROM accounts")
+	db.DB.Get(&accountsCount, "SELECT COUNT(*) FROM accounts WHERE "+notArchived)
 
 	// Balances
 	var totalBalance, totalUsed float64
-	db.DB.Get(&totalBalance, "SELECT COALESCE(SUM(balance), 0) FROM accounts")
-	db.DB.Get(&totalUsed, "SELECT COALESCE(SUM(balance_used), 0) FROM accounts")
+	db.DB.Get(&totalBalance, "SELECT COALESCE(SUM(balance), 0) FROM accounts WHERE "+notArchived)
+	db.DB.Get(&totalUsed, "SELECT COALESCE(SUM(balance_used), 0) FROM accounts WHERE "+notArchived)
 
 	// Checkins today
 	now := time.Now()

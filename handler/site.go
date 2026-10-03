@@ -123,6 +123,13 @@ func UpdateSite(w http.ResponseWriter, r *http.Request) {
 }
 
 // cascadeSiteStatusChange propagates site status changes to all associated accounts.
+//
+// Disable archives every non-disabled account (snapshotting each account's
+// current status into extra_config) so it disappears from the account list;
+// enable restores exactly the accounts archived by an earlier disable, each
+// with its original status (active stays active, expired stays expired).
+// Accounts the user disabled manually carry no archive marker and are never
+// touched by either direction, so manual intent survives the round trip.
 func cascadeSiteStatusChange(siteID int64, oldStatus, newStatus string) {
 	site, _ := db.GetSite(siteID)
 	siteName := ""
@@ -131,33 +138,25 @@ func cascadeSiteStatusChange(siteID int64, oldStatus, newStatus string) {
 	}
 
 	if newStatus == "disabled" {
-		// Disable all non-disabled accounts under this site
-		count, _ := db.CountAccountsBySiteWithStatus(siteID, []string{"active", "expired"})
-		err := db.UpdateAccountsBySiteWithStatus(siteID, map[string]interface{}{
-			"status": "disabled",
-		}, []string{"active", "expired"})
+		count, err := db.ArchiveAccountsBySite(siteID)
 		if err != nil {
-			slog.Error("Failed to cascade disable accounts", "site_id", siteID, "err", err)
+			slog.Error("Failed to cascade archive accounts", "site_id", siteID, "err", err)
 			return
 		}
 		_ = db.InsertEvent("site", "site disabled",
-			fmt.Sprintf("站点 %s 已禁用，%d 个关联账号已自动禁用", siteName, count),
+			fmt.Sprintf("站点 %s 已禁用，%d 个关联账号已归档（启用后自动还原）", siteName, count),
 			"warning", &siteID, "site")
-		slog.Info("Site disabled, cascaded to accounts", "site_id", siteID, "site_name", siteName, "affected", count)
+		slog.Info("Site disabled, accounts archived", "site_id", siteID, "site_name", siteName, "affected", count)
 	} else if newStatus == "active" && oldStatus == "disabled" {
-		// Re-enable only accounts that are currently disabled (preserve manually-set statuses)
-		count, _ := db.CountAccountsBySiteWithStatus(siteID, []string{"disabled"})
-		err := db.UpdateAccountsBySiteWithStatus(siteID, map[string]interface{}{
-			"status": "active",
-		}, []string{"disabled"})
+		count, err := db.RestoreAccountsBySite(siteID)
 		if err != nil {
-			slog.Error("Failed to cascade enable accounts", "site_id", siteID, "err", err)
+			slog.Error("Failed to cascade restore accounts", "site_id", siteID, "err", err)
 			return
 		}
 		_ = db.InsertEvent("site", "site enabled",
-			fmt.Sprintf("站点 %s 已启用，%d 个关联账号已恢复", siteName, count),
+			fmt.Sprintf("站点 %s 已启用，%d 个归档账号已还原", siteName, count),
 			"info", &siteID, "site")
-		slog.Info("Site enabled, cascaded to accounts", "site_id", siteID, "site_name", siteName, "affected", count)
+		slog.Info("Site enabled, archived accounts restored", "site_id", siteID, "site_name", siteName, "affected", count)
 	}
 }
 

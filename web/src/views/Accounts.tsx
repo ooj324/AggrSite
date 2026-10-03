@@ -50,28 +50,6 @@ const isCookieBased = (account: any) => {
   return false;
 };
 
-const resolveRuntimeHealth = (account: any) => parseAccountExtraConfig(account)?.runtimeHealth || null;
-
-const runtimeSourceLabel = (source?: string) => {
-  const normalized = (source || '').trim().toLowerCase();
-  if (normalized === 'checkin') return '签到';
-  if (normalized === 'balance') return '余额';
-  if (normalized === 'login') return '登录';
-  if (normalized === 'verify') return '验证';
-  if (normalized === 'system') return '系统';
-  return normalized || '';
-};
-
-const normalizeRuntimeReason = (reason?: string) => {
-  const text = (reason || '').trim();
-  if (!text) return '正常';
-  return text
-    .replace(/^failed to fetch balance:\s*/i, '')
-    .replace(/^failed:\s*/i, '')
-    .replace(/^error:\s*/i, '')
-    .trim() || text;
-};
-
 const getErrorPayload = (err: any): any => err?.data || err?.response?.data || null;
 
 const getErrorMessage = (err: any): string => {
@@ -116,8 +94,10 @@ export default function Accounts() {
 
   const loadData = async () => {
     try {
+      // include_archived=true so the 已归档 filter can show them; the status
+      // filter hides archived rows by default.
       const [accRes, sitesRes] = await Promise.all([
-        api.get('/api/accounts'),
+        api.get('/api/accounts?include_archived=true'),
         api.get('/api/sites')
       ]);
       setAccounts((accRes as any) || []);
@@ -270,16 +250,22 @@ export default function Accounts() {
 
   const filteredAccounts = accounts.filter(acc => {
     if (filterSiteId !== 'all' && acc.site_id.toString() !== filterSiteId) return false;
-    
-    const runtimeHealth = resolveRuntimeHealth(acc);
-    const runtimeState = runtimeHealth?.state || (acc.status === 'expired' ? 'abnormal' : (acc.status === 'active' ? 'healthy' : 'disabled'));
-    
+
+    // State comes from the backend-computed display block (single source of
+    // truth); do not re-derive it from status/extra_config here.
+    const state = acc.display?.state || 'abnormal';
+
+    // Archived rows (cascade-archived by a site disable) are hidden unless the
+    // archived filter is explicitly selected.
+    if (filterStatus !== 'archived' && state === 'archived') return false;
+
     if (filterStatus !== 'all') {
-      if (filterStatus === 'active_only' && runtimeState === 'disabled') return false;
-      if (filterStatus === 'healthy' && runtimeState !== 'healthy') return false;
-      if (filterStatus === 'degraded' && runtimeState !== 'degraded') return false;
-      if (filterStatus === 'abnormal' && runtimeState !== 'abnormal') return false;
-      if (filterStatus === 'disabled' && runtimeState !== 'disabled') return false;
+      if (filterStatus === 'active_only' && (state === 'disabled' || state === 'archived')) return false;
+      if (filterStatus === 'healthy' && state !== 'healthy') return false;
+      if (filterStatus === 'degraded' && state !== 'degraded') return false;
+      if (filterStatus === 'abnormal' && state !== 'abnormal') return false;
+      if (filterStatus === 'disabled' && state !== 'disabled') return false;
+      if (filterStatus === 'archived' && state !== 'archived') return false;
     }
     
     if (searchQuery) {
@@ -342,6 +328,7 @@ export default function Accounts() {
           <option value="degraded">需关注</option>
           <option value="abnormal">异常</option>
           <option value="disabled">已禁用</option>
+          <option value="archived">已归档 (站点禁用)</option>
         </select>
       </div>
 
@@ -396,10 +383,10 @@ export default function Accounts() {
                 </thead>
                 <tbody>
                   {filteredAccounts.map(acc => {
-                    const runtimeHealth = resolveRuntimeHealth(acc);
-                    const runtimeState = runtimeHealth?.state || (acc.status === 'expired' ? 'abnormal' : (acc.status === 'active' ? 'healthy' : 'disabled'));
-                    const runtimeReason = normalizeRuntimeReason(runtimeHealth?.reason || (acc.status === 'expired' ? '令牌失效' : (acc.status === 'active' ? '正常' : '账号已禁用')));
-                    const runtimeSource = runtimeSourceLabel(runtimeHealth?.source);
+                    // Canonical state/label/reason/source computed by the backend.
+                    const runtimeState = acc.display?.state || 'abnormal';
+                    const runtimeReason = acc.display?.reason || '';
+                    const runtimeSource = acc.display?.source || '';
                     const isRowLoading = actionLoading?.id === acc.id;
                     const isToggleLoading = isRowLoading && actionLoading?.type === 'toggle-checkin';
                     const isCheckinLoading = isRowLoading && actionLoading?.type === 'checkin';
@@ -450,7 +437,7 @@ export default function Accounts() {
                         )}
                       </td>
                       <td>
-                        <div className="flex flex-col gap-1.5 items-start max-w-[180px]" title={runtimeHealth?.reason || runtimeReason}>
+                        <div className="flex flex-col gap-1.5 items-start max-w-[180px]" title={runtimeReason}>
                           <div className="flex items-center gap-1.5">
                             <span
                               className={`inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-medium ${
@@ -460,10 +447,12 @@ export default function Accounts() {
                                     ? 'bg-warningSoft text-warning'
                                     : runtimeState === 'disabled'
                                       ? 'bg-black/5 text-textSecondary dark:bg-white/5'
+                                    : runtimeState === 'archived'
+                                      ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
                                       : 'bg-dangerSoft text-danger'
                               }`}
                             >
-                              {acc.status === 'expired' ? '令牌失效' : runtimeState === 'healthy' ? '正常' : runtimeState === 'degraded' ? '需关注' : runtimeState === 'disabled' ? '禁用' : '异常'}
+                              {acc.display?.label || '异常'}
                             </span>
                             {runtimeSource && (
                               <span className="text-[11px] text-textMuted">{runtimeSource}</span>

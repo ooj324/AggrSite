@@ -424,12 +424,25 @@ func RebindSession(w http.ResponseWriter, r *http.Request) {
 
 func ListAccounts(w http.ResponseWriter, r *http.Request) {
 	siteID := queryInt64Ptr(r, "siteId")
+	// Archived accounts (cascade-archived by a site disable) stay hidden unless
+	// the caller explicitly asks for them — they are not actionable while the
+	// site is disabled, and enabling the site restores them automatically.
+	includeArchived := parseBoolQuery(r, "include_archived")
 	accounts, err := db.ListAccountsWithSites(siteID)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ok(w, accounts)
+	result := make([]db.AccountWithSiteName, 0, len(accounts))
+	for _, a := range accounts {
+		a.Archived = db.IsAccountArchived(a.ExtraConfig)
+		a.Display = db.ComputeAccountDisplay(a.Status, a.ExtraConfig)
+		if a.Archived && !includeArchived {
+			continue
+		}
+		result = append(result, a)
+	}
+	ok(w, result)
 }
 
 func GetAccount(w http.ResponseWriter, r *http.Request) {
@@ -503,8 +516,14 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-disable accounts created under a disabled site
-	if site.Status == "disabled" {
+	// Accounts created under a disabled site are archived alongside the rest,
+	// snapshotting the requested status so enabling the site restores them.
+	siteDisabled := site.Status == "disabled"
+	requestedStatus := strings.ToLower(strings.TrimSpace(input.Status))
+	if requestedStatus != "expired" {
+		requestedStatus = "active"
+	}
+	if siteDisabled {
 		input.Status = "disabled"
 	}
 
@@ -556,6 +575,10 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 			// Save extra config
 			cfg := make(map[string]interface{})
+			if siteDisabled {
+				cfg[db.ExtraKeyArchivedBySite] = true
+				cfg[db.ExtraKeyArchivedPrevStatus] = requestedStatus
+			}
 			if input.CredentialMode != "" {
 				cfg["credentialMode"] = input.CredentialMode
 			}
@@ -638,6 +661,10 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	// Update ExtraConfig with Proxy overrides if present
 	cfg := make(map[string]interface{})
+	if siteDisabled {
+		cfg[db.ExtraKeyArchivedBySite] = true
+		cfg[db.ExtraKeyArchivedPrevStatus] = requestedStatus
+	}
 	if input.CredentialMode != "" {
 		cfg["credentialMode"] = input.CredentialMode
 	}
@@ -859,7 +886,20 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		fields["username"] = strings.TrimSpace(username)
 	}
 	if status, ok := fields["status"].(string); ok {
-		fields["status"] = strings.TrimSpace(status)
+		newStatus := strings.TrimSpace(status)
+		fields["status"] = newStatus
+		// An explicit status *change* is user intent: drop any cascade-archive
+		// marker so a later site enable/restore does not resurrect or revert
+		// this account against what the user just asked for. An unchanged
+		// status (e.g. the edit form re-saving "disabled" on an archived
+		// account) keeps the marker so the site cascade still applies.
+		if newStatus != db.NormalizeAccountStatus(account.Status) {
+			if _, exists := cfg[db.ExtraKeyArchivedBySite]; exists {
+				delete(cfg, db.ExtraKeyArchivedBySite)
+				delete(cfg, db.ExtraKeyArchivedPrevStatus)
+				cfgModified = true
+			}
+		}
 	}
 
 	if cfgModified {

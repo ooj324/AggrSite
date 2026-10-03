@@ -140,6 +140,10 @@ func LoginAccount(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		cfg = make(map[string]interface{})
 	}
+	// A successful login is an explicit re-activation: drop any cascade-archive
+	// marker so the later site restore does not fight this account's status.
+	delete(cfg, db.ExtraKeyArchivedBySite)
+	delete(cfg, db.ExtraKeyArchivedPrevStatus)
 	cfg["credentialMode"] = "session"
 	cfg["autoRelogin"] = map[string]interface{}{
 		"username":       input.Username,
