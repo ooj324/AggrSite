@@ -109,7 +109,7 @@ export default function Accounts() {
 
   // Filters & Sorting
   const [filterSiteId, setFilterSiteId] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('active_only');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortField, setSortField] = useState<string>('id');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -272,9 +272,10 @@ export default function Accounts() {
     if (filterSiteId !== 'all' && acc.site_id.toString() !== filterSiteId) return false;
     
     const runtimeHealth = resolveRuntimeHealth(acc);
-    const runtimeState = runtimeHealth?.state || (acc.status === 'active' ? 'healthy' : 'disabled');
+    const runtimeState = runtimeHealth?.state || (acc.status === 'expired' ? 'abnormal' : (acc.status === 'active' ? 'healthy' : 'disabled'));
     
     if (filterStatus !== 'all') {
+      if (filterStatus === 'active_only' && runtimeState === 'disabled') return false;
       if (filterStatus === 'healthy' && runtimeState !== 'healthy') return false;
       if (filterStatus === 'degraded' && runtimeState !== 'degraded') return false;
       if (filterStatus === 'abnormal' && runtimeState !== 'abnormal') return false;
@@ -335,11 +336,12 @@ export default function Accounts() {
           onChange={e => setFilterStatus(e.target.value)}
           className="px-3 py-1.5 bg-surface border border-border rounded-lg text-[13px] text-textPrimary focus:outline-none focus:border-primary"
         >
+          <option value="active_only">除禁用外 (默认)</option>
           <option value="all">所有状态</option>
           <option value="healthy">正常</option>
           <option value="degraded">需关注</option>
           <option value="abnormal">异常</option>
-          <option value="disabled">禁用</option>
+          <option value="disabled">已禁用</option>
         </select>
       </div>
 
@@ -395,8 +397,8 @@ export default function Accounts() {
                 <tbody>
                   {filteredAccounts.map(acc => {
                     const runtimeHealth = resolveRuntimeHealth(acc);
-                    const runtimeState = runtimeHealth?.state || (acc.status === 'active' ? 'healthy' : 'disabled');
-                    const runtimeReason = normalizeRuntimeReason(runtimeHealth?.reason || (acc.status === 'active' ? '正常' : '账号已禁用'));
+                    const runtimeState = runtimeHealth?.state || (acc.status === 'expired' ? 'abnormal' : (acc.status === 'active' ? 'healthy' : 'disabled'));
+                    const runtimeReason = normalizeRuntimeReason(runtimeHealth?.reason || (acc.status === 'expired' ? '令牌失效' : (acc.status === 'active' ? '正常' : '账号已禁用')));
                     const runtimeSource = runtimeSourceLabel(runtimeHealth?.source);
                     const isRowLoading = actionLoading?.id === acc.id;
                     const isToggleLoading = isRowLoading && actionLoading?.type === 'toggle-checkin';
